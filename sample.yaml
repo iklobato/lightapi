@@ -1,0 +1,102 @@
+# Basic Information
+api:
+  name: "My Company API"
+  environment: "dev"
+  database: "${DATABASE_URL}"
+
+# API Endpoints Configuration
+endpoints:
+  company:
+    access: "custom"
+    operations: ["GET", "POST"]
+    filters: ["name", "email", "website"]
+    headers:
+      add:
+        X-New-Header: "my new header value"
+
+  custom_endpoint:
+    access: "custom"
+    operations: ["GET", "POST"]
+    auth: true
+    cache:
+      enabled: true
+      methods: ["GET"]
+    pagination:
+      limit: 100
+      sort: true
+
+# Global Middleware Configuration
+middleware:
+  - name: "custom_auth"
+    enabled: true
+    response:
+      unauthorized:
+        message: "not allowed"
+        status: 403
+
+  - name: "cors"
+    enabled: true
+    settings:
+      origins: ["*"]
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+      headers: ["Authorization", "Content-Type"]
+      credentials: false
+
+# Authentication Configuration
+auth:
+  jwt:
+    enabled: true
+    secret: "${JWT_SECRET}"
+    algorithm: "HS256"
+    expire_hours: 24
+    exclude_paths: ["/health", "/docs"]
+
+# Filter Configuration
+filters:
+  operators:
+    - eq      # equals
+    - neq     # not equals
+    - gt      # greater than
+    - lt      # less than
+    - like    # string contains
+    - in      # in list
+
+# Pagination Configuration
+pagination:
+  default:
+    enabled: true
+    limit: 20
+    max_limit: 100
+    sort_enabled: true
+
+# Cache Configuration
+cache:
+  default:
+    enabled: false
+    type: "redis"
+    url: "${REDIS_URL}"
+    ttl: 300  # seconds
+    methods: ["GET"]
+
+# Response Configuration
+responses:
+  envelope: true  # Wrap responses in data envelope
+  format:
+    success:
+      data: null
+      message: "Success"
+      status: 200
+    error:
+      error: true
+      message: null
+      status: null
+
+# Example minimal configuration:
+#api:
+#  name: "My API"
+#  database: "postgresql://user:pass@localhost:5432/dbname"
+#
+#endpoints:
+#  company:
+#    access: "custom"
+#    operations: ["GET", "POST"]

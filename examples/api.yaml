@@ -1,0 +1,86 @@
+# API Configuration
+api:
+  name: "Product API"
+  environment: "development"
+  database: "sqlite://:memory:"
+
+# Endpoints Configuration
+endpoints:
+  products:
+    access: "authenticated"
+    operations: ["GET", "POST", "PUT", "DELETE"]
+    filters:
+      - name
+      - price
+      - is_available
+    pagination:
+      enabled: true
+      limit: 50
+      max_limit: 200
+      sort: true
+    cache:
+      enabled: true
+      methods: ["GET"]
+    validator:
+      fields:
+        - name
+        - price
+        - description
+        - is_available
+
+# Middleware Configuration
+middleware:
+  - name: "logging"
+    enabled: true
+    settings:
+      log_request_body: true
+      log_response_body: false
+      exclude_paths: ["/health", "/metrics"]
+      mask_headers: ["Authorization", "Cookie"]
+
+  - name: "cors"
+    enabled: true
+    settings:
+      origins: ["*"]
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+      headers: ["Authorization", "Content-Type"]
+      credentials: false
+
+# Authentication Configuration
+auth:
+  jwt:
+    enabled: true
+    secret: "test_secret_key"
+    algorithm: "HS256"
+    expire_hours: 24
+    exclude_paths: ["/health", "/docs"]
+
+# Cache Configuration
+cache:
+  default:
+    enabled: true
+    type: "redis"
+    url: "${REDIS_URL}"
+    ttl: 300
+    methods: ["GET"]
+
+# Pagination Configuration
+pagination:
+  default:
+    enabled: true
+    limit: 20
+    max_limit: 100
+    sort_enabled: true
+
+# Response Configuration
+responses:
+  envelope: true
+  format:
+    success:
+      data: null
+      message: "Success"
+      status: 200
+    error:
+      error: true
+      message: null
+      status: null

@@ -1,115 +1,282 @@
 # LightAPI
 
-## Overview
-LightAPI is a lightweight framework designed for quickly building API endpoints using Python's native libraries. It simplifies API development by providing a minimal interface while maintaining flexibility and performance through asynchronous programming.
+A lightweight, high-performance async API framework for Python with built-in middleware, authentication, caching, and filtering capabilities. Configure your API through code or YAML configuration files.
 
 ## Features
-- Simplicity: Define API endpoints with minimal boilerplate code.
-- Flexibility: Define models using SQLAlchemy's ORM and create API endpoints for CRUD operations easily.
-- Performance: Utilizes aiohttp for handling concurrent requests efficiently.
 
-## How it Works
-LightAPI leverages:
-- SQLAlchemy for defining database models and interacting with databases.
-- aiohttp for handling async HTTP requests and routing.
-
-## Using LightAPI
-Import the LightApi class, define your models using SQLAlchemy, and create an instance of LightApi to register your models. The framework automatically creates RESTful endpoints for each model.
-
-## Example Usage: Model
-```python
-from sqlalchemy import Column, Integer, String, Boolean
-from lightapi import LightApi
-from lightapi.database import Base
-
-class Person(Base):
-    name = Column(String)
-    email = Column(String, unique=True)
-    email_verified = Column(Boolean, default=False)
-
-if __name__ == '__main__':
-    app = LightApi()
-    app.register({'/person': Person})
-    app.run()
-```
-
-## Example Usage: Custom Endpoints
-Custom Endpoints with RestEndpoint
-LightAPI is not limited to auto-generated CRUD endpoints. You can also create custom endpoints by subclassing RestEndpoint for complete control.
-
-Example: Custom User Endpoint
-```python
-from lightapi import LightApi
-from lightapi.rest import RestEndpoint
-
-class CustomEndpoint(RestEndpoint):
-    http_method_names = ['GET', 'POST']  # Only allow GET and POST requests
-
-    def get(self, request):
-        return {'message': 'GET request to users'}
-
-    def post(self, request):
-        return {'message': 'POST request with data'}
-
-if __name__ == '__main__':
-
-    app = LightApi()
-    app.register({
-        '/custom': CustomEndpoint
-    })
-    app.run()
-```
-
-## API Endpoints
-LightAPI automatically generates the following endpoints for each model:
-
-| HTTP Method | Endpoint Example          | Handler Class          | Description                                              |
-|-------------|---------------------------|------------------------|----------------------------------------------------------|
-| POST        | /person/                  | CreateHandler          | Creates a new item in the `person` model                 |
-| GET         | /person/                  | RetrieveAllHandler     | Retrieves all items from the `person` model              |
-| GET         | /person/{id}              | ReadHandler            | Retrieves a specific item by ID from the `person` model  |
-| PUT         | /person/{id}              | UpdateHandler          | Updates an existing item by ID in the `person` model     |
-| PATCH       | /person/{id}              | PatchHandler           | Partially updates an existing item by ID in the `person` model |
-| DELETE      | /person/{id}              | DeleteHandler          | Deletes an existing item by ID in the `person` model     |
-| OPTIONS     | /person/                  | OptionsHandler         | Returns allowed HTTP methods and headers for the `person` model |
-| HEAD        | /person/                  | HeadHandler            | Returns response headers only for the `person` model     |
-
-
-## Databases Compatibility
-LightAPI supports the following databases:
-- SQLite
-- PostgreSQL
-- MySQL
-- MariaDB
-- Oracle
-- MS-SQL
-
-## Connecting to a Database
-Set the DATABASE_URL environment variable to connect to your database:
-```python
-import os
-os.environ['DATABASE_URL'] = "postgresql://user:password@postgresserver/db"
-```
-if no DATABASE_URL is provided, LightAPI defaults to using an in-memory SQLite database.
-
-## Why LightAPI
-LightAPI is designed to streamline API development by focusing on simplicity and speed. It’s ideal for prototyping, small projects, or situations where development speed is essential.
+- **📝 YAML Configuration**: Define your entire API structure through YAML files
+- **🚀 Async First**: Built on aiohttp for high-performance async request handling
+- **🔒 Authentication**: Built-in JWT authentication with customizable token management
+- **💾 Caching**: Redis-based caching system with flexible invalidation
+- **🔍 Request Filtering**: Advanced parameter filtering with multiple operators
+- **📊 Pagination**: Automatic result pagination with customizable limits
+- **🌍 CORS Support**: Configurable CORS middleware
+- **📝 Logging**: Detailed request/response logging with masking for sensitive data
+- **✨ Clean API**: Minimal boilerplate with maximum flexibility
 
 ## Installation
-### Install LightAPI via pip:
+
 ```bash
-pip install LightApi
+pip install lightapi
 ```
 
-### PyPI Page
-LightApi on PyPI: https://pypi.org/project/LightApi/
+## Quick Start
+
+### Using YAML Configuration
+
+1. Create a `config.yaml` file:
+
+```yaml
+api:
+  name: "My Company API"
+  environment: "dev"
+  database: "${DATABASE_URL}"
+
+endpoints:
+  users:
+    access: "custom"
+    operations: ["GET", "POST"]
+    filters: ["name", "email"]
+    auth: true
+    cache:
+      enabled: true
+      methods: ["GET"]
+
+middleware:
+  - name: "cors"
+    enabled: true
+    settings:
+      origins: ["*"]
+      methods: ["GET", "POST"]
+```
+
+2. Start your API:
+
+```python
+from lightapi import LightApi
+
+api = LightApi.from_yaml('config.yaml')
+api.run()
+```
+
+### Using Python Code
+
+```python
+from lightapi import LightApi, RestEndpoint
+from lightapi.auth import JWTAuthentication
+
+class UserEndpoint(RestEndpoint):
+    class Configuration:
+        authentication_class = JWTAuthentication
+        http_method_names = ['GET', 'POST']
+        caching_method_names = ['GET']
+    
+    async def get(self, request):
+        return {'message': 'Hello, World!'}
+
+api = LightApi()
+api.register({'/users': UserEndpoint})
+api.run()
+```
+
+## Configuration Guide
+
+### Full YAML Configuration Example
+
+```yaml
+# Basic Information
+api:
+  name: "My Company API"
+  environment: "dev"
+  database: "${DATABASE_URL}"
+
+# API Endpoints Configuration
+endpoints:
+  company:
+    access: "custom"
+    operations: ["GET", "POST"]
+    filters: ["name", "email", "website"]
+    headers:
+      add:
+        X-New-Header: "my new header value"
+
+  custom_endpoint:
+    access: "custom"
+    operations: ["GET", "POST"]
+    auth: true
+    cache:
+      enabled: true
+      methods: ["GET"]
+    pagination:
+      limit: 100
+      sort: true
+
+# Authentication Configuration
+auth:
+  jwt:
+    enabled: true
+    secret: "${JWT_SECRET}"
+    algorithm: "HS256"
+    expire_hours: 24
+    exclude_paths: ["/health", "/docs"]
+
+# Cache Configuration
+cache:
+  default:
+    enabled: false
+    type: "redis"
+    url: "${REDIS_URL}"
+    ttl: 300
+    methods: ["GET"]
+```
+
+### Configuration Sections
+
+#### 1. Endpoints Configuration
+```yaml
+endpoints:
+  users:
+    access: "custom"
+    operations: ["GET", "POST"]
+    filters: ["name", "email"]
+    auth: true
+    cache:
+      enabled: true
+      methods: ["GET"]
+```
+
+#### 2. Middleware Configuration
+```yaml
+middleware:
+  - name: "cors"
+    enabled: true
+    settings:
+      origins: ["*"]
+      methods: ["GET", "POST"]
+      headers: ["Authorization"]
+
+  - name: "logging"
+    enabled: true
+    settings:
+      request_body: true
+      response_body: true
+```
+
+#### 3. Authentication Configuration
+```yaml
+auth:
+  jwt:
+    enabled: true
+    secret: "${JWT_SECRET}"
+    algorithm: "HS256"
+    expire_hours: 24
+```
+
+## Environment Variables
+
+LightAPI supports environment variable substitution in YAML configs:
+
+```yaml
+api:
+  database: "${DATABASE_URL}"
+auth:
+  jwt:
+    secret: "${JWT_SECRET}"
+cache:
+  default:
+    url: "${REDIS_URL}"
+```
+
+Set your environment variables:
+```bash
+export DATABASE_URL="postgresql://user:pass@localhost:5432/db"
+export JWT_SECRET="your-secret-key"
+export REDIS_URL="redis://localhost:6379"
+```
+
+## Advanced Usage
+
+### Custom Endpoint with YAML Config
+
+```python
+from lightapi import RestEndpoint
+
+class CustomEndpoint(RestEndpoint):
+    async def get(self, request):
+        return {'data': 'custom response'}
+
+# config.yaml
+endpoints:
+  custom:
+    class: "app.endpoints.CustomEndpoint"
+    auth: true
+    cache:
+      enabled: true
+```
+
+### Response Formatting
+
+Configure global response formatting:
+
+```yaml
+responses:
+  envelope: true
+  format:
+    success:
+      data: null
+      message: "Success"
+      status: 200
+    error:
+      error: true
+      message: null
+      status: null
+```
+
+Results in:
+```json
+{
+    "data": { ... },
+    "message": "Success",
+    "status": 200
+}
+```
+
+## Best Practices
+
+1. **Environment Configuration**
+   - Use environment variables for sensitive data
+   - Create separate YAML files for different environments
+
+2. **YAML Organization**
+   - Split large YAML files into logical sections
+   - Use comments to document configuration choices
+
+3. **Configuration Precedence**
+   - Code-level configuration overrides YAML configuration
+   - Environment variables override both
+
+## Error Handling
+
+LightAPI provides consistent error responses based on your YAML configuration:
+
+```yaml
+responses:
+  error:
+    error: true
+    message: "An error occurred"
+    status: 400
+```
 
 ## Contributing
-Contributions are welcome! Fork the repository, submit a pull request, or open an issue for bugs or feature suggestions. The project’s philosophy emphasizes simplicity, so contributions should aim to enhance functionality while keeping the API minimal and intuitive.
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
 
 ## License
-LightAPI is released under the MIT License. See the LICENSE file for details.
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Contact
-For questions or feedback, reach out to Henrique Lobato at iklobato1@gmail.com
 
+- Author: Henrique Lobato
+- Email: iklobato1@gmail.com
+- GitHub: [https://github.com/yourusername/lightapi](https://github.com/yourusername/lightapi)
