@@ -1,282 +1,148 @@
 # LightAPI
 
-A lightweight, high-performance async API framework for Python with built-in middleware, authentication, caching, and filtering capabilities. Configure your API through code or YAML configuration files.
+## Overview
+LightAPI is a lightweight framework for building RESTful APIs using Python's native libraries. Designed for simplicity and minimalism, it provides essential tools for API development while allowing gradual adoption of features like JWT authentication and database integration.
 
 ## Features
+- **Native Core**: Built on Python's `http.server` with zero dependencies for basic endpoints
+- **Optional Extensions**:
+  - JWT Authentication (requires `pyjwt`)
+  - SQLAlchemy ORM integration (requires `sqlalchemy`)
+- **Threaded Server**: Handle concurrent requests with `ThreadingHTTPServer`
+- **Middleware Pipeline**: Customize request/response processing
+- **Validation System**: Clean data validation through validator classes
+- **Flexible Routing**: Manual endpoint configuration with explicit control
 
-- **📝 YAML Configuration**: Define your entire API structure through YAML files
-- **🚀 Async First**: Built on aiohttp for high-performance async request handling
-- **🔒 Authentication**: Built-in JWT authentication with customizable token management
-- **💾 Caching**: Redis-based caching system with flexible invalidation
-- **🔍 Request Filtering**: Advanced parameter filtering with multiple operators
-- **📊 Pagination**: Automatic result pagination with customizable limits
-- **🌍 CORS Support**: Configurable CORS middleware
-- **📝 Logging**: Detailed request/response logging with masking for sensitive data
-- **✨ Clean API**: Minimal boilerplate with maximum flexibility
+## Core Principles
+1. **Minimal Base**: Start with pure Python, add only what you need
+2. **Explicit Over Magic**: Clear code flow without hidden behaviors
+3. **Gradual Complexity**: Scale features as your project grows
 
 ## Installation
-
 ```bash
 pip install lightapi
 ```
 
-## Quick Start
-
-### Using YAML Configuration
-
-1. Create a `config.yaml` file:
-
-```yaml
-api:
-  name: "My Company API"
-  environment: "dev"
-  database: "${DATABASE_URL}"
-
-endpoints:
-  users:
-    access: "custom"
-    operations: ["GET", "POST"]
-    filters: ["name", "email"]
-    auth: true
-    cache:
-      enabled: true
-      methods: ["GET"]
-
-middleware:
-  - name: "cors"
-    enabled: true
-    settings:
-      origins: ["*"]
-      methods: ["GET", "POST"]
-```
-
-2. Start your API:
-
-```python
-from lightapi import LightApi
-
-api = LightApi.from_yaml('config.yaml')
-api.run()
-```
-
-### Using Python Code
-
+## Basic Usage
+### Simple Endpoint
 ```python
 from lightapi import LightApi, RestEndpoint
-from lightapi.auth import JWTAuthentication
 
-class UserEndpoint(RestEndpoint):
-    class Configuration:
-        authentication_class = JWTAuthentication
-        http_method_names = ['GET', 'POST']
-        caching_method_names = ['GET']
-    
-    async def get(self, request):
-        return {'message': 'Hello, World!'}
+class HealthCheck(RestEndpoint):
+    def get(self, request):
+        return {'status': 'healthy'}
 
-api = LightApi()
-api.register({'/users': UserEndpoint})
-api.run()
+app = LightApi()
+app.register({'/health': HealthCheck})
+app.run(port=8080)
 ```
 
-## Configuration Guide
-
-### Full YAML Configuration Example
-
-```yaml
-# Basic Information
-api:
-  name: "My Company API"
-  environment: "dev"
-  database: "${DATABASE_URL}"
-
-# API Endpoints Configuration
-endpoints:
-  company:
-    access: "custom"
-    operations: ["GET", "POST"]
-    filters: ["name", "email", "website"]
-    headers:
-      add:
-        X-New-Header: "my new header value"
-
-  custom_endpoint:
-    access: "custom"
-    operations: ["GET", "POST"]
-    auth: true
-    cache:
-      enabled: true
-      methods: ["GET"]
-    pagination:
-      limit: 100
-      sort: true
-
-# Authentication Configuration
-auth:
-  jwt:
-    enabled: true
-    secret: "${JWT_SECRET}"
-    algorithm: "HS256"
-    expire_hours: 24
-    exclude_paths: ["/health", "/docs"]
-
-# Cache Configuration
-cache:
-  default:
-    enabled: false
-    type: "redis"
-    url: "${REDIS_URL}"
-    ttl: 300
-    methods: ["GET"]
-```
-
-### Configuration Sections
-
-#### 1. Endpoints Configuration
-```yaml
-endpoints:
-  users:
-    access: "custom"
-    operations: ["GET", "POST"]
-    filters: ["name", "email"]
-    auth: true
-    cache:
-      enabled: true
-      methods: ["GET"]
-```
-
-#### 2. Middleware Configuration
-```yaml
-middleware:
-  - name: "cors"
-    enabled: true
-    settings:
-      origins: ["*"]
-      methods: ["GET", "POST"]
-      headers: ["Authorization"]
-
-  - name: "logging"
-    enabled: true
-    settings:
-      request_body: true
-      response_body: true
-```
-
-#### 3. Authentication Configuration
-```yaml
-auth:
-  jwt:
-    enabled: true
-    secret: "${JWT_SECRET}"
-    algorithm: "HS256"
-    expire_hours: 24
-```
-
-## Environment Variables
-
-LightAPI supports environment variable substitution in YAML configs:
-
-```yaml
-api:
-  database: "${DATABASE_URL}"
-auth:
-  jwt:
-    secret: "${JWT_SECRET}"
-cache:
-  default:
-    url: "${REDIS_URL}"
-```
-
-Set your environment variables:
-```bash
-export DATABASE_URL="postgresql://user:pass@localhost:5432/db"
-export JWT_SECRET="your-secret-key"
-export REDIS_URL="redis://localhost:6379"
-```
-
-## Advanced Usage
-
-### Custom Endpoint with YAML Config
-
+## Advanced Features
+### Database Integration
 ```python
-from lightapi import RestEndpoint
+from lightapi import LightApi, RestEndpoint, ModelEndpoint
+from sqlalchemy import Column, Integer, String
 
-class CustomEndpoint(RestEndpoint):
-    async def get(self, request):
-        return {'data': 'custom response'}
+# Define model
+class Product(ModelEndpoint.Base):
+    __tablename__ = 'products'
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    price = Column(Integer)
 
-# config.yaml
-endpoints:
-  custom:
-    class: "app.endpoints.CustomEndpoint"
-    auth: true
-    cache:
-      enabled: true
+# Create endpoint with CRUD operations
+class ProductEndpoint(RestEndpoint, ModelEndpoint):
+    model = Product
+
+    def get(self, request):
+        products = self.get_queryset(request).all()
+        return {'data': [{'id': p.id, 'name': p.name} for p in products]}
+
+    def post(self, request):
+        new_product = Product(name=request.data['name'], price=request.data['price'])
+        request.db.add(new_product)
+        request.db.commit()
+        return {'id': new_product.id}, 201
+
+# Configure database
+import os
+os.environ['DATABASE_URL'] = "sqlite:///products.db"
+
+if __name__ == '__main__':
+    from lightapi.db import database
+    database.create_all()
+    
+    app = LightApi()
+    app.register({'/products': ProductEndpoint})
+    app.run()
 ```
 
-### Response Formatting
+### JWT Authentication
+```python
+from lightapi import LightApi, RestEndpoint, JWTAuthentication
 
-Configure global response formatting:
+class SecureEndpoint(RestEndpoint):
+    authentication_class = JWTAuthentication
 
-```yaml
-responses:
-  envelope: true
-  format:
-    success:
-      data: null
-      message: "Success"
-      status: 200
-    error:
-      error: true
-      message: null
-      status: null
+    def get(self, request):
+        return {'user': request.user}  # Authenticated user from JWT
+
+app = LightApi()
+app.register({'/secure': SecureEndpoint})
+app.run()
 ```
 
-Results in:
-```json
-{
-    "data": { ... },
-    "message": "Success",
-    "status": 200
-}
+### Custom Middleware
+```python
+from lightapi import LightApi, Middleware, RestEndpoint
+import time
+
+class TimingMiddleware(Middleware):
+    def process(self, request, response):
+        response.headers['X-Processing-Time'] = f"{time.process_time()}s"
+        return response
+
+class StatsEndpoint(RestEndpoint):
+    def get(self, request):
+        return {'requests_handled': 1000}
+
+app = LightApi()
+app.add_middleware([TimingMiddleware])
+app.register({'/stats': StatsEndpoint})
+app.run()
 ```
 
-## Best Practices
+## Database Support
+LightAPI's SQLAlchemy integration supports all major databases:
+- SQLite
+- PostgreSQL
+- MySQL
+- MariaDB
+- Oracle
+- Microsoft SQL Server
 
-1. **Environment Configuration**
-   - Use environment variables for sensitive data
-   - Create separate YAML files for different environments
-
-2. **YAML Organization**
-   - Split large YAML files into logical sections
-   - Use comments to document configuration choices
-
-3. **Configuration Precedence**
-   - Code-level configuration overrides YAML configuration
-   - Environment variables override both
-
-## Error Handling
-
-LightAPI provides consistent error responses based on your YAML configuration:
-
-```yaml
-responses:
-  error:
-    error: true
-    message: "An error occurred"
-    status: 400
+Configure using standard SQLAlchemy connection strings:
+```python
+import os
+os.environ['DATABASE_URL'] = "postgresql://user:password@localhost/mydb"
 ```
 
-## Contributing
+## Development Philosophy
+LightAPI follows three core principles:
+1. **Native First**: Use Python's built-in capabilities whenever possible
+2. **Explicit Over Implicit**: Avoid magic behavior - code should show clear logic
+3. **Modular Growth**: Add features through composition, not inheritance
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+## Contribution Guidelines
+1. Maintain 100% test coverage
+2. Keep dependencies minimal
+3. Preserve the native-first approach
+4. Document all new features clearly
 
 ## License
+MIT License - See [LICENSE](LICENSE) for details
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Contact
-
-- Author: Henrique Lobato
-- Email: iklobato1@gmail.com
-- GitHub: [https://github.com/yourusername/lightapi](https://github.com/yourusername/lightapi)
+## Resources
+- [PyPI Package](https://pypi.org/project/lightapi/)
+- [Documentation](https://lightapi.readthedocs.io)
+- [Issue Tracker](https://github.com/yourusername/lightapi/issues)

@@ -1,41 +1,55 @@
-import codecs
-
 from setuptools import setup, find_packages
+from pathlib import Path
 
-with codecs.open('README.md', 'r', 'utf-8') as file:
-    long_description = file.read()
+readme_path = Path(__file__).parent / 'README.md'
+long_description = readme_path.read_text(encoding='utf-8')
 
 setup(
-    name='LightApi',
+    name='lightapi',
     version='0.1.0',
-    description='A lightweight framework for building API endpoints using Python\'s native libraries.',
+    description='Lightweight API framework with native core and optional extensions',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    keywords=['api', 'rest', 'restful', 'endpoint', 'lightweight', 'framework'],
-    author='iklobato',
-    author_email='iklobato1@gmail.com',
-    url='https://github.com/henriqueblobato/LightApi',
-    packages=find_packages(),
-    install_requires=[
-        'SQLAlchemy==2.0.30',
-        'aiohttp==3.9.5',
+    keywords=[
+        'rest',
+        'api',
+        'lightweight',
+        'minimal',
+        'jwt',
+        'sqlalchemy',
+        'middleware',
     ],
+    author='Henrique Lobato',
+    author_email='iklobato1@gmail.com',
+    url='https://github.com/iklobato/LightApi',
+    packages=find_packages(),
+    install_requires=['pyjwt>=2.0.0', 'sqlalchemy>=1.4.0'],
     extras_require={
-        'test': ['pytest'],
+        'test': ['pytest>=7.0.0'],
         'docs': [
             'mkdocs-material',
             'mkdocstrings[python]',
             'mkdocs-glightbox',
-            'mkdocs-awesome-pages-plugin',
-            'mkdocs-git-committers-plugin-2',
-            'mkdocs-git-revision-date-localized-plugin',
-            'mkdocs-git-authors-plugin',
-        ]
+        ],
     },
     classifiers=[
-        'Programming Language :: Python :: 3',
+        'Development Status :: 4 - Beta',
+        'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',
-        'Operating System :: OS Independent',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Topic :: Internet :: WWW/HTTP :: HTTP Servers',
+        'Topic :: Software Development :: Libraries :: Application Frameworks',
     ],
-    python_requires='>=3.11',
+    python_requires='>=3.7',
+    license='MIT',
+    project_urls={
+        'Documentation': 'https://iklobato.github.io/LightApi',
+        'Source': 'https://github.com/iklobato/LightApi',
+        'Tracker': 'https://github.com/iklobato/LightApi/issues',
+    },
 )
