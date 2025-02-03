@@ -42,7 +42,6 @@ class RestEndpoint:
 
 
 class ModelEndpoint:
-
     model = None
 
     def get_queryset(self, request):

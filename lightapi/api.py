@@ -6,7 +6,6 @@ from lightapi.db import database
 from lightapi.rest import Response
 
 
-
 class LightApi:
     def __init__(self):
         self.endpoints = {}
@@ -22,7 +21,6 @@ class LightApi:
     def add_middleware(self, middleware_classes):
         self.middleware.extend(middleware_classes)
 
-    
     def run(self, host='localhost', port=8080):
         server_address = (host, port)
 
@@ -72,7 +70,7 @@ class LightApi:
                     'headers': dict(self.headers),
                     'data': None,
                     'user': None,
-                    'db': db_session  
+                    'db': db_session,
                 }
 
                 try:
@@ -112,9 +110,7 @@ class LightApi:
                 self.end_headers()
                 self.wfile.write(json.dumps(response.data).encode('utf-8'))
 
-
         server = ThreadingHTTPServer(server_address, RequestHandler)
         server.lightapi = self
         print(f"LightAPI running on http://{host}:{port}")
         server.serve_forever()
-

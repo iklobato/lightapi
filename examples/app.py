@@ -68,7 +68,7 @@ class ProductEndpoint(RestEndpoint):
             'algorithm': 'HS256',
             'token_prefix': 'Bearer',
             'exclude_paths': ['/health', '/metrics'],
-            'token_expiry_hours': 24
+            'token_expiry_hours': 24,
         }
         validator_class = None
         filter_class = None
@@ -78,7 +78,6 @@ class ProductEndpoint(RestEndpoint):
 
     async def get(self, request):
         try:
-
             filters = {
                 'is_available': request.query.get('available', True),
                 'price__gte': request.query.get('min_price'),
@@ -105,7 +104,6 @@ class ProductEndpoint(RestEndpoint):
 
     async def post(self, request):
         try:
-
             data = await self.validator.validate(request.data)
 
             product = Product(**data)
@@ -145,7 +143,6 @@ class ProductEndpoint(RestEndpoint):
 
 
 class LoggingMiddleware(Middleware):
-
     async def process(self, request, handler):
         print(f"[{request.method}] {request.path} - Start")
         try:
@@ -158,7 +155,6 @@ class LoggingMiddleware(Middleware):
 
 
 class MetricsMiddleware(Middleware):
-
     async def process(self, request, handler):
         import time
 
@@ -173,12 +169,8 @@ class MetricsMiddleware(Middleware):
 
 
 if __name__ == "__main__":
-
     api = ConfigurableLightApi.from_config('api.yaml')
-    api.register({
-        '/products': ProductEndpoint,
-        '/products/{id}': ProductEndpoint
-    })
+    api.register({'/products': ProductEndpoint, '/products/{id}': ProductEndpoint})
     api.add_middleware([LoggingMiddleware, MetricsMiddleware])
 
     api.run(host='0.0.0.0', port=8000)

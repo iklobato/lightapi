@@ -11,7 +11,7 @@ from lightapi import (
     RedisCache,
     ParameterFilter,
     Validator,
-    RestEndpoint
+    RestEndpoint,
 )
 from starlette.middleware.cors import CORSMiddleware
 
