@@ -1,5 +1,4 @@
-# lightapi/__init__.py
-from .rest import RestEndpoint, ModelEndpoint, Response, Validator  # Add this line
+from .rest import RestEndpoint, ModelEndpoint, Response, Validator  
 from .api import LightApi
 from .auth import JWTAuthentication
 from .middleware import (
@@ -17,7 +16,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     'LightApi',
-    'RestEndpoint',  # Make sure this is included
+    'RestEndpoint',  
     'Response',
     'Validator',
     'JWTAuthentication',

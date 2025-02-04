@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool, StaticPool
@@ -52,6 +52,15 @@ class Database:
     def create_session(self):
         return self.session_factory()
 
+    def has_table(self, table_name):
+        """Check if a table exists in the database."""
+        return inspect(self.engine).has_table(table_name)
+
+    def create_tables(self):
+        """Create all tables defined in models."""
+        self.Base.metadata.create_all(self.engine)
+
 
 database = Database()
 Base = database.Base
+

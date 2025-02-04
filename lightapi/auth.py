@@ -9,9 +9,10 @@ class JWTAuthentication:
         self.algorithm = os.getenv('JWT_ALGORITHM', 'HS256')
 
     @classmethod
-    def generate_token(cls, payload):
+    def generate_token(cls, payload, expiration=None):
         instance = cls()
-        payload['exp'] = time.time() + 3600  # 1 hour expiration
+        if 'exp' not in payload:
+            payload['exp'] = expiration or time.time() + 3600  
         return jwt.encode(payload, instance.secret, algorithm=instance.algorithm)
 
     @classmethod
@@ -19,5 +20,8 @@ class JWTAuthentication:
         instance = cls()
         try:
             return jwt.decode(token, instance.secret, algorithms=[instance.algorithm])
+        except jwt.ExpiredSignatureError:
+            return None
         except jwt.PyJWTError:
             return None
+

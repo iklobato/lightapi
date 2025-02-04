@@ -81,7 +81,7 @@ class LightApi:
                         response_data, status_code = handler_result
                     else:
                         response_data = handler_result
-                        status_code = 200  # Default status code
+                        status_code = 200  
 
                     request['db'].commit()
 

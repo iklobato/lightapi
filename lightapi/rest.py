@@ -2,16 +2,20 @@ from lightapi.exceptions import ValidationError
 
 
 class RestEndpoint:
-    http_method_names = ['get', 'post', 'put', 'delete', 'patch']  # Lowercase methods
+    http_method_names = ['get', 'post', 'put', 'delete', 'patch']  
     authentication_class = None
     validator_class = None
 
     def handle_request(self, method, request):
         method = method.lower()
+        
         if method not in self.http_method_names:
             return {'error': 'Method not allowed'}, 405
+            
+        handler = getattr(self, method, None)
+        if not handler:
+            return {'error': 'Method not allowed'}, 405  
 
-        # Authentication
         if self.authentication_class:
             auth_header = request.get('headers', {}).get('Authorization', '')
             if not auth_header.startswith('Bearer '):
@@ -22,7 +26,6 @@ class RestEndpoint:
                 return {'error': 'Invalid token'}, 401
             request['user'] = user
 
-        # Validation
         if self.validator_class and request.get('body'):
             validator = self.validator_class()
             try:
@@ -30,14 +33,9 @@ class RestEndpoint:
             except ValidationError as e:
                 return {'error': str(e)}, 400
 
-        # Call handler method
-        handler = getattr(self, method, None)
-        if not handler:
-            return {'error': 'Method not implemented'}, 501
-
         result = handler(request)
         if not isinstance(result, tuple):
-            return result, 200  # Add default status code
+            return result, 200  
         return result
 
 
@@ -71,3 +69,11 @@ class Validator:
             else:
                 validated[key] = value
         return validated
+
+
+class HealthCheckEndpoint(RestEndpoint):
+    http_method_names = ['get']  
+    
+    def get(self, request):
+        return {'status': 'healthy'}
+
