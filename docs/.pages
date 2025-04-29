@@ -1,7 +1,18 @@
 title: LightAPI
 
 nav:
-    - Home:
-        - index.md
-    - getting-started
-    - reference
+    - Home: index.md
+    - Getting Started:
+        - getting-started/.pages
+    - Tutorial:
+        - tutorial/.pages
+    - Advanced:
+        - advanced/.pages
+    - Technical Reference:
+        - technical-reference/.pages
+    - Deployment:
+        - deployment/.pages
+    - Examples:
+        - examples/.pages
+    - API Reference:
+        - api-reference/.pages

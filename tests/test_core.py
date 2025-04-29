@@ -1,0 +1,63 @@
+import pytest
+from unittest.mock import patch, MagicMock
+from starlette.routing import Route
+from lightapi.core import LightApi, Response, Middleware
+from lightapi.rest import RestEndpoint
+from sqlalchemy import Column, Integer, String
+
+
+class TestMiddleware(Middleware):
+    def process(self, request, response):
+        if response:
+            response.headers['X-Test-Header'] = 'test-value'
+        return response
+
+
+class TestModel(RestEndpoint):
+    __tablename__ = 'test_models'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+
+    class Configuration:
+        http_method_names = ['GET', 'POST']
+
+
+class TestLightApi:
+    def test_init(self):
+        app = LightApi(database_url="sqlite:///:memory:")
+        assert app.routes == []
+        assert app.middleware == []
+        assert app.enable_swagger is True
+
+    def test_register_endpoint(self):
+        app = LightApi(database_url="sqlite:///:memory:")
+        app.register({'/test': TestModel})
+        assert len(app.routes) == 2  # 2 routes: one for the endpoint, one for docs
+
+        # Find the route for /test
+        test_route = None
+        for route in app.routes:
+            if isinstance(route, Route) and route.path == '/test':
+                test_route = route
+                break
+
+        assert test_route is not None
+        assert test_route.methods == {'GET', 'POST'}
+
+    def test_add_middleware(self):
+        app = LightApi(database_url="sqlite:///:memory:")
+        app.add_middleware([TestMiddleware])
+        assert app.middleware == [TestMiddleware]
+
+    @patch('uvicorn.run')
+    def test_run(self, mock_run):
+        app = LightApi(database_url="sqlite:///:memory:")
+        app.run(host="localhost", port=8000, debug=True, reload=True)
+        mock_run.assert_called_once()
+
+    def test_response(self):
+        response = Response({"test": "data"}, status_code=200, content_type="application/json")
+        assert response.status_code == 200
+        assert response.media_type == "application/json"
+        

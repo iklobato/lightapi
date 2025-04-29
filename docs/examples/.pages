@@ -1,0 +1,7 @@
+title: Examples
+
+nav:
+  - Basic CRUD Examples: basic-crud.md
+  - Authentication Examples: authentication.md
+  - Caching Examples: caching.md
+  - Custom Endpoint Examples: custom-endpoints.md
