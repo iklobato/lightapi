@@ -80,7 +80,7 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
-          import:
+          inventories:
             - https://docs.python-requests.org/en/master/objects.inv
           options:
             annotations_path: brief

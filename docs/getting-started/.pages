@@ -1,7 +1,6 @@
 title: Getting Started
-
-nav:
-    - Installation: installation.md
-    - Quickstart: quickstart.md
-    - First Steps: first-steps.md
-    - Configuration: configuration.md
+arrange:
+  - index.md
+  - installation.md
+  - quickstart.md
+  - configuration.md
