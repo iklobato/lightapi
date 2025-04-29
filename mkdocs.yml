@@ -51,9 +51,9 @@ plugins:
   - git-authors
   - git-revision-date-localized:
       enable_creation_date: true
-  - git-committers:
-      repository: iklobato/LightAPI
-      branch: main
+  # - git-committers:
+  #     repository: iklobato/LightAPI
+  #     branch: main
   - search:
         lang: it
   - awesome-pages
