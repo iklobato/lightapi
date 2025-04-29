@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String
 from lightapi.core import LightApi, Response
 from lightapi.rest import RestEndpoint, Validator
+from lightapi.models import Base, register_model_class
 
 # Define a custom validator with field-specific validation methods
 class ProductValidator(Validator):
@@ -15,7 +16,11 @@ class ProductValidator(Validator):
             if price <= 0:
                 raise ValueError("Price must be greater than zero")
             return price
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as e:
+            # If it's our own ValueError, re-raise it 
+            if isinstance(e, ValueError) and "must be greater than zero" in str(e):
+                raise e
+            # Otherwise, raise the generic message
             raise ValueError("Price must be a valid number")
     
     def validate_sku(self, value):
@@ -24,6 +29,7 @@ class ProductValidator(Validator):
         return value.upper()
 
 # Define a model that uses the validator
+@register_model_class
 class Product(RestEndpoint):
     __tablename__ = 'products'
     

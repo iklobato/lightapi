@@ -4,7 +4,7 @@ from lightapi.core import LightApi
 from lightapi.rest import RestEndpoint
 from lightapi.filters import ParameterFilter
 from lightapi.pagination import Paginator
-from lightapi.models import Base
+from lightapi.models import Base, register_model_class
 
 # Custom filter implementation
 class ProductFilter(ParameterFilter):
@@ -52,8 +52,77 @@ class ProductPaginator(Paginator):
     
     # Valid sort fields
     valid_sort_fields = ['name', 'price', 'category']
+    
+    def paginate(self, queryset):
+        """Paginate the results from the queryset.
+        
+        Args:
+            queryset: The SQLAlchemy query to paginate.
+            
+        Returns:
+            A page object with pagination metadata and results.
+        """
+        # Get pagination parameters
+        limit = self.limit
+        if hasattr(self, 'request'):
+            params = getattr(self.request, 'query_params', {})
+            limit_param = params.get('limit')
+            if limit_param and limit_param.isdigit():
+                limit = min(int(limit_param), self.max_limit)
+            
+            page_param = params.get('page')
+            if page_param and page_param.isdigit():
+                page = int(page_param)
+            else:
+                page = 1
+                
+            # Apply sorting if enabled
+            if self.sort:
+                sort_param = params.get('sort', '')
+                if sort_param:
+                    # Check if it's descending (prefixed with '-')
+                    descending = sort_param.startswith('-')
+                    if descending:
+                        sort_field = sort_param[1:]
+                    else:
+                        sort_field = sort_param
+                        
+                    # Validate the sort field
+                    if sort_field in self.valid_sort_fields:
+                        column = getattr(queryset.column_descriptions[0]['type'], sort_field)
+                        if descending:
+                            queryset = queryset.order_by(column.desc())
+                        else:
+                            queryset = queryset.order_by(column.asc())
+        else:
+            page = 1
+            
+        # Calculate offset
+        offset = (page - 1) * limit
+        
+        # Get total count
+        total = queryset.count()
+        
+        # Get paginated results
+        items = queryset.offset(offset).limit(limit).all()
+        
+        # Create a page object
+        class Page:
+            def __init__(self, items, page, limit, total):
+                self.items = items
+                self.page = page
+                self.limit = limit
+                self.total = total
+                self.pages = (total + limit - 1) // limit  # Ceiling division
+                
+                # Calculate next and previous page numbers
+                self.next_page = page + 1 if page < self.pages else None
+                self.prev_page = page - 1 if page > 1 else None
+                
+        return Page(items, page, limit, total)
 
 # Product model with filtering and pagination
+@register_model_class
 class Product(RestEndpoint):
     __tablename__ = 'pagination_products'
     

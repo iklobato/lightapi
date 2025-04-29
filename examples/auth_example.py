@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String
 from lightapi.core import LightApi, Response, Middleware
 from lightapi.rest import RestEndpoint
 from lightapi.auth import JWTAuthentication
+from lightapi.models import Base, register_model_class
 import jwt
 import datetime
 
@@ -76,6 +77,7 @@ class PublicResource(RestEndpoint):
         return {"message": "This is public information"}, 200
 
 # User profile endpoint that requires authentication
+@register_model_class
 class UserProfile(RestEndpoint):
     __tablename__ = 'user_profiles'
     

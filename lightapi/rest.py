@@ -49,7 +49,12 @@ class RestEndpoint:
             **kwargs: Arbitrary keyword arguments.
         """
         super().__init_subclass__(**kwargs)
-        cls.__abstract__ = True
+        
+        # Only mark as abstract if not a SQLAlchemy model class
+        if hasattr(cls, '__tablename__') and cls.__tablename__:
+            cls.__abstract__ = False
+        else:
+            cls.__abstract__ = True
     
     id = None
 
@@ -81,7 +86,7 @@ class RestEndpoint:
         Returns:
             bool: True if the endpoint is a SQLAlchemy model, False otherwise.
         """
-        return isinstance(self, Base)
+        return hasattr(self.__class__, '__tablename__') and self.__class__.__tablename__ is not None
         
     def _get_columns(self):
         """
