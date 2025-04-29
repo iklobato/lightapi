@@ -47,3 +47,27 @@ app.register({"/protected": ProtectedEndpoint})
 
 - If the `Authorization` header is missing or malformed, a 401 Unauthorized response is returned.
 - Invalid or expired tokens also yield a 401 response.
+
+### Customizing JWTAuthentication
+
+If you need to override the default `secret_key`, algorithm, or token expiration, subclass `JWTAuthentication`:
+
+```python
+from lightapi.auth import JWTAuthentication
+
+class CustomAuth(JWTAuthentication):
+    # Use your own secret key
+    secret_key = 'my-super-secret-key'
+    # Change the algorithm (default is HS256)
+    algorithm = 'HS512'
+    # Extend token lifetime (in seconds)
+    expiration = 7200
+```
+
+Then configure your endpoint to use `CustomAuth`:
+
+```python
+class SecureEndpoint(RestEndpoint):
+    class Configuration:
+        authentication_class = CustomAuth
+```

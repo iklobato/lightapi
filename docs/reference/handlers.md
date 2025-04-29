@@ -1,5 +1,0 @@
----
-title: Handlers
----
-
-::: lightapi.handlers
