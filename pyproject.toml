@@ -47,6 +47,9 @@ Issues = "https://github.com/yourusername/lightapi/issues"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
+filterwarnings = [
+    "ignore::pytest.PytestCollectionWarning"
+]
 
 [tool.black]
 line-length = 88

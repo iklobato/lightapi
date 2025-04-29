@@ -1,8 +1,7 @@
 import os
 
 from sqlalchemy import Column, Integer, create_engine
-from sqlalchemy.ext.declarative import as_declarative, declared_attr
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import as_declarative, declared_attr, sessionmaker
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./lightapi.db")
 
