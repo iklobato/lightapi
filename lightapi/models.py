@@ -52,9 +52,13 @@ def register_model_class(cls):
     if issubclass(cls, Base):
         return cls
     
+    # Create a unique class name by adding the module name as a prefix
+    # This prevents conflicts between different classes with the same name
+    unique_name = f"{cls.__module__}.{cls.__name__}"
+    
     # Create a new class that inherits from both Base and the original class
     # Use extend_existing=True to handle multiple model definitions
-    new_cls = type(cls.__name__, (Base, cls), {
+    new_cls = type(unique_name, (Base, cls), {
         '__tablename__': cls.__tablename__,
         '__table_args__': {'extend_existing': True}
     })
