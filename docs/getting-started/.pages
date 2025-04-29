@@ -6,3 +6,10 @@ arrange:
     - quickstart.md
     - configuration.md
     - first-steps.md
+
+nav:
+    - Introduction: introduction.md
+    - Installation: installation.md
+    - Quickstart: quickstart.md
+    - Configuration: configuration.md
+    - First Steps: first-steps.md

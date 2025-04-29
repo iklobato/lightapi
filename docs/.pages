@@ -2,12 +2,9 @@ title: LightAPI
 
 nav:
     - Home: index.md
-    - Getting Started:
-        - getting-started/.pages
-    - Tutorial:
-        - tutorial/.pages
-    - Advanced Topics:
-        - advanced/.pages
+    - Getting Started: getting-started
+    - Tutorial: tutorial
+    - Advanced Topics: advanced
     - API Reference:
         - Core API: api-reference/core.md
         - REST API: api-reference/rest.md
