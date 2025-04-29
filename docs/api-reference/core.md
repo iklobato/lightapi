@@ -114,6 +114,5 @@ if __name__ == '__main__':
 
 ## See Also
 
-- [REST API](rest.md) - Building REST endpoints
-- [Authentication](auth.md) - User authentication
+- [Overview](index.md) - API Reference Overview
 - [Middleware](../advanced/middleware.md) - Custom middleware 
