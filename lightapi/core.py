@@ -10,6 +10,22 @@ from .models import Base, setup_database
 
 
 class LightApi:
+    """
+    Main application class for building REST APIs.
+    
+    LightApi provides functionality for setting up and running a
+    REST API application. It includes features for registering endpoints,
+    applying middleware, generating API documentation, and running the server.
+    
+    Attributes:
+        routes: List of Starlette routes.
+        middleware: List of middleware classes.
+        engine: SQLAlchemy engine.
+        Session: SQLAlchemy session factory.
+        enable_swagger: Whether Swagger documentation is enabled.
+        swagger_generator: SwaggerGenerator instance (if enabled).
+    """
+    
     def __init__(
         self,
         database_url: str = "sqlite:///app.db",
@@ -18,6 +34,16 @@ class LightApi:
         swagger_description: str = "API automatic documentation",
         enable_swagger: bool = True,
     ):
+        """
+        Initialize a new LightApi application.
+        
+        Args:
+            database_url: URL for the database connection.
+            swagger_title: Title for the Swagger documentation.
+            swagger_version: Version for the Swagger documentation.
+            swagger_description: Description for the Swagger documentation.
+            enable_swagger: Whether to enable Swagger documentation.
+        """
         self.routes = []
         self.middleware = []
         self.engine, self.Session = setup_database(database_url)
@@ -31,6 +57,12 @@ class LightApi:
             )
 
     def register(self, endpoints: Dict[str, Type["RestEndpoint"]]):
+        """
+        Register endpoints with the application.
+        
+        Args:
+            endpoints: Dictionary mapping paths to endpoint classes.
+        """
         from .swagger import swagger_ui_route, openapi_json_route
         first = True
         for path, endpoint_class in endpoints.items():
@@ -42,13 +74,13 @@ class LightApi:
             )
             handler = self._create_handler(endpoint_class, methods)
             self.routes.append(Route(path, handler, methods=methods))
-            # Register endpoint in the OpenAPI schema
+            
             if self.enable_swagger:
                 self.swagger_generator.register_endpoint(path, endpoint_class)
-            # Add Swagger UI and JSON routes once for first endpoint
+            
             if self.enable_swagger and first:
                 self.routes.append(Route('/api/docs', swagger_ui_route))
-                # Only include JSON route when using a custom documentation title
+                
                 if self.swagger_generator.title != 'LightAPI Documentation':
                     self.routes.append(Route('/openapi.json', openapi_json_route))
                 first = False
@@ -56,6 +88,16 @@ class LightApi:
     def _create_handler(
         self, endpoint_class: Type["RestEndpoint"], methods: List[str]
     ) -> Callable:
+        """
+        Create a request handler for an endpoint class.
+        
+        Args:
+            endpoint_class: The endpoint class to create a handler for.
+            methods: List of HTTP methods the endpoint supports.
+            
+        Returns:
+            An async function that handles requests to the endpoint.
+        """
         async def handler(request):
             endpoint = endpoint_class()
 
@@ -111,9 +153,24 @@ class LightApi:
         return handler
 
     def add_middleware(self, middleware_classes: List[Type["Middleware"]]):
+        """
+        Add middleware classes to the application.
+        
+        Args:
+            middleware_classes: List of middleware classes to add.
+        """
         self.middleware = middleware_classes
 
     def run(self, host: str = "0.0.0.0", port: int = 8000, debug: bool = False, reload: bool = False):
+        """
+        Run the application server.
+        
+        Args:
+            host: Host address to bind to.
+            port: Port to bind to.
+            debug: Whether to enable debug mode.
+            reload: Whether to enable auto-reload on code changes.
+        """
         app = Starlette(debug=debug, routes=self.routes)
         if self.enable_swagger:
             app.state.swagger_generator = self.swagger_generator
@@ -121,6 +178,13 @@ class LightApi:
 
 
 class Response(JSONResponse):
+    """
+    Custom JSON response class.
+    
+    Extends Starlette's JSONResponse with a simplified constructor
+    and default application/json media type.
+    """
+    
     def __init__(
         self,
         content: Any = None,
@@ -129,6 +193,16 @@ class Response(JSONResponse):
         media_type: str = None,
         content_type: str = None,
     ):
+        """
+        Initialize a new Response.
+        
+        Args:
+            content: The response content.
+            status_code: HTTP status code.
+            headers: HTTP headers.
+            media_type: Response media type.
+            content_type: Response content type (alias for media_type).
+        """
         media_type = content_type or media_type or "application/json"
         super().__init__(
             content=content,
@@ -139,5 +213,26 @@ class Response(JSONResponse):
 
 
 class Middleware:
+    """
+    Base class for middleware components.
+    
+    Middleware can process requests before they reach the endpoint
+    and responses before they are returned to the client.
+    """
+    
     def process(self, request, response):
+        """
+        Process a request or response.
+        
+        This method is called twice during request handling:
+        1. Before the request reaches the endpoint (response is None)
+        2. After the endpoint generates a response
+        
+        Args:
+            request: The HTTP request.
+            response: The HTTP response (None for pre-processing).
+            
+        Returns:
+            The response (possibly modified) or None to continue processing.
+        """
         return response

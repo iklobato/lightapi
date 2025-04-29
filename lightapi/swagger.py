@@ -9,12 +9,35 @@ from .rest import RestEndpoint
 
 
 class SwaggerGenerator:
+    """
+    Generates OpenAPI documentation from LightAPI endpoint classes.
+    
+    This class analyzes RestEndpoint classes to extract information about
+    their schemas, HTTP methods, validation, and other metadata to build
+    a complete OpenAPI specification document.
+    
+    Attributes:
+        title (str): The title of the API documentation.
+        version (str): The API version.
+        description (str): A description of the API.
+        paths (dict): Endpoint paths and their operations.
+        components (dict): Schema definitions and security schemes.
+    """
+
     def __init__(
         self,
         title: str = "LightAPI Documentation",
         version: str = "1.0.0",
         description: str = "API documentation",
     ):
+        """
+        Initialize a new SwaggerGenerator.
+        
+        Args:
+            title: The title of the API documentation.
+            version: The API version.
+            description: A description of the API.
+        """
         self.title = title
         self.version = version
         self.description = description
@@ -31,7 +54,16 @@ class SwaggerGenerator:
         }
 
     def register_endpoint(self, path: str, endpoint_class: Type[RestEndpoint]):
-
+        """
+        Register an endpoint class for OpenAPI documentation.
+        
+        Analyzes the endpoint class to extract HTTP methods, schemas,
+        and other metadata to include in the OpenAPI documentation.
+        
+        Args:
+            path: The URL path where the endpoint is mounted.
+            endpoint_class: The RestEndpoint class to document.
+        """
         methods = (
             endpoint_class.Configuration.http_method_names
             if hasattr(endpoint_class, 'Configuration')
@@ -54,12 +86,22 @@ class SwaggerGenerator:
         self.paths[path] = path_operations
 
     def _generate_schema(self, endpoint_class: Type[RestEndpoint]) -> Dict[str, Any]:
+        """
+        Generate an OpenAPI schema from an endpoint class.
+        
+        Extracts information about the model fields, their types,
+        and validation requirements to create an OpenAPI schema definition.
+        
+        Args:
+            endpoint_class: The RestEndpoint class to analyze.
+            
+        Returns:
+            A dict containing the OpenAPI schema definition.
+        """
         properties = {}
         required = []
 
-        # Safely access columns based on whether this is a SQLAlchemy model
         if hasattr(endpoint_class, '__table__') and endpoint_class.__table__ is not None:
-            # For SQLAlchemy models
             for column in endpoint_class.__table__.columns:
                 column_type = self._map_sql_type_to_openapi(column.type)
                 properties[column.name] = column_type
@@ -67,18 +109,14 @@ class SwaggerGenerator:
                 if not column.nullable and not column.default and not column.server_default:
                     required.append(column.name)
         else:
-            # For non-SQLAlchemy models or before table creation
-            # Just return a basic schema based on attributes we can detect
             for attr_name in dir(endpoint_class):
                 if attr_name.startswith('_') or callable(getattr(endpoint_class, attr_name)):
                     continue
                 
-                # Simple type detection
                 attr = getattr(endpoint_class, attr_name)
                 if isinstance(attr, Column):
                     properties[attr_name] = self._map_sql_type_to_openapi(attr.type)
                     
-                    # Try to detect required fields
                     if hasattr(attr, 'nullable') and not attr.nullable:
                         required.append(attr_name)
 
@@ -94,6 +132,15 @@ class SwaggerGenerator:
         }
 
     def _map_sql_type_to_openapi(self, sql_type) -> Dict[str, Any]:
+        """
+        Map SQLAlchemy column types to OpenAPI data types.
+        
+        Args:
+            sql_type: SQLAlchemy type object.
+            
+        Returns:
+            A dict containing the OpenAPI type definition.
+        """
         type_map = {
             "INTEGER": {"type": "integer"},
             "BIGINT": {"type": "integer", "format": "int64"},
@@ -116,7 +163,17 @@ class SwaggerGenerator:
     def _generate_operation(
         self, endpoint_class: Type[RestEndpoint], method: str, model_name: str
     ) -> Dict[str, Any]:
-
+        """
+        Generate an OpenAPI operation object for an endpoint method.
+        
+        Args:
+            endpoint_class: The RestEndpoint class.
+            method: The HTTP method name (lowercase).
+            model_name: The model name for reference.
+            
+        Returns:
+            A dict containing the OpenAPI operation definition.
+        """
         method_handler = getattr(endpoint_class, method, None)
         description = ""
         if method_handler and method_handler.__doc__:
@@ -159,6 +216,12 @@ class SwaggerGenerator:
         return operation
 
     def generate_openapi_spec(self) -> Dict[str, Any]:
+        """
+        Generate the complete OpenAPI specification document.
+        
+        Returns:
+            A dict containing the full OpenAPI specification.
+        """
         return {
             "openapi": "3.0.0",
             "info": {
@@ -171,6 +234,12 @@ class SwaggerGenerator:
         }
 
     def get_swagger_ui(self) -> HTMLResponse:
+        """
+        Generate the Swagger UI HTML page for interactive API documentation.
+        
+        Returns:
+            An HTMLResponse containing the Swagger UI interface.
+        """
         return HTMLResponse(
             """
             <!DOCTYPE html>
@@ -208,14 +277,38 @@ class SwaggerGenerator:
         )
 
     def get_openapi_json(self) -> JSONResponse:
+        """
+        Generate the OpenAPI specification as a JSON response.
+        
+        Returns:
+            A JSONResponse containing the OpenAPI specification.
+        """
         return JSONResponse(self.generate_openapi_spec())
 
 
 def swagger_ui_route(request):
+    """
+    Handle requests for the Swagger UI page.
+    
+    Args:
+        request: The incoming HTTP request.
+        
+    Returns:
+        The Swagger UI HTML response.
+    """
     generator = request.app.state.swagger_generator
     return generator.get_swagger_ui()
 
 
 def openapi_json_route(request):
+    """
+    Handle requests for the OpenAPI JSON specification.
+    
+    Args:
+        request: The incoming HTTP request.
+        
+    Returns:
+        The OpenAPI specification as JSON.
+    """
     generator = request.app.state.swagger_generator
     return generator.get_openapi_json()

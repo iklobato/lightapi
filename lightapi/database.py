@@ -15,33 +15,36 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 @as_declarative()
 class Base:
     """
-    Custom SQLAlchemy base class that provides automatic `__tablename__` generation
-    and a method to convert model instances to dictionaries.
-
+    Custom SQLAlchemy base class for all models.
+    
+    Provides automatic __tablename__ generation and utility methods
+    for model instances to make working with SQLAlchemy models easier.
+    
     Attributes:
-        id (Column): Primary key column automatically added to all derived models.
-
-    Methods:
-        __tablename__(cls):
-            Automatically generates the table name from the class name, converted to lowercase.
-
-        as_dict(self):
-            Converts the model instance into a dictionary where keys are the column names and values are the corresponding data.
+        __table__: SQLAlchemy table metadata.
+        table: Property that returns the table metadata.
+        __tablename__: Automatically generated based on class name.
     """
 
     __table__ = None
 
     @property
     def table(self):
+        """
+        Get the table metadata for this model.
+        
+        Returns:
+            The SQLAlchemy Table object for this model.
+        """
         return self.__table__
 
     @declared_attr
     def __tablename__(cls):
         """
-        Generates the table name based on the class name.
-
+        Generate the table name based on the class name.
+        
         The table name is derived by converting the class name to lowercase.
-
+        
         Returns:
             str: The generated table name.
         """
@@ -49,10 +52,11 @@ class Base:
 
     def serialize(self) -> dict:
         """
-        Converts the model instance into a dictionary representation.
-
-        Each key in the dictionary corresponds to a column name, and the value is the data stored in that column.
-
+        Convert the model instance into a dictionary representation.
+        
+        Each key in the dictionary corresponds to a column name, and the value
+        is the data stored in that column.
+        
         Returns:
             dict: A dictionary representation of the model instance.
         """

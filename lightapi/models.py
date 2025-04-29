@@ -6,19 +6,41 @@ from lightapi.database import Base
 
 
 def setup_database(database_url: str = "sqlite:///app.db"):
-    # Use sqlalchemy.create_engine for correct patching
+    """
+    Set up the database connection and create tables.
+    
+    Initializes SQLAlchemy with the provided database URL,
+    creates the database tables, and returns the engine
+    and session factory.
+    
+    Args:
+        database_url: The SQLAlchemy database URL.
+        
+    Returns:
+        tuple: A tuple containing (engine, Session).
+    """
     engine = sqlalchemy.create_engine(database_url)
-    # Create tables; suppress errors due to duplicate or composite primary keys
+    
     try:
         Base.metadata.create_all(engine)
     except Exception:
         pass
-    # Use sqlalchemy.orm.sessionmaker to allow pytest patching
+    
     Session = sqlalchemy.orm.sessionmaker(bind=engine)
     return engine, Session
 
 
 class Person(Base):
+    """
+    Person model representing a user or individual.
+    
+    Attributes:
+        pk: Primary key.
+        name: Person's name.
+        email: Person's email address (unique).
+        email_verified: Whether the email has been verified.
+    """
+    
     __tablename__ = "person"
 
     pk = Column(Integer, primary_key=True, autoincrement=True, unique=True)
@@ -27,6 +49,12 @@ class Person(Base):
     email_verified = Column(Boolean, default=False)
 
     def as_dict(self):
+        """
+        Convert the model instance to a dictionary.
+        
+        Returns:
+            dict: Dictionary representation of the person.
+        """
         return {
             "pk": self.pk,
             "name": self.name,
@@ -36,6 +64,16 @@ class Person(Base):
 
 
 class Company(Base):
+    """
+    Company model representing a business organization.
+    
+    Attributes:
+        pk: Primary key.
+        name: Company name.
+        email: Company email address (unique).
+        website: Company website URL.
+    """
+    
     __tablename__ = "company"
 
     pk = Column(Integer, primary_key=True, autoincrement=True, unique=True)
@@ -44,6 +82,12 @@ class Company(Base):
     website = Column(String)
 
     def as_dict(self):
+        """
+        Convert the model instance to a dictionary.
+        
+        Returns:
+            dict: Dictionary representation of the company.
+        """
         return {
             "pk": self.pk,
             "name": self.name,
