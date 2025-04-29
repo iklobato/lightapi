@@ -1,0 +1,202 @@
+import inspect
+from typing import Any, Dict, Type
+
+from sqlalchemy import inspect as sql_inspect
+from starlette.responses import HTMLResponse, JSONResponse
+
+from .rest import RestEndpoint
+
+
+class SwaggerGenerator:
+    def __init__(
+        self,
+        title: str = "LightAPI Documentation",
+        version: str = "1.0.0",
+        description: str = "API documentation",
+    ):
+        self.title = title
+        self.version = version
+        self.description = description
+        self.paths = {}
+        self.components = {
+            "schemas": {},
+            "securitySchemes": {
+                "bearerAuth": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "bearerFormat": "JWT",
+                }
+            },
+        }
+
+    def register_endpoint(self, path: str, endpoint_class: Type[RestEndpoint]):
+
+        methods = (
+            endpoint_class.Configuration.http_method_names
+            if hasattr(endpoint_class, 'Configuration')
+            and hasattr(endpoint_class.Configuration, 'http_method_names')
+            else ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
+        )
+
+        model_name = endpoint_class.__name__
+        self.components["schemas"][model_name] = self._generate_schema(endpoint_class)
+
+        path_operations = {}
+        for method in methods:
+            method_lower = method.lower()
+            if hasattr(endpoint_class, method_lower):
+                operation = self._generate_operation(
+                    endpoint_class, method_lower, model_name
+                )
+                path_operations[method_lower] = operation
+
+        self.paths[path] = path_operations
+
+    def _generate_schema(self, endpoint_class: Type[RestEndpoint]) -> Dict[str, Any]:
+        properties = {}
+        required = []
+
+        for column in sql_inspect(endpoint_class).columns:
+            column_type = self._map_sql_type_to_openapi(column.type)
+            properties[column.name] = column_type
+
+            if not column.nullable and not column.default and not column.server_default:
+                required.append(column.name)
+
+        description = ""
+        if endpoint_class.__doc__:
+            description = inspect.getdoc(endpoint_class)
+
+        return {
+            "type": "object",
+            "description": description,
+            "properties": properties,
+            "required": required,
+        }
+
+    def _map_sql_type_to_openapi(self, sql_type) -> Dict[str, Any]:
+        type_map = {
+            "INTEGER": {"type": "integer"},
+            "BIGINT": {"type": "integer", "format": "int64"},
+            "SMALLINT": {"type": "integer"},
+            "VARCHAR": {"type": "string"},
+            "TEXT": {"type": "string"},
+            "BOOLEAN": {"type": "boolean"},
+            "FLOAT": {"type": "number", "format": "float"},
+            "NUMERIC": {"type": "number"},
+            "DATETIME": {"type": "string", "format": "date-time"},
+            "DATE": {"type": "string", "format": "date"},
+            "TIME": {"type": "string", "format": "time"},
+        }
+
+        type_name = sql_type.__class__.__name__.upper()
+        if type_name in type_map:
+            return type_map[type_name]
+        return {"type": "string"}
+
+    def _generate_operation(
+        self, endpoint_class: Type[RestEndpoint], method: str, model_name: str
+    ) -> Dict[str, Any]:
+
+        method_handler = getattr(endpoint_class, method, None)
+        description = ""
+        if method_handler and method_handler.__doc__:
+            description = inspect.getdoc(method_handler)
+
+        operation = {
+            "tags": [model_name],
+            "summary": f"{method.upper()} {model_name}",
+            "description": description,
+            "responses": {
+                "200": {
+                    "description": "Successful response",
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": f"#/components/schemas/{model_name}"}
+                        }
+                    },
+                },
+                "400": {"description": "Bad request"},
+                "401": {"description": "Unauthorized"},
+                "403": {"description": "Forbidden"},
+                "404": {"description": "Not found"},
+            },
+        }
+
+        if hasattr(endpoint_class, 'Configuration') and hasattr(
+            endpoint_class.Configuration, 'authentication_class'
+        ):
+            operation["security"] = [{"bearerAuth": []}]
+
+        if method in ["post", "put", "patch"]:
+            operation["requestBody"] = {
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": f"#/components/schemas/{model_name}"}
+                    }
+                }
+            }
+
+        return operation
+
+    def generate_openapi_spec(self) -> Dict[str, Any]:
+        return {
+            "openapi": "3.0.0",
+            "info": {
+                "title": self.title,
+                "version": self.version,
+                "description": self.description,
+            },
+            "paths": self.paths,
+            "components": self.components,
+        }
+
+    def get_swagger_ui(self) -> HTMLResponse:
+        return HTMLResponse(
+            """
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <title>LightAPI - Swagger UI</title>
+                <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.9.0/swagger-ui.css">
+                <style>
+                    html { box-sizing: border-box; overflow: -moz-scrollbars-vertical; overflow-y: scroll; }
+                    *, *:before, *:after { box-sizing: inherit; }
+                    body { margin: 0; background: #fafafa; }
+                </style>
+            </head>
+            <body>
+                <div id="swagger-ui"></div>
+                <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
+                <script>
+                    window.onload = function() {
+                        window.ui = SwaggerUIBundle({
+                            url: "/openapi.json",
+                            dom_id: '#swagger-ui',
+                            deepLinking: true,
+                            presets: [
+                                SwaggerUIBundle.presets.apis,
+                                SwaggerUIBundle.SwaggerUIStandalonePreset
+                            ],
+                            layout: "BaseLayout"
+                        });
+                    }
+                </script>
+            </body>
+            </html>
+        """
+        )
+
+    def get_openapi_json(self) -> JSONResponse:
+        return JSONResponse(self.generate_openapi_spec())
+
+
+def swagger_ui_route(request):
+    generator = request.app.state.swagger_generator
+    return generator.get_swagger_ui()
+
+
+def openapi_json_route(request):
+    generator = request.app.state.swagger_generator
+    return generator.get_openapi_json()

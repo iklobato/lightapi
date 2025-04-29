@@ -1,6 +1,14 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Boolean, Column, Integer, String, create_engine
+from sqlalchemy.orm import sessionmaker
 
 from lightapi.database import Base
+
+
+def setup_database(database_url: str = "sqlite:///app.db"):
+    engine = create_engine(database_url)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    return engine, Session
 
 
 class Person(Base):

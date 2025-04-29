@@ -1,160 +1,198 @@
-import logging
-from abc import ABC
-from enum import Enum
-from typing import Type, Callable, List, Set
+import json
+from typing import Any, Dict, List, Optional, Type
 
-from aiohttp import web
+from sqlalchemy import inspect as sql_inspect
+from starlette.requests import Request
 
-from lightapi.exceptions import MissingHandlerImplementationError
-
-
-class HttpEnum(Enum):
-    GET = "GET"
-    POST = "POST"
-    PUT = "PUT"
-    PATCH = "PATCH"
-    DELETE = "DELETE"
-    HEAD = "HEAD"
-    OPTIONS = "OPTIONS"
+from .core import Response
+from .models import Base
 
 
-class RestEndpoint(ABC):
-    """
-    A generic REST API endpoint class that dynamically generates route handlers for common HTTP methods
-    (POST, GET, PUT, DELETE, PATCH) based on the model provided, with optional JWT authentication.
+class RestEndpoint(Base):
+    __abstract__ = True
+    id = None  # Will be defined by concrete classes
 
-    This class is designed to be subclassed for specific API endpoints. Subclasses must define a
-    `tablename` to match the SQLAlchemy model and can override `http_verbs` and `http_exclude`
-    to customize the supported HTTP methods.
+    class Configuration:
+        http_method_names = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
+        validator_class = None
+        filter_class = None
+        authentication_class = None
+        caching_class = None
+        caching_method_names = []
+        pagination_class = None
 
-    Attributes:
-        http_method_names (List[str]): A list of allowed HTTP methods for this endpoint. Defaults to all major verbs.
-        http_exclude (List[str]): A list of HTTP methods to exclude from this endpoint's routes.
-        authentication_class (Type[AbstractAuthentication]): The class responsible for authenticating requests.
+    def _setup(self, request, session):
+        self.request = request
+        self.session = session
+        self._setup_auth()
+        self._setup_cache()
+        self._setup_filter()
+        self._setup_validator()
+        self._setup_pagination()
 
-    Usage Example:
-    --------------
-    Define a custom endpoint by subclassing `RestEndpoint` and specifying the table and desired HTTP methods:
+    def _setup_auth(self):
+        config = getattr(self, 'Configuration', None)
+        if (
+            config
+            and hasattr(config, 'authentication_class')
+            and config.authentication_class
+        ):
+            self.auth = config.authentication_class()
+            if not self.auth.authenticate(self.request):
+                return Response({"error": "Authentication failed"}, status_code=401)
 
-    ```python
-    from yourproject.models import UserModel
+    def _setup_cache(self):
+        config = getattr(self, 'Configuration', None)
+        if config and hasattr(config, 'caching_class') and config.caching_class:
+            self.cache = config.caching_class()
 
-    class UserEndpoint(RestEndpoint):
-        tablename = 'users'
-        http_method_names = ['get', 'post']  # Allow GET and POST methods only
-        authentication = True  # Enable JWT authentication
+    def _setup_filter(self):
+        config = getattr(self, 'Configuration', None)
+        if config and hasattr(config, 'filter_class') and config.filter_class:
+            self.filter = config.filter_class()
 
-        def configure(self):
-            # Optional configuration logic
-            pass
-    ```
+    def _setup_validator(self):
+        config = getattr(self, 'Configuration', None)
+        if config and hasattr(config, 'validator_class') and config.validator_class:
+            self.validator = config.validator_class()
 
-    In your web server initialization, register the endpoint:
+    def _setup_pagination(self):
+        config = getattr(self, 'Configuration', None)
+        if config and hasattr(config, 'pagination_class') and config.pagination_class:
+            self.paginator = config.pagination_class()
 
-    ```python
-    app = web.Application()
-    user_endpoint = UserEndpoint(UserModel)
-    app.add_routes(user_endpoint.routes)
-    web.run_app(app, host='0.0.0.0', port=8000)
-    ```
+    # Request data is now handled in the core handler
 
-    This will automatically create the following routes:
-    - `POST /users/` for creating a new user.
-    - `GET /users/` for retrieving all users.
-    - `GET /users/{id}` for retrieving a user by ID.
+    def get(self, request):
+        # Default implementation for GET - list all objects
+        query = self.session.query(self.__class__)
 
-    If `authentication` is enabled, JWT validation will occur before handling each request.
-    """
+        # Apply filtering if filter_class is set
+        if hasattr(self, 'filter'):
+            query = self.filter.filter_queryset(query, request)
 
-    _tablename: str
-    http_method_names: Set[str] = [
-        "GET",
-        "POST",
-        "PUT",
-        "PATCH",
-        "DELETE",
-        "HEAD",
-        "OPTIONS",
-    ]
-    http_exclude: List[str] = list()
-    authentication_class: None
+        # Apply pagination if pagination_class is set
+        if hasattr(self, 'paginator'):
+            results = self.paginator.paginate(query)
+        else:
+            results = query.all()
 
-    def __init__(self) -> None:
-        """
-        Initializes the RestEndpoint with the provided SQLAlchemy model and sets up routes
-        based on the allowed HTTP methods. If authentication is enabled, it uses the provided
-        `DefaultJWT` instance to validate JWT tokens.
-        """
-        self.routes: List[web.RouteDef] = self._create_routes()
+        # Serialize results
+        data = []
+        for obj in results:
+            item = {}
+            for column in sql_inspect(obj.__class__).columns:
+                item[column.name] = getattr(obj, column.name)
+            data.append(item)
 
-    @property
-    def tablename(self) -> str:
-        """
-        Getter for the tablename attribute.
+        return {"results": data}, 200
 
-        Returns:
-            str: The name of the table or resource for this endpoint.
-        """
-        return self._tablename
+    def post(self, request):
+        # Default implementation for POST - create object
+        try:
+            # Access data that was parsed in the handler
+            data = getattr(request, 'data', {})
 
-    def _create_routes(self) -> List[web.RouteDef]:
-        available_verbs = set(self.http_method_names) - set(self.http_exclude)
-        routes: List[web.RouteDef] = []
+            # Validate data if validator_class is set
+            if hasattr(self, 'validator'):
+                validated_data = {}
+                for field, value in data.items():
+                    validate_method = getattr(self.validator, f"validate_{field}", None)
+                    if validate_method:
+                        validated_data[field] = validate_method(value)
+                    else:
+                        validated_data[field] = value
+                data = validated_data
 
-        if 'POST' in available_verbs:
-            routes.append(web.post(f'/{self.tablename}/', self._create_handler('post')))
-        if 'GET' in available_verbs:
-            routes.append(web.get(f'/{self.tablename}/', self._create_handler('get')))
-            # routes.append(web.get(f'/{self.tablename}/{{id}}', self._create_handler('get')))
-        if 'PUT' in available_verbs:
-            routes.append(web.put(f'/{self.tablename}/{{id}}', self._create_handler('put')))
-        if 'DELETE' in available_verbs:
-            routes.append(web.delete(f'/{self.tablename}/{{id}}', self._create_handler('delete')))
-        if 'PATCH' in available_verbs:
-            routes.append(web.patch(f'/{self.tablename}/{{id}}', self._create_handler('patch')))
-        if 'OPTIONS' in available_verbs:
-            routes.append(web.options(f'/{self.tablename}/', self._create_handler('options')))
-        if 'HEAD' in available_verbs:
-            routes.append(web.head(f'/{self.tablename}/', self._create_handler('head')))
+            # Create instance
+            instance = self.__class__(**data)
+            self.session.add(instance)
+            self.session.commit()
 
-        logging.debug(f"Available endpoints for {self.tablename}: {available_verbs}")
-        return routes
+            result = {}
+            for column in sql_inspect(instance.__class__).columns:
+                result[column.name] = getattr(instance, column.name)
 
-    def _create_handler(self, method_name: str) -> Callable:
-        async def handler(request: web.Request):
-            method = getattr(self, method_name, None)
-            if not method:
-                raise MissingHandlerImplementationError(
-                    f"Handler for {method_name} not implemented.", method_name
-                )
-            response = method(request)
-            if isinstance(response, dict):
-                return web.json_response(response)
-            return response
+            return {"result": result}, 201
+        except Exception as e:
+            self.session.rollback()
+            return {"error": str(e)}, 400
 
-        return handler
+    def put(self, request):
+        # Default implementation for PUT - update object
+        try:
+            object_id = request.path_params.get("id")
+            if not object_id:
+                return {"error": "ID is required"}, 400
 
-    # def _auth_wrapper(self, handler: Callable) -> Callable:
-    #     """
-    #     Wraps the request handler to enforce JWT authentication if enabled.
-    #
-    #     Args:
-    #         handler (Callable): The original handler for the route.
-    #
-    #     Returns:
-    #         Callable: The wrapped handler with optional authentication.
-    #     """
-    #     async def wrapped_handler(request: web.Request):
-    #         if self.authentication_class:
-    #             await self.authentication_class.authenticate_request(request)
-    #         return await handler(request)
-    #
-    #     return wrapped_handler
+            instance = (
+                self.session.query(self.__class__).filter_by(id=object_id).first()
+            )
+            if not instance:
+                return {"error": "Object not found"}, 404
 
-    def configure(self) -> None:
-        """
-        Abstract method for configuring any additional behaviors or settings for the endpoint.
+            # Access data that was parsed in the handler
+            data = getattr(request, 'data', {})
 
-        Subclasses should implement this method to add custom logic or configurations as necessary.
-        """
-        pass
+            # Validate data if validator_class is set
+            if hasattr(self, 'validator'):
+                validated_data = {}
+                for field, value in data.items():
+                    validate_method = getattr(self.validator, f"validate_{field}", None)
+                    if validate_method:
+                        validated_data[field] = validate_method(value)
+                    else:
+                        validated_data[field] = value
+                data = validated_data
+
+            # Update instance
+            for field, value in data.items():
+                setattr(instance, field, value)
+
+            self.session.commit()
+
+            result = {}
+            for column in sql_inspect(instance.__class__).columns:
+                result[column.name] = getattr(instance, column.name)
+
+            return {"result": result}, 200
+        except Exception as e:
+            self.session.rollback()
+            return {"error": str(e)}, 400
+
+    def delete(self, request):
+        # Default implementation for DELETE - delete object
+        try:
+            object_id = request.path_params.get("id")
+            if not object_id:
+                return {"error": "ID is required"}, 400
+
+            instance = (
+                self.session.query(self.__class__).filter_by(id=object_id).first()
+            )
+            if not instance:
+                return {"error": "Object not found"}, 404
+
+            self.session.delete(instance)
+            self.session.commit()
+
+            return {"result": "Object deleted"}, 204
+        except Exception as e:
+            self.session.rollback()
+            return {"error": str(e)}, 400
+
+    def options(self, request):
+        # Default implementation for OPTIONS - return allowed methods
+        return {"allowed_methods": self.Configuration.http_method_names}, 200
+
+
+class Validator:
+    def validate(self, data):
+        validated_data = {}
+        for field, value in data.items():
+            validate_method = getattr(self, f"validate_{field}", None)
+            if validate_method:
+                validated_data[field] = validate_method(value)
+            else:
+                validated_data[field] = value
+        return validated_data

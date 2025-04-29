@@ -1,10 +1,11 @@
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Type, List
+from typing import List, Type
+
+from aiohttp import web
+from sqlalchemy.orm import Session
 
 from lightapi.database import Base, SessionLocal
-from sqlalchemy.orm import Session
-from aiohttp import web
 
 
 def create_handler(model: Type[Base]) -> List[web.RouteDef]:
