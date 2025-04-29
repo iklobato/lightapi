@@ -3,18 +3,16 @@ from lightapi.core import LightApi, Response, Middleware
 from lightapi.rest import RestEndpoint
 from lightapi.auth import JWTAuthentication
 from lightapi.models import Base, register_model_class
+from lightapi.config import config
 import jwt
 import datetime
 import json
-
-# Secret key for JWT signing
-SECRET_KEY = "your-secret-key-change-in-production"
 
 # Custom authentication class
 class CustomJWTAuth(JWTAuthentication):
     def __init__(self):
         super().__init__()
-        self.secret_key = SECRET_KEY
+        self.secret_key = config.jwt_secret
         
     def authenticate(self, request):
         # Use the parent class implementation
@@ -38,7 +36,7 @@ class AuthEndpoint(RestEndpoint):
                 'role': 'admin',
                 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
             }
-            token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+            token = jwt.encode(payload, config.jwt_secret, algorithm="HS256")
             
             return {"token": token}, 200
         else:

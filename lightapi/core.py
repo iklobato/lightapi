@@ -3,9 +3,11 @@ from typing import Any, Callable, Dict, List, Type
 
 import uvicorn
 from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from .config import config
 from .models import Base, setup_database
 
 
@@ -28,11 +30,12 @@ class LightApi:
     
     def __init__(
         self,
-        database_url: str = "sqlite:///app.db",
-        swagger_title: str = "LightAPI Documentation",
-        swagger_version: str = "1.0.0",
-        swagger_description: str = "API automatic documentation",
-        enable_swagger: bool = True,
+        database_url: str = None,
+        swagger_title: str = None,
+        swagger_version: str = None,
+        swagger_description: str = None,
+        enable_swagger: bool = None,
+        cors_origins: List[str] = None,
     ):
         """
         Initialize a new LightApi application.
@@ -43,17 +46,36 @@ class LightApi:
             swagger_version: Version for the Swagger documentation.
             swagger_description: Description for the Swagger documentation.
             enable_swagger: Whether to enable Swagger documentation.
+            cors_origins: List of allowed CORS origins.
         """
+        # Update config with any provided values that are not None
+        update_values = {}
+        if database_url is not None:
+            update_values['database_url'] = database_url
+        if swagger_title is not None:
+            update_values['swagger_title'] = swagger_title
+        if swagger_version is not None:
+            update_values['swagger_version'] = swagger_version
+        if swagger_description is not None:
+            update_values['swagger_description'] = swagger_description
+        if enable_swagger is not None:
+            update_values['enable_swagger'] = enable_swagger
+        if cors_origins is not None:
+            update_values['cors_origins'] = cors_origins
+        
+        config.update(**update_values)
+        
         self.routes = []
         self.middleware = []
-        self.engine, self.Session = setup_database(database_url)
-        self.enable_swagger = enable_swagger
-        if enable_swagger:
+        self.engine, self.Session = setup_database(config.database_url)
+        self.enable_swagger = config.enable_swagger
+        
+        if self.enable_swagger:
             from .swagger import SwaggerGenerator
             self.swagger_generator = SwaggerGenerator(
-                title=swagger_title,
-                version=swagger_version,
-                description=swagger_description,
+                title=config.swagger_title,
+                version=config.swagger_version,
+                description=config.swagger_description,
             )
 
     def register(self, endpoints: Dict[str, Type["RestEndpoint"]]):
@@ -102,12 +124,6 @@ class LightApi:
             try:
                 endpoint = endpoint_class()
                 
-                # Let's not modify the headers directly as this might cause issues
-                # with Starlette's request object
-                
-                # Parse query parameters (they are already in request.query_params in Starlette)
-                # We don't need to modify them, just ensure they're accessible
-
                 if request.method in ["POST", "PUT", "PATCH"]:
                     try:
                         body = await request.body()
@@ -135,36 +151,21 @@ class LightApi:
                     request = endpoint.headers(request)
 
                 method = request.method.lower()
-                if method in [m.lower() for m in methods] and hasattr(endpoint, method):
-                    method_handler = getattr(endpoint, method)
-                    result = method_handler(request)
+                if method not in methods:
+                    return JSONResponse(
+                        {"error": f"Method {method} not allowed"},
+                        status_code=405
+                    )
 
-                    if isinstance(result, tuple) and len(result) == 2:
-                        response = JSONResponse(content=result[0], status_code=result[1])
+                handler = getattr(endpoint, method)
+                response = await handler(request)
+                
+                return response
 
-                    elif isinstance(result, Response):
-                        response = result
-
-                    else:
-                        response = JSONResponse(content=result, status_code=200)
-
-                    for middleware_class in self.middleware:
-                        middleware = middleware_class()
-                        processed_response = middleware.process(request, response)
-                        if processed_response:
-                            response = processed_response
-
-                    return response
-
-                return JSONResponse(
-                    {"error": f"Method {method.upper()} not allowed"}, status_code=405
-                )
             except Exception as e:
-                import traceback
-                print(f"Exception in handler: {e}")
-                print(traceback.format_exc())
                 return JSONResponse(
-                    {"error": f"Internal server error: {str(e)}"}, status_code=500
+                    {"error": str(e)},
+                    status_code=500
                 )
 
         return handler
@@ -178,7 +179,13 @@ class LightApi:
         """
         self.middleware = middleware_classes
 
-    def run(self, host: str = "0.0.0.0", port: int = 8000, debug: bool = False, reload: bool = False):
+    def run(
+        self,
+        host: str = None,
+        port: int = None,
+        debug: bool = None,
+        reload: bool = None
+    ):
         """
         Run the application server.
         
@@ -188,10 +195,36 @@ class LightApi:
             debug: Whether to enable debug mode.
             reload: Whether to enable auto-reload on code changes.
         """
-        app = Starlette(debug=debug, routes=self.routes)
+        # Update config with any provided values
+        config.update(
+            host=host,
+            port=port,
+            debug=debug,
+            reload=reload,
+        )
+        
+        app = Starlette(debug=config.debug, routes=self.routes)
+        
+        # Add CORS middleware if origins are configured
+        if config.cors_origins:
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=config.cors_origins,
+                allow_credentials=True,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
+        
         if self.enable_swagger:
             app.state.swagger_generator = self.swagger_generator
-        uvicorn.run(app, host=host, port=port, log_level="debug" if debug else "info", reload=reload)
+            
+        uvicorn.run(
+            app,
+            host=config.host,
+            port=config.port,
+            log_level="debug" if config.debug else "info",
+            reload=config.reload
+        )
 
 
 class Response(JSONResponse):

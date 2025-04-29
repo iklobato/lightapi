@@ -1,16 +1,11 @@
 import os
-
 from sqlalchemy import Column, Integer, create_engine
 from sqlalchemy.orm import as_declarative, declared_attr, sessionmaker
 
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./lightapi.db")
+from .config import config
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL  # , connect_args={"check_same_thread": False}
-)
-
+engine = create_engine(config.database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 
 @as_declarative()
 class Base:

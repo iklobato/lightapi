@@ -1,7 +1,10 @@
 import time
 from typing import Any, Dict, Optional
+from datetime import datetime, timedelta
 
 import jwt
+
+from .config import config
 
 
 class BaseAuthentication:
@@ -38,47 +41,74 @@ class JWTAuthentication(BaseAuthentication):
         expiration: Token expiration time in seconds.
     """
     
-    secret_key = "your_secret_key"
-    algorithm = "HS256"
-    expiration = 3600
+    def __init__(self):
+        if not config.jwt_secret:
+            raise ValueError(
+                "JWT secret key not configured. Set LIGHTAPI_JWT_SECRET environment variable."
+            )
+        self.secret_key = config.jwt_secret
+        self.algorithm = "HS256"
+        self.expiration = 3600  # 1 hour default
 
     def authenticate(self, request):
         """
-        Authenticate a request using a JWT token.
-        
-        Extracts the token from the Authorization header,
-        validates it, and adds the payload to request.state.user.
+        Authenticate a request using JWT token.
         
         Args:
-            request: The HTTP request to authenticate.
+            request: The HTTP request object.
             
         Returns:
             bool: True if authentication succeeds, False otherwise.
         """
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
             return False
 
-        token = auth_header[7:]
+        token = auth_header.split(' ')[1]
         try:
-            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
-            if payload.get("exp", 0) < time.time():
-                return False
+            payload = self.decode_token(token)
             request.state.user = payload
             return True
-        except jwt.PyJWTError:
+        except jwt.InvalidTokenError:
             return False
 
-    @classmethod
-    def generate_token(cls, user_data: Dict[str, Any]) -> str:
+    def generate_token(self, payload: Dict, expiration: Optional[int] = None) -> str:
         """
-        Generate a new JWT token.
+        Generate a JWT token.
         
         Args:
-            user_data: User data to include in the token payload.
+            payload: The data to encode in the token.
+            expiration: Token expiration time in seconds.
             
         Returns:
             str: The encoded JWT token.
         """
-        payload = {**user_data, "exp": time.time() + cls.expiration}
-        return jwt.encode(payload, cls.secret_key, algorithm=cls.algorithm)
+        exp_seconds = expiration or self.expiration
+        token_data = {
+            **payload,
+            'exp': datetime.utcnow() + timedelta(seconds=exp_seconds)
+        }
+        return jwt.encode(
+            token_data,
+            self.secret_key,
+            algorithm=self.algorithm
+        )
+
+    def decode_token(self, token: str) -> Dict:
+        """
+        Decode and verify a JWT token.
+        
+        Args:
+            token: The JWT token to decode.
+            
+        Returns:
+            dict: The decoded token payload.
+            
+        Raises:
+            jwt.InvalidTokenError: If the token is invalid or expired.
+        """
+        return jwt.decode(
+            token,
+            self.secret_key,
+            algorithms=[self.algorithm]
+        )

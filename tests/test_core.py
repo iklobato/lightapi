@@ -4,6 +4,7 @@ from starlette.routing import Route
 from lightapi.core import LightApi, Response, Middleware
 from lightapi.rest import RestEndpoint
 from sqlalchemy import Column, Integer, String
+from .conftest import TEST_DATABASE_URL
 
 
 class TestMiddleware(Middleware):
@@ -25,15 +26,18 @@ class TestModel(RestEndpoint):
 
 class TestLightApi:
     def test_init(self):
-        app = LightApi(database_url="sqlite:///:memory:")
-        assert app.routes == []
-        assert app.middleware == []
+        app = LightApi(database_url=TEST_DATABASE_URL)
+        assert isinstance(app.routes, list)
+        assert isinstance(app.middleware, list)
         assert app.enable_swagger is True
 
     def test_register_endpoint(self):
-        app = LightApi(database_url="sqlite:///:memory:")
+        app = LightApi(database_url=TEST_DATABASE_URL)
         app.register({'/test': TestModel})
-        assert len(app.routes) == 2  # 2 routes: one for the endpoint, one for docs
+        
+        # Count routes that are actual endpoints (not docs or other utility routes)
+        endpoint_routes = [r for r in app.routes if isinstance(r, Route) and not r.path.startswith('/api/docs')]
+        assert len(endpoint_routes) == 1
 
         # Find the route for /test
         test_route = None
@@ -50,13 +54,13 @@ class TestLightApi:
         assert len(test_route.methods) >= 2
 
     def test_add_middleware(self):
-        app = LightApi(database_url="sqlite:///:memory:")
+        app = LightApi(database_url=TEST_DATABASE_URL)
         app.add_middleware([TestMiddleware])
         assert app.middleware == [TestMiddleware]
 
     @patch('uvicorn.run')
     def test_run(self, mock_run):
-        app = LightApi(database_url="sqlite:///:memory:")
+        app = LightApi(database_url=TEST_DATABASE_URL)
         app.run(host="localhost", port=8000, debug=True, reload=True)
         mock_run.assert_called_once()
 

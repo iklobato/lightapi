@@ -1,14 +1,34 @@
+import os
 import pytest
 import jwt
 from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from lightapi.config import config
 
 from examples.auth_example import (
     CustomJWTAuth, AuthEndpoint, SecretResource, 
-    PublicResource, UserProfile, SECRET_KEY
+    PublicResource, UserProfile
 )
 
+# Set environment variables for testing
+os.environ['LIGHTAPI_JWT_SECRET'] = 'test_secret_key_for_testing'
+os.environ['LIGHTAPI_ENV'] = 'test'
+
+# Test secret key
+TEST_SECRET_KEY = 'test_secret_key_for_testing'
+
+@pytest.fixture(autouse=True)
+def setup_jwt_config():
+    """Configure JWT secret for all tests."""
+    # Set environment variable
+    os.environ['LIGHTAPI_JWT_SECRET'] = TEST_SECRET_KEY
+    # Update config directly
+    config.update(jwt_secret=TEST_SECRET_KEY)
+    yield
+    # Clean up
+    if 'LIGHTAPI_JWT_SECRET' in os.environ:
+        del os.environ['LIGHTAPI_JWT_SECRET']
 
 class TestCustomJWTAuth:
     """Test suite for the CustomJWTAuth class from auth_example.py.
@@ -27,7 +47,7 @@ class TestCustomJWTAuth:
             'role': 'admin',
             'exp': datetime.utcnow() + timedelta(hours=1)
         }
-        token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+        token = jwt.encode(payload, TEST_SECRET_KEY, algorithm="HS256")
         
         # Create a mock request with the token
         class MockRequest:
@@ -88,7 +108,7 @@ class TestCustomJWTAuth:
             'role': 'admin',
             'exp': datetime.utcnow() - timedelta(hours=1)  # Expired 1 hour ago
         }
-        token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+        token = jwt.encode(payload, TEST_SECRET_KEY, algorithm="HS256")
         
         # Create a mock request with the expired token
         class MockRequest:
@@ -130,7 +150,7 @@ class TestAuthEndpoint:
         
         # Verify the token is valid
         token = response['token']
-        decoded = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        decoded = jwt.decode(token, TEST_SECRET_KEY, algorithms=["HS256"])
         assert decoded['username'] == 'admin'
         assert decoded['role'] == 'admin'
     

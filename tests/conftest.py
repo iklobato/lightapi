@@ -1,5 +1,40 @@
+import os
 import pytest
+from lightapi.config import config
 
+# Test configuration
+TEST_JWT_SECRET = 'test_secret_key_for_testing'
+TEST_DATABASE_URL = 'sqlite:///:memory:'
+
+@pytest.fixture(autouse=True)
+def setup_test_env():
+    """Set up test environment variables and configuration."""
+    # Store original values
+    original_env = {
+        'LIGHTAPI_JWT_SECRET': os.environ.get('LIGHTAPI_JWT_SECRET'),
+        'LIGHTAPI_ENV': os.environ.get('LIGHTAPI_ENV'),
+        'LIGHTAPI_DATABASE_URL': os.environ.get('LIGHTAPI_DATABASE_URL')
+    }
+    
+    # Set test values
+    os.environ['LIGHTAPI_JWT_SECRET'] = TEST_JWT_SECRET
+    os.environ['LIGHTAPI_ENV'] = 'test'
+    os.environ['LIGHTAPI_DATABASE_URL'] = TEST_DATABASE_URL
+    
+    # Update config directly
+    config.update(
+        jwt_secret=TEST_JWT_SECRET,
+        database_url=TEST_DATABASE_URL
+    )
+    
+    yield
+    
+    # Restore original values
+    for key, value in original_env.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 def pytest_configure(config):
     """
