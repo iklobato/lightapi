@@ -27,6 +27,24 @@ async def get(self, request):
     item_id = request.match_info['id']
 ```
 
+For more robust endpoints, especially in testing scenarios, it's recommended to support parameters from both path and query:
+
+```python
+def get(self, request):
+    # First check path parameters
+    item_id = None
+    if hasattr(request, 'path_params'):
+        item_id = request.path_params.get('id')
+        
+    # If not found, check query parameters
+    if not item_id and hasattr(request, 'query_params'):
+        item_id = request.query_params.get('id')
+        
+    # Use a default if still not found
+    if not item_id:
+        item_id = 'default'
+```
+
 ## Query Parameters
 
 Query parameters (e.g., `?limit=10&sort=asc`) are available via:

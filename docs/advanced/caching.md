@@ -47,3 +47,38 @@ def post(self, request):
     self.cache.set('tasks', [])  # or delete with a custom method
     return {'created': created}, 201
 ```
+
+## Best Practices for Cached Endpoints
+
+### Flexible Parameter Access
+
+For cached endpoints that need to handle both URL path parameters and query parameters, implement a flexible approach to parameter access:
+
+```python
+def get(self, request):
+    # Get parameters from either path or query parameters
+    resource_id = None
+    
+    # First check path_params if available
+    if hasattr(request, 'path_params'):
+        resource_id = request.path_params.get('id')
+        
+    # If not found, check query_params
+    if not resource_id and hasattr(request, 'query_params'):
+        resource_id = request.query_params.get('id')
+        
+    # Fallback to default if needed
+    if not resource_id:
+        resource_id = 'default'
+    
+    # Use parameters to create cache key
+    cache_key = f"resource:{resource_id}"
+    cached_data = self.cache.get(cache_key)
+    
+    if cached_data:
+        return Response(cached_data, headers={'X-Cache': 'HIT'})
+    
+    # Generate and cache data...
+```
+
+This approach makes your endpoints more robust, especially during testing when mocks might not implement all request attributes.

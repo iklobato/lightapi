@@ -74,3 +74,20 @@ from starlette.responses import FileResponse
 async def get_file(self, request):
     return FileResponse("/path/to/file.zip")
 ```
+
+## 6. Working with Responses in Tests
+
+When testing endpoints that return `Response` objects, you can access the original content via the `body` property:
+
+```python
+# In your test
+response = endpoint.get(request)
+assert response.body['message'] == 'Success'  # Access original Python dict
+```
+
+The `Response.body` property returns:
+- The original Python object (dict, list, etc.) when accessed in tests
+- Attempts to decode JSON data from bytes when necessary
+- Falls back to the raw body when decoding fails
+
+This makes it easier to write assertions in tests without having to manually decode JSON.
