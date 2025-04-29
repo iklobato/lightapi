@@ -1,7 +1,8 @@
 import inspect
-from typing import Any, Dict, Type
+import typing  # noqa: F401
+from typing import Any, Dict, List, Type
 
-from sqlalchemy import inspect as sql_inspect
+from sqlalchemy import Column, inspect as sql_inspect
 from starlette.responses import HTMLResponse, JSONResponse
 
 from .rest import RestEndpoint
@@ -56,12 +57,30 @@ class SwaggerGenerator:
         properties = {}
         required = []
 
-        for column in sql_inspect(endpoint_class).columns:
-            column_type = self._map_sql_type_to_openapi(column.type)
-            properties[column.name] = column_type
+        # Safely access columns based on whether this is a SQLAlchemy model
+        if hasattr(endpoint_class, '__table__') and endpoint_class.__table__ is not None:
+            # For SQLAlchemy models
+            for column in endpoint_class.__table__.columns:
+                column_type = self._map_sql_type_to_openapi(column.type)
+                properties[column.name] = column_type
 
-            if not column.nullable and not column.default and not column.server_default:
-                required.append(column.name)
+                if not column.nullable and not column.default and not column.server_default:
+                    required.append(column.name)
+        else:
+            # For non-SQLAlchemy models or before table creation
+            # Just return a basic schema based on attributes we can detect
+            for attr_name in dir(endpoint_class):
+                if attr_name.startswith('_') or callable(getattr(endpoint_class, attr_name)):
+                    continue
+                
+                # Simple type detection
+                attr = getattr(endpoint_class, attr_name)
+                if isinstance(attr, Column):
+                    properties[attr_name] = self._map_sql_type_to_openapi(attr.type)
+                    
+                    # Try to detect required fields
+                    if hasattr(attr, 'nullable') and not attr.nullable:
+                        required.append(attr_name)
 
         description = ""
         if endpoint_class.__doc__:

@@ -30,7 +30,6 @@ class Base:
             Converts the model instance into a dictionary where keys are the column names and values are the corresponding data.
     """
 
-    pk = Column(Integer, primary_key=True, autoincrement=True, unique=True)
     __table__ = None
 
     @property

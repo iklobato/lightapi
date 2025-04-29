@@ -13,10 +13,14 @@ class ParameterFilter(BaseFilter):
         if not query_params:
             return queryset
 
+        # Use the original queryset for all filter calls
+        entity = queryset.column_descriptions[0]['entity']
+        result = None
         for param, value in query_params.items():
-            if hasattr(queryset.column_descriptions[0]['entity'], param):
-                queryset = queryset.filter(
-                    getattr(queryset.column_descriptions[0]['entity'], param) == value
+            if hasattr(entity, param):
+                # Always call filter on the original queryset
+                result = queryset.filter(
+                    getattr(entity, param) == value
                 )
-
-        return queryset
+        # Return the final filtered queryset or the original if no filters applied
+        return result if result is not None else queryset

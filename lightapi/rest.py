@@ -4,12 +4,30 @@ from typing import Any, Dict, List, Optional, Type
 from sqlalchemy import inspect as sql_inspect
 from starlette.requests import Request
 
+import typing  # noqa: F401
 from .core import Response
-from .models import Base
+from .database import Base
 
 
-class RestEndpoint(Base):
+class RestEndpoint:
+    def __init__(self, **kwargs):
+        """
+        Initialize endpoint instance and assign keyword arguments to attributes.
+        Allows RestEndpoint subclasses to be instantiated with model fields.
+        """
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        # No need to call super() as we're not extending Base anymore
+    
+    # Class attributes that help with SQLAlchemy compatibility
+    __tablename__ = None
+    __table__ = None
     __abstract__ = True
+    
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.__abstract__ = True
+    
     id = None  # Will be defined by concrete classes
 
     class Configuration:
@@ -20,6 +38,19 @@ class RestEndpoint(Base):
         caching_class = None
         caching_method_names = []
         pagination_class = None
+        
+    def _is_sa_model(self):
+        """Check if this endpoint is a SQLAlchemy model (extends Base)"""
+        return isinstance(self, Base)
+        
+    def _get_columns(self):
+        """Get column names safely regardless of whether we're a SA model"""
+        if self._is_sa_model():
+            return [column.name for column in sql_inspect(self.__class__).columns]
+        else:
+            # For non-SA models, use instance attributes excluding methods and special attributes
+            return [attr for attr in dir(self) 
+                   if not attr.startswith('_') and not callable(getattr(self, attr))]
 
     def _setup(self, request, session):
         self.request = request
@@ -81,8 +112,13 @@ class RestEndpoint(Base):
         data = []
         for obj in results:
             item = {}
-            for column in sql_inspect(obj.__class__).columns:
-                item[column.name] = getattr(obj, column.name)
+            # Use our helper method to safely get columns
+            if self._is_sa_model():
+                for column in sql_inspect(obj.__class__).columns:
+                    item[column.name] = getattr(obj, column.name)
+            else:
+                for attr in self._get_columns():
+                    item[attr] = getattr(obj, attr)
             data.append(item)
 
         return {"results": data}, 200
@@ -95,13 +131,7 @@ class RestEndpoint(Base):
 
             # Validate data if validator_class is set
             if hasattr(self, 'validator'):
-                validated_data = {}
-                for field, value in data.items():
-                    validate_method = getattr(self.validator, f"validate_{field}", None)
-                    if validate_method:
-                        validated_data[field] = validate_method(value)
-                    else:
-                        validated_data[field] = value
+                validated_data = self.validator.validate(data)
                 data = validated_data
 
             # Create instance
@@ -110,8 +140,13 @@ class RestEndpoint(Base):
             self.session.commit()
 
             result = {}
-            for column in sql_inspect(instance.__class__).columns:
-                result[column.name] = getattr(instance, column.name)
+            # Use our helper method to safely get columns
+            if self._is_sa_model():
+                for column in sql_inspect(instance.__class__).columns:
+                    result[column.name] = getattr(instance, column.name)
+            else:
+                for attr in self._get_columns():
+                    result[attr] = getattr(instance, attr)
 
             return {"result": result}, 201
         except Exception as e:
@@ -136,13 +171,7 @@ class RestEndpoint(Base):
 
             # Validate data if validator_class is set
             if hasattr(self, 'validator'):
-                validated_data = {}
-                for field, value in data.items():
-                    validate_method = getattr(self.validator, f"validate_{field}", None)
-                    if validate_method:
-                        validated_data[field] = validate_method(value)
-                    else:
-                        validated_data[field] = value
+                validated_data = self.validator.validate(data)
                 data = validated_data
 
             # Update instance
@@ -152,8 +181,13 @@ class RestEndpoint(Base):
             self.session.commit()
 
             result = {}
-            for column in sql_inspect(instance.__class__).columns:
-                result[column.name] = getattr(instance, column.name)
+            # Use our helper method to safely get columns
+            if self._is_sa_model():
+                for column in sql_inspect(instance.__class__).columns:
+                    result[column.name] = getattr(instance, column.name)
+            else:
+                for attr in self._get_columns():
+                    result[attr] = getattr(instance, attr)
 
             return {"result": result}, 200
         except Exception as e:

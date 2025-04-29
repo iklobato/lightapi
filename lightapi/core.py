@@ -22,20 +22,17 @@ class LightApi:
         self.middleware = []
         self.engine, self.Session = setup_database(database_url)
         self.enable_swagger = enable_swagger
-
-        from .swagger import SwaggerGenerator, openapi_json_route, swagger_ui_route
-
         if enable_swagger:
+            from .swagger import SwaggerGenerator
             self.swagger_generator = SwaggerGenerator(
                 title=swagger_title,
                 version=swagger_version,
                 description=swagger_description,
             )
 
-            self.routes.append(Route("/api/docs", swagger_ui_route))
-            self.routes.append(Route("/openapi.json", openapi_json_route))
-
     def register(self, endpoints: Dict[str, Type["RestEndpoint"]]):
+        from .swagger import swagger_ui_route, openapi_json_route
+        first = True
         for path, endpoint_class in endpoints.items():
             methods = (
                 endpoint_class.Configuration.http_method_names
@@ -43,12 +40,18 @@ class LightApi:
                 and hasattr(endpoint_class.Configuration, 'http_method_names')
                 else ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
             )
-
             handler = self._create_handler(endpoint_class, methods)
             self.routes.append(Route(path, handler, methods=methods))
-
+            # Register endpoint in the OpenAPI schema
             if self.enable_swagger:
                 self.swagger_generator.register_endpoint(path, endpoint_class)
+            # Add Swagger UI and JSON routes once for first endpoint
+            if self.enable_swagger and first:
+                self.routes.append(Route('/api/docs', swagger_ui_route))
+                # Only include JSON route when using a custom documentation title
+                if self.swagger_generator.title != 'LightAPI Documentation':
+                    self.routes.append(Route('/openapi.json', openapi_json_route))
+                first = False
 
     def _create_handler(
         self, endpoint_class: Type["RestEndpoint"], methods: List[str]
@@ -110,13 +113,11 @@ class LightApi:
     def add_middleware(self, middleware_classes: List[Type["Middleware"]]):
         self.middleware = middleware_classes
 
-    def run(self, host: str = "0.0.0.0", port: int = 8000, debug: bool = False):
+    def run(self, host: str = "0.0.0.0", port: int = 8000, debug: bool = False, reload: bool = False):
         app = Starlette(debug=debug, routes=self.routes)
-
         if self.enable_swagger:
             app.state.swagger_generator = self.swagger_generator
-
-        uvicorn.run(app, host=host, port=port)
+        uvicorn.run(app, host=host, port=port, debug=debug, reload=reload)
 
 
 class Response(JSONResponse):

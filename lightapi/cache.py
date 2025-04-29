@@ -18,8 +18,8 @@ class RedisCache(BaseCache):
         self.client = redis.Redis(host=host, port=port, db=db)
 
     def get(self, key: str) -> Optional[Dict[str, Any]]:
-        cache_key = self._get_cache_key(key)
-        cached_data = self.client.get(cache_key)
+        """Retrieve data from cache using the raw key."""
+        cached_data = self.client.get(key)
         if cached_data:
             try:
                 return json.loads(cached_data)
@@ -28,12 +28,13 @@ class RedisCache(BaseCache):
         return None
 
     def set(self, key: str, value: Dict[str, Any], timeout: int = 300) -> bool:
-        cache_key = self._get_cache_key(key)
+        """Set data in cache using the raw key."""
         try:
             serialized_data = json.dumps(value)
-            return self.client.setex(cache_key, timeout, serialized_data)
+            return self.client.setex(key, timeout, serialized_data)
         except (json.JSONDecodeError, redis.RedisError):
             return False
 
+    # _get_cache_key is no longer used since raw keys are used for compatibility
     def _get_cache_key(self, key: str) -> str:
-        return f"lightapi:{hashlib.md5(key.encode()).hexdigest()}"
+        return key  # legacy support
