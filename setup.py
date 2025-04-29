@@ -1,6 +1,6 @@
 import codecs
 
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 with codecs.open('README.md', 'r', 'utf-8') as file:
     long_description = file.read()
@@ -30,7 +30,7 @@ setup(
             'mkdocs-git-committers-plugin-2',
             'mkdocs-git-revision-date-localized-plugin',
             'mkdocs-git-authors-plugin',
-        ]
+        ],
     },
     classifiers=[
         'Programming Language :: Python :: 3',

@@ -1,5 +1,0 @@
----
-title: lightapi
----
-
-::: lightapi.lightapi

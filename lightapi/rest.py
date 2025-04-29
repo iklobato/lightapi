@@ -1,160 +1,388 @@
-import logging
-from abc import ABC
-from enum import Enum
-from typing import Type, Callable, List, Set
+import json
+from typing import Any, Dict, List, Optional, Type
 
-from aiohttp import web
+from sqlalchemy import inspect as sql_inspect
+from starlette.requests import Request
 
-from lightapi.exceptions import MissingHandlerImplementationError
-
-
-class HttpEnum(Enum):
-    GET = "GET"
-    POST = "POST"
-    PUT = "PUT"
-    PATCH = "PATCH"
-    DELETE = "DELETE"
-    HEAD = "HEAD"
-    OPTIONS = "OPTIONS"
+import typing  # noqa: F401
+from .core import Response
+from .database import Base
 
 
-class RestEndpoint(ABC):
+class RestEndpoint:
     """
-    A generic REST API endpoint class that dynamically generates route handlers for common HTTP methods
-    (POST, GET, PUT, DELETE, PATCH) based on the model provided, with optional JWT authentication.
-
-    This class is designed to be subclassed for specific API endpoints. Subclasses must define a
-    `tablename` to match the SQLAlchemy model and can override `http_verbs` and `http_exclude`
-    to customize the supported HTTP methods.
-
+    Base class for REST API endpoints.
+    
+    RestEndpoint provides a complete implementation of a REST resource,
+    with built-in support for common HTTP methods, SQLAlchemy integration,
+    data validation, filtering, authentication, caching, and pagination.
+    
+    Subclasses can customize behavior through the inner Configuration class
+    and by overriding HTTP method handlers.
+    
     Attributes:
-        http_method_names (List[str]): A list of allowed HTTP methods for this endpoint. Defaults to all major verbs.
-        http_exclude (List[str]): A list of HTTP methods to exclude from this endpoint's routes.
-        authentication_class (Type[AbstractAuthentication]): The class responsible for authenticating requests.
-
-    Usage Example:
-    --------------
-    Define a custom endpoint by subclassing `RestEndpoint` and specifying the table and desired HTTP methods:
-
-    ```python
-    from yourproject.models import UserModel
-
-    class UserEndpoint(RestEndpoint):
-        tablename = 'users'
-        http_method_names = ['get', 'post']  # Allow GET and POST methods only
-        authentication = True  # Enable JWT authentication
-
-        def configure(self):
-            # Optional configuration logic
-            pass
-    ```
-
-    In your web server initialization, register the endpoint:
-
-    ```python
-    app = web.Application()
-    user_endpoint = UserEndpoint(UserModel)
-    app.add_routes(user_endpoint.routes)
-    web.run_app(app, host='0.0.0.0', port=8000)
-    ```
-
-    This will automatically create the following routes:
-    - `POST /users/` for creating a new user.
-    - `GET /users/` for retrieving all users.
-    - `GET /users/{id}` for retrieving a user by ID.
-
-    If `authentication` is enabled, JWT validation will occur before handling each request.
+        __tablename__: SQLAlchemy table name.
+        __table__: SQLAlchemy table metadata.
+        __abstract__: Whether this class is an abstract base class.
+        id: Primary key field (defined by concrete subclasses).
     """
-
-    _tablename: str
-    http_method_names: Set[str] = [
-        "GET",
-        "POST",
-        "PUT",
-        "PATCH",
-        "DELETE",
-        "HEAD",
-        "OPTIONS",
-    ]
-    http_exclude: List[str] = list()
-    authentication_class: None
-
-    def __init__(self) -> None:
+    
+    def __init__(self, **kwargs):
         """
-        Initializes the RestEndpoint with the provided SQLAlchemy model and sets up routes
-        based on the allowed HTTP methods. If authentication is enabled, it uses the provided
-        `DefaultJWT` instance to validate JWT tokens.
+        Initialize endpoint instance and assign keyword arguments to attributes.
+        
+        Args:
+            **kwargs: Arbitrary keyword arguments that will be set as instance attributes.
         """
-        self.routes: List[web.RouteDef] = self._create_routes()
-
-    @property
-    def tablename(self) -> str:
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+    
+    __tablename__ = None
+    __table__ = None
+    __abstract__ = True
+    
+    def __init_subclass__(cls, **kwargs):
         """
-        Getter for the tablename attribute.
+        Configure subclasses of RestEndpoint.
+        
+        Args:
+            **kwargs: Arbitrary keyword arguments.
+        """
+        super().__init_subclass__(**kwargs)
+        
+        # Only mark as abstract if not a SQLAlchemy model class
+        if hasattr(cls, '__tablename__') and cls.__tablename__:
+            cls.__abstract__ = False
+        else:
+            cls.__abstract__ = True
+    
+    id = None
 
+    class Configuration:
+        """
+        Configuration options for the RestEndpoint.
+        
+        Attributes:
+            http_method_names: List of allowed HTTP methods.
+            validator_class: Class for validating request data.
+            filter_class: Class for filtering querysets.
+            authentication_class: Class for authenticating requests.
+            caching_class: Class for caching responses.
+            caching_method_names: List of methods to cache.
+            pagination_class: Class for paginating querysets.
+        """
+        http_method_names = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
+        validator_class = None
+        filter_class = None
+        authentication_class = None
+        caching_class = None
+        caching_method_names = []
+        pagination_class = None
+        
+    def _is_sa_model(self):
+        """
+        Check if this endpoint is a SQLAlchemy model (extends Base).
+        
         Returns:
-            str: The name of the table or resource for this endpoint.
+            bool: True if the endpoint is a SQLAlchemy model, False otherwise.
         """
-        return self._tablename
-
-    def _create_routes(self) -> List[web.RouteDef]:
-        available_verbs = set(self.http_method_names) - set(self.http_exclude)
-        routes: List[web.RouteDef] = []
-
-        if 'POST' in available_verbs:
-            routes.append(web.post(f'/{self.tablename}/', self._create_handler('post')))
-        if 'GET' in available_verbs:
-            routes.append(web.get(f'/{self.tablename}/', self._create_handler('get')))
-            # routes.append(web.get(f'/{self.tablename}/{{id}}', self._create_handler('get')))
-        if 'PUT' in available_verbs:
-            routes.append(web.put(f'/{self.tablename}/{{id}}', self._create_handler('put')))
-        if 'DELETE' in available_verbs:
-            routes.append(web.delete(f'/{self.tablename}/{{id}}', self._create_handler('delete')))
-        if 'PATCH' in available_verbs:
-            routes.append(web.patch(f'/{self.tablename}/{{id}}', self._create_handler('patch')))
-        if 'OPTIONS' in available_verbs:
-            routes.append(web.options(f'/{self.tablename}/', self._create_handler('options')))
-        if 'HEAD' in available_verbs:
-            routes.append(web.head(f'/{self.tablename}/', self._create_handler('head')))
-
-        logging.debug(f"Available endpoints for {self.tablename}: {available_verbs}")
-        return routes
-
-    def _create_handler(self, method_name: str) -> Callable:
-        async def handler(request: web.Request):
-            method = getattr(self, method_name, None)
-            if not method:
-                raise MissingHandlerImplementationError(
-                    f"Handler for {method_name} not implemented.", method_name
-                )
-            response = method(request)
-            if isinstance(response, dict):
-                return web.json_response(response)
-            return response
-
-        return handler
-
-    # def _auth_wrapper(self, handler: Callable) -> Callable:
-    #     """
-    #     Wraps the request handler to enforce JWT authentication if enabled.
-    #
-    #     Args:
-    #         handler (Callable): The original handler for the route.
-    #
-    #     Returns:
-    #         Callable: The wrapped handler with optional authentication.
-    #     """
-    #     async def wrapped_handler(request: web.Request):
-    #         if self.authentication_class:
-    #             await self.authentication_class.authenticate_request(request)
-    #         return await handler(request)
-    #
-    #     return wrapped_handler
-
-    def configure(self) -> None:
+        return hasattr(self.__class__, '__tablename__') and self.__class__.__tablename__ is not None
+        
+    def _get_columns(self):
         """
-        Abstract method for configuring any additional behaviors or settings for the endpoint.
-
-        Subclasses should implement this method to add custom logic or configurations as necessary.
+        Get column names safely regardless of whether we're a SQLAlchemy model.
+        
+        Returns:
+            list: List of column/attribute names for this endpoint.
         """
-        pass
+        if self._is_sa_model():
+            return [column.name for column in sql_inspect(self.__class__).columns]
+        else:
+            return [attr for attr in dir(self) 
+                   if not attr.startswith('_') and not callable(getattr(self, attr))]
+
+    def _setup(self, request, session):
+        """
+        Set up the endpoint for a request.
+        
+        Args:
+            request: The HTTP request.
+            session: The database session.
+            
+        Returns:
+            Response: Error response if setup fails, None otherwise.
+        """
+        self.request = request
+        self.session = session
+        
+        # Handle authentication first
+        auth_response = self._setup_auth()
+        if auth_response:
+            return auth_response
+            
+        self._setup_cache()
+        self._setup_filter()
+        self._setup_validator()
+        self._setup_pagination()
+        
+        return None
+
+    def _setup_auth(self):
+        """
+        Set up authentication for the endpoint.
+        
+        Returns:
+            Response: Authentication error response if authentication fails, None otherwise.
+        """
+        config = getattr(self, 'Configuration', None)
+        if (
+            config
+            and hasattr(config, 'authentication_class')
+            and config.authentication_class
+        ):
+            self.auth = config.authentication_class()
+            if not self.auth.authenticate(self.request):
+                return Response({"error": "Authentication failed"}, status_code=401)
+
+    def _setup_cache(self):
+        """Set up caching for the endpoint."""
+        config = getattr(self, 'Configuration', None)
+        if config and hasattr(config, 'caching_class') and config.caching_class:
+            self.cache = config.caching_class()
+
+    def _setup_filter(self):
+        """Set up filtering for the endpoint."""
+        config = getattr(self, 'Configuration', None)
+        if config and hasattr(config, 'filter_class') and config.filter_class:
+            self.filter = config.filter_class()
+
+    def _setup_validator(self):
+        """Set up validation for the endpoint."""
+        config = getattr(self, 'Configuration', None)
+        if config and hasattr(config, 'validator_class') and config.validator_class:
+            self.validator = config.validator_class()
+
+    def _setup_pagination(self):
+        """Set up pagination for the endpoint."""
+        config = getattr(self, 'Configuration', None)
+        if config and hasattr(config, 'pagination_class') and config.pagination_class:
+            self.paginator = config.pagination_class()
+
+    def get(self, request):
+        """
+        Handle GET requests.
+        
+        Retrieves a list of objects from the database, applying filtering and pagination
+        if configured.
+        
+        Args:
+            request: The HTTP request.
+            
+        Returns:
+            tuple: A tuple containing the response data and status code.
+        """
+        query = self.session.query(self.__class__)
+        
+        # Check for ID filter in query parameters
+        object_id = None
+        if hasattr(request, 'query_params'):
+            object_id = request.query_params.get("id")
+            
+        # Filter by ID if provided
+        if object_id:
+            query = query.filter_by(id=object_id)
+
+        if hasattr(self, 'filter'):
+            query = self.filter.filter_queryset(query, request)
+
+        if hasattr(self, 'paginator'):
+            results = self.paginator.paginate(query)
+        else:
+            results = query.all()
+
+        data = []
+        for obj in results:
+            item = {}
+            if self._is_sa_model():
+                for column in sql_inspect(obj.__class__).columns:
+                    item[column.name] = getattr(obj, column.name)
+            else:
+                for attr in self._get_columns():
+                    item[attr] = getattr(obj, attr)
+            data.append(item)
+
+        return {"results": data}, 200
+
+    def post(self, request):
+        """
+        Handle POST requests.
+        
+        Creates a new object in the database using the request data.
+        Validates the data if a validator is configured.
+        
+        Args:
+            request: The HTTP request.
+            
+        Returns:
+            tuple: A tuple containing the response data and status code.
+        """
+        try:
+            data = getattr(request, 'data', {})
+
+            if hasattr(self, 'validator'):
+                validated_data = self.validator.validate(data)
+                data = validated_data
+
+            instance = self.__class__(**data)
+            self.session.add(instance)
+            self.session.commit()
+
+            result = {}
+            if self._is_sa_model():
+                for column in sql_inspect(instance.__class__).columns:
+                    result[column.name] = getattr(instance, column.name)
+            else:
+                for attr in self._get_columns():
+                    result[attr] = getattr(instance, attr)
+
+            return {"result": result}, 201
+        except Exception as e:
+            self.session.rollback()
+            return {"error": str(e)}, 400
+
+    def put(self, request):
+        """
+        Handle PUT requests.
+        
+        Updates an existing object in the database using the request data.
+        Validates the data if a validator is configured.
+        
+        Args:
+            request: The HTTP request.
+            
+        Returns:
+            tuple: A tuple containing the response data and status code.
+        """
+        try:
+            # First try to get ID from path parameters
+            object_id = request.path_params.get("id")
+            
+            # If not found, try query parameters
+            if not object_id and hasattr(request, 'query_params'):
+                object_id = request.query_params.get("id")
+                
+            if not object_id:
+                return {"error": "ID is required"}, 400
+
+            instance = (
+                self.session.query(self.__class__).filter_by(id=object_id).first()
+            )
+            if not instance:
+                return {"error": "Object not found"}, 404
+
+            data = getattr(request, 'data', {})
+
+            if hasattr(self, 'validator'):
+                validated_data = self.validator.validate(data)
+                data = validated_data
+
+            for field, value in data.items():
+                setattr(instance, field, value)
+
+            self.session.commit()
+
+            result = {}
+            if self._is_sa_model():
+                for column in sql_inspect(instance.__class__).columns:
+                    result[column.name] = getattr(instance, column.name)
+            else:
+                for attr in self._get_columns():
+                    result[attr] = getattr(instance, attr)
+
+            return {"result": result}, 200
+        except Exception as e:
+            self.session.rollback()
+            return {"error": str(e)}, 400
+
+    def delete(self, request):
+        """
+        Handle DELETE requests.
+        
+        Deletes an object from the database.
+        
+        Args:
+            request: The HTTP request.
+            
+        Returns:
+            tuple: A tuple containing the response data and status code.
+        """
+        try:
+            # First try to get ID from path parameters
+            object_id = request.path_params.get("id")
+            
+            # If not found, try query parameters
+            if not object_id and hasattr(request, 'query_params'):
+                object_id = request.query_params.get("id")
+                
+            if not object_id:
+                return {"error": "ID is required"}, 400
+
+            instance = (
+                self.session.query(self.__class__).filter_by(id=object_id).first()
+            )
+            if not instance:
+                return {"error": "Object not found"}, 404
+
+            self.session.delete(instance)
+            self.session.commit()
+
+            return {"result": "Object deleted"}, 204
+        except Exception as e:
+            self.session.rollback()
+            return {"error": str(e)}, 400
+
+    def options(self, request):
+        """
+        Handle OPTIONS requests.
+        
+        Returns the list of allowed HTTP methods for this endpoint.
+        
+        Args:
+            request: The HTTP request.
+            
+        Returns:
+            tuple: A tuple containing the response data and status code.
+        """
+        return {"allowed_methods": self.Configuration.http_method_names}, 200
+
+
+class Validator:
+    """
+    Base class for request data validation.
+    
+    Provides a mechanism for validating and transforming request data
+    through per-field validation methods. Subclasses can implement
+    validate_<field_name> methods to validate and transform specific fields.
+    """
+    
+    def validate(self, data):
+        """
+        Validate and transform request data.
+        
+        For each field in the data, looks for a validate_<field_name> method
+        and calls it to validate and transform the field value.
+        
+        Args:
+            data: The data to validate.
+            
+        Returns:
+            dict: The validated and transformed data.
+        """
+        validated_data = {}
+        for field, value in data.items():
+            validate_method = getattr(self, f"validate_{field}", None)
+            if validate_method:
+                validated_data[field] = validate_method(value)
+            else:
+                validated_data[field] = value
+        return validated_data

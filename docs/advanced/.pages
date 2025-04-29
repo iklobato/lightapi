@@ -1,0 +1,9 @@
+title: Advanced Topics
+
+nav:
+  - Authentication Implementation: authentication.md
+  - Caching with Redis: caching.md
+  - Custom Middleware: middleware.md
+  - Request Validation: validation.md
+  - Data Pagination: pagination.md
+  - Request Filtering: filtering.md

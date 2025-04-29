@@ -1,0 +1,8 @@
+title: Tutorial
+
+nav:
+  - Basic API: basic-api.md
+  - Database Integration: database.md
+  - Creating Endpoints: endpoints.md
+  - Handling Requests: requests.md
+  - Working with Responses: responses.md

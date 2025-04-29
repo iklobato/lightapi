@@ -1,6 +1,6 @@
 import json
-from http.server import BaseHTTPRequestHandler
 from abc import ABC, abstractmethod
+from http.server import BaseHTTPRequestHandler
 
 
 class RequestHandlerStrategy(ABC):

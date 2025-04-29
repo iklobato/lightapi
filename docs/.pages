@@ -1,7 +1,25 @@
-title: LightAPI
-
 nav:
-    - Home:
-        - index.md
-    - getting-started
-    - reference
+    - Home: index.md
+    - Getting Started: getting-started
+    - Tutorial: tutorial
+    - Advanced Topics: advanced
+    - API Reference:
+        - Core API: api-reference/core.md
+        - REST API: api-reference/rest.md
+        - Authentication: api-reference/auth.md
+        - Database: api-reference/database.md
+        - Caching: api-reference/cache.md
+        - Filtering: api-reference/filters.md
+        - Pagination: api-reference/pagination.md
+        - Swagger Integration: api-reference/swagger.md
+        - Models: api-reference/models.md
+        - Exceptions: api-reference/exceptions.md
+    - Examples:
+        - Basic REST API: examples/basic-rest.md
+        - Authentication: examples/auth.md
+        - Caching: examples/caching.md
+        - Filtering and Pagination: examples/filtering-pagination.md
+        - Middleware: examples/middleware.md
+        - Relationships: examples/relationships.md
+        - Swagger: examples/swagger.md
+        - Validation: examples/validation.md

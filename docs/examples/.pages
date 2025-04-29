@@ -1,0 +1,5 @@
+title: Examples
+
+nav:
+  - Basic CRUD Examples: basic-crud.md
+  - Custom Application Example: custom-application.md

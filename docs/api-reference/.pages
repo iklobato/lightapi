@@ -1,0 +1,12 @@
+nav:
+  - Overview: index.md
+  - Core API: core.md
+  - REST API: rest.md
+  - Authentication: auth.md
+  - Database: database.md
+  - Caching: cache.md
+  - Filtering: filters.md
+  - Pagination: pagination.md
+  - Swagger Integration: swagger.md
+  - Models: models.md
+  - Exceptions: exceptions.md
