@@ -108,14 +108,24 @@ class RestEndpoint:
         Args:
             request: The HTTP request.
             session: The database session.
+            
+        Returns:
+            Response: Error response if setup fails, None otherwise.
         """
         self.request = request
         self.session = session
-        self._setup_auth()
+        
+        # Handle authentication first
+        auth_response = self._setup_auth()
+        if auth_response:
+            return auth_response
+            
         self._setup_cache()
         self._setup_filter()
         self._setup_validator()
         self._setup_pagination()
+        
+        return None
 
     def _setup_auth(self):
         """
@@ -172,6 +182,15 @@ class RestEndpoint:
             tuple: A tuple containing the response data and status code.
         """
         query = self.session.query(self.__class__)
+        
+        # Check for ID filter in query parameters
+        object_id = None
+        if hasattr(request, 'query_params'):
+            object_id = request.query_params.get("id")
+            
+        # Filter by ID if provided
+        if object_id:
+            query = query.filter_by(id=object_id)
 
         if hasattr(self, 'filter'):
             query = self.filter.filter_queryset(query, request)
@@ -245,7 +264,13 @@ class RestEndpoint:
             tuple: A tuple containing the response data and status code.
         """
         try:
+            # First try to get ID from path parameters
             object_id = request.path_params.get("id")
+            
+            # If not found, try query parameters
+            if not object_id and hasattr(request, 'query_params'):
+                object_id = request.query_params.get("id")
+                
             if not object_id:
                 return {"error": "ID is required"}, 400
 
@@ -292,7 +317,13 @@ class RestEndpoint:
             tuple: A tuple containing the response data and status code.
         """
         try:
+            # First try to get ID from path parameters
             object_id = request.path_params.get("id")
+            
+            # If not found, try query parameters
+            if not object_id and hasattr(request, 'query_params'):
+                object_id = request.query_params.get("id")
+                
             if not object_id:
                 return {"error": "ID is required"}, 400
 

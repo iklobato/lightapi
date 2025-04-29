@@ -5,28 +5,20 @@ from lightapi.auth import JWTAuthentication
 from lightapi.models import Base, register_model_class
 import jwt
 import datetime
+import json
 
 # Secret key for JWT signing
 SECRET_KEY = "your-secret-key-change-in-production"
 
 # Custom authentication class
 class CustomJWTAuth(JWTAuthentication):
+    def __init__(self):
+        super().__init__()
+        self.secret_key = SECRET_KEY
+        
     def authenticate(self, request):
-        # Check for the Authorization header
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return False
-        
-        token = auth_header.split(' ')[1]
-        
-        try:
-            # Verify the token
-            payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-            # Store user info from token in request for later use
-            request.user = payload
-            return True
-        except jwt.PyJWTError:
-            return False
+        # Use the parent class implementation
+        return super().authenticate(request)
 
 # Login endpoint to get a token
 class AuthEndpoint(RestEndpoint):
@@ -60,21 +52,33 @@ class SecretResource(RestEndpoint):
         authentication_class = CustomJWTAuth
     
     def get(self, request):
-        # Access the user info stored during authentication
-        username = request.user.get('username')
-        role = request.user.get('role')
-        
-        return {
-            "message": f"Hello, {username}! You have {role} access.",
-            "secret_data": "This is protected information"
-        }, 200
+        try:
+            # Access the user info stored during authentication
+            username = request.state.user.get('username')
+            role = request.state.user.get('role')
+            
+            return {
+                "message": f"Hello, {username}! You have {role} access.",
+                "secret_data": "This is protected information"
+            }, 200
+        except Exception as e:
+            import traceback
+            print(f"Error in SecretResource.get: {e}")
+            print(traceback.format_exc())
+            return {"error": str(e)}, 500
 
 # Public endpoint that doesn't require authentication
 class PublicResource(RestEndpoint):
     __abstract__ = True  # Not a database model
     
     def get(self, request):
-        return {"message": "This is public information"}, 200
+        try:
+            return {"message": "This is public information"}, 200
+        except Exception as e:
+            import traceback
+            print(f"Error in PublicResource.get: {e}")
+            print(traceback.format_exc())
+            return {"error": str(e)}, 500
 
 # User profile endpoint that requires authentication
 @register_model_class
@@ -91,7 +95,7 @@ class UserProfile(RestEndpoint):
     
     # Override GET to return only the current user's profile
     def get(self, request):
-        user_id = request.user.get('sub')
+        user_id = request.state.user.get('sub')
         profile = self.session.query(self.__class__).filter_by(user_id=user_id).first()
         
         if profile:

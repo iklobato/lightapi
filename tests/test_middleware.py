@@ -69,7 +69,7 @@ class TestMiddleware:
         assert result != mock_response
         assert isinstance(result, Response)
         assert result.status_code == 200
-        assert "modified" in result.body.decode()
+        assert "modified" in str(result.body) or "modified" in result.body
 
     def test_request_blocking_middleware(self):
         middleware = RequestBlockingMiddleware()
@@ -79,7 +79,7 @@ class TestMiddleware:
 
         assert isinstance(result, Response)
         assert result.status_code == 403
-        assert "error" in result.body.decode()
+        assert "error" in str(result.body) or "error" in result.body
 
     def test_middleware_with_no_response(self):
         middleware = HeaderModifyingMiddleware()

@@ -251,8 +251,14 @@ if __name__ == "__main__":
         ## Authentication
         
         Some endpoints require authentication with an API key.
-        """,
-        swagger_generator_class=CustomSwaggerGenerator
+        """
+    )
+    
+    # Use the custom swagger generator
+    app.swagger_generator = CustomSwaggerGenerator(
+        title="Swagger API Example",
+        version="1.0.0",
+        description="Example API with custom Swagger documentation"
     )
     
     # Register endpoints

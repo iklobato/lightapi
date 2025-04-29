@@ -13,15 +13,16 @@ class TestJWTAuthentication:
         payload = {"user_id": 1, "exp": time.time() + 3600}
         token = jwt.encode(payload, auth.secret_key, algorithm=auth.algorithm)
 
-        # Create mock request with token
+        # Create mock request with token and state attribute
         mock_request = MagicMock()
         mock_request.headers = {"Authorization": f"Bearer {token}"}
+        mock_request.state = MagicMock()
 
         result = auth.authenticate(mock_request)
 
         assert result is True
-        assert hasattr(mock_request, 'user')
-        assert mock_request.user['user_id'] == 1
+        assert hasattr(mock_request.state, 'user')
+        assert mock_request.state.user['user_id'] == 1
 
     def test_authenticate_invalid_token(self):
         auth = JWTAuthentication()

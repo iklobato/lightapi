@@ -96,6 +96,8 @@ class ProductPaginator(Paginator):
                             queryset = queryset.order_by(column.asc())
         else:
             page = 1
+
+        self.paginator_limit = limit  # Store the limit for use in get() method
             
         # Calculate offset
         offset = (page - 1) * limit
@@ -138,6 +140,10 @@ class Product(RestEndpoint):
     
     # Override GET to transform price from cents to dollars in response
     def get(self, request):
+        # Save the request for the paginator to access
+        if hasattr(self, 'paginator'):
+            self.paginator.request = request
+            
         query = self.session.query(self.__class__)
         
         # Apply filtering

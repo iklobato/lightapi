@@ -47,7 +47,7 @@ class JWTAuthentication(BaseAuthentication):
         Authenticate a request using a JWT token.
         
         Extracts the token from the Authorization header,
-        validates it, and adds the payload to request.user.
+        validates it, and adds the payload to request.state.user.
         
         Args:
             request: The HTTP request to authenticate.
@@ -64,7 +64,7 @@ class JWTAuthentication(BaseAuthentication):
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             if payload.get("exp", 0) < time.time():
                 return False
-            request.user = payload
+            request.state.user = payload
             return True
         except jwt.PyJWTError:
             return False

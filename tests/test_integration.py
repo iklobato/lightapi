@@ -102,5 +102,5 @@ class TestIntegration:
         call_args = mock_run.call_args[1]
         assert call_args["host"] == "localhost"
         assert call_args["port"] == 8000
-        assert call_args["debug"] == True
+        assert call_args["log_level"] == "debug"
         assert call_args["reload"] == True

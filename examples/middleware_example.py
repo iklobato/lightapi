@@ -202,7 +202,7 @@ if __name__ == "__main__":
     app.add_middleware([
         LoggingMiddleware,
         CORSMiddleware,
-        RateLimitMiddleware()
+        RateLimitMiddleware
     ])
     
     print("Server running at http://localhost:8000")

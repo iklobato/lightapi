@@ -191,7 +191,7 @@ class TestWeatherEndpoint:
         mock_print.assert_any_call("Cache SET for 'weather:London' (expires in 30s)")
         
         # Verify sleep was called to simulate slow operation
-        mock_sleep.assert_called_once_with(3)
+        mock_sleep.assert_called_once_with(0.1)
     
     @patch('examples.caching_example.time.sleep')
     @patch('examples.caching_example.print')

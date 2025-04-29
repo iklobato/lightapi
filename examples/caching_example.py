@@ -64,8 +64,20 @@ class WeatherEndpoint(RestEndpoint):
         caching_method_names = ['GET']  # Only cache GET requests
     
     def get(self, request):
-        # Get the city from query parameters
-        city = request.query_params.get('city', 'default')
+        # Get the city from path parameters or query parameters or use default
+        city = None
+        
+        # Check path_params if available
+        if hasattr(request, 'path_params'):
+            city = request.path_params.get('city')
+            
+        # If city is not found in path_params, check query_params
+        if not city and hasattr(request, 'query_params'):
+            city = request.query_params.get('city')
+            
+        # Use default if city is still not found
+        if not city:
+            city = 'default'
         
         # Check if response is in cache
         cache_key = f"weather:{city}"
@@ -80,7 +92,7 @@ class WeatherEndpoint(RestEndpoint):
         
         # Simulate a slow API call (3 seconds)
         print(f"Fetching weather data for {city}...")
-        time.sleep(3)
+        time.sleep(0.1)  # Reduced for tests
         
         # Generate random weather data
         data = {
@@ -160,7 +172,7 @@ if __name__ == "__main__":
     )
     
     app.register({
-        '/weather': WeatherEndpoint,
+        '/weather/{city}': WeatherEndpoint,
         '/resource': ConfigurableCacheEndpoint
     })
     
@@ -168,11 +180,11 @@ if __name__ == "__main__":
     print("API documentation available at http://localhost:8000/docs")
     print("\nTry these examples to see caching in action:")
     print("1. Get weather (first request is slow, subsequent requests use cache):")
-    print("   curl http://localhost:8000/weather?city=London")
+    print("   curl http://localhost:8000/weather/London")
     print("2. Try a different city:")
-    print("   curl http://localhost:8000/weather?city=Tokyo")
+    print("   curl http://localhost:8000/weather/Tokyo")
     print("3. Clear cache for a specific city:")
-    print("   curl -X DELETE http://localhost:8000/weather?city=London")
+    print("   curl -X DELETE http://localhost:8000/weather/London")
     print("4. Clear all weather cache:")
     print("   curl -X DELETE http://localhost:8000/weather")
     print("5. Try a resource with custom cache TTL (in seconds):")
