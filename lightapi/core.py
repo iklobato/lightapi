@@ -1,5 +1,7 @@
 import json
-from typing import Any, Callable, Dict, List, Type
+import hashlib
+from inspect import iscoroutinefunction
+from typing import Any, Callable, Dict, List, Type, TYPE_CHECKING
 
 import uvicorn
 from starlette.applications import Starlette
@@ -8,17 +10,19 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from .config import config
-from .models import Base, setup_database
+from .models import setup_database
 
+if TYPE_CHECKING:
+    from .rest import RestEndpoint
 
 class LightApi:
     """
     Main application class for building REST APIs.
-    
+
     LightApi provides functionality for setting up and running a
     REST API application. It includes features for registering endpoints,
     applying middleware, generating API documentation, and running the server.
-    
+
     Attributes:
         routes: List of Starlette routes.
         middleware: List of middleware classes.
@@ -123,7 +127,7 @@ class LightApi:
         async def handler(request):
             try:
                 endpoint = endpoint_class()
-                
+
                 if request.method in ["POST", "PUT", "PATCH"]:
                     try:
                         body = await request.body()
@@ -136,30 +140,79 @@ class LightApi:
                 else:
                     request.data = {}
 
+                # Pre-processing middleware before endpoint setup
+                for middleware_class in self.middleware:
+                    middleware = middleware_class()
+                    response = middleware.process(request, None)
+                    if response is not None:
+                        return response
+
                 # Setup the endpoint and check for authentication errors
                 setup_result = endpoint._setup(request, self.Session())
                 if setup_result:
                     return setup_result
 
-                for middleware_class in self.middleware:
-                    middleware = middleware_class()
-                    response = middleware.process(request, None)
-                    if response:
-                        return response
-
                 if hasattr(endpoint, 'headers'):
                     request = endpoint.headers(request)
 
                 method = request.method.lower()
-                if method not in methods:
+                if method.upper() not in [m.upper() for m in methods]:
                     return JSONResponse(
                         {"error": f"Method {method} not allowed"},
                         status_code=405
                     )
 
-                handler = getattr(endpoint, method)
-                response = await handler(request)
-                
+                func = getattr(endpoint, method)
+                if iscoroutinefunction(func):
+                    result = await func(request)
+                else:
+                    result = func(request)
+
+                # Convert returned value to a Response instance
+                if isinstance(result, Response):
+                    response = result
+                else:
+                    if isinstance(result, tuple) and len(result) == 2:
+                        body, status = result
+                    else:
+                        body, status = result, 200
+                    response = Response(body, status_code=status)
+
+                # Caching support
+                config = getattr(endpoint_class, 'Configuration', None)
+                if (
+                    hasattr(endpoint, 'cache') and config and
+                    getattr(config, 'caching_method_names', []) and
+                    method.upper() in [m.upper() for m in config.caching_method_names]
+                ):
+                    cache_key_source = f"{request.url}"
+                    if request.data:
+                        cache_key_source += json.dumps(request.data, sort_keys=True)
+                    cache_key = hashlib.md5(cache_key_source.encode()).hexdigest()
+
+                    cached = endpoint.cache.get(cache_key)
+                    if cached:
+                        response = Response(
+                            cached['body'],
+                            status_code=cached.get('status', response.status_code),
+                            headers=response.headers
+                        )
+                    else:
+                        endpoint.cache.set(
+                            cache_key,
+                            {
+                                'body': response.body,
+                                'status': response.status_code,
+                            }
+                        )
+
+                # Post-processing middleware in reverse order
+                for middleware_class in reversed(self.middleware):
+                    middleware = middleware_class()
+                    processed = middleware.process(request, response)
+                    if processed is not None:
+                        response = processed
+
                 return response
 
             except Exception as e:
@@ -310,6 +363,19 @@ class Response(JSONResponse):
         elif isinstance(self._body, dict):
             return json.dumps(self._body)
         return str(self._body)
+
+    async def __call__(self, scope, receive, send):
+        """Send the response using the stored byte body."""
+        await send(
+            {
+                "type": "http.response.start",
+                "status": self.status_code,
+                "headers": self.raw_headers,
+            }
+        )
+        await send({"type": "http.response.body", "body": self._body})
+        if self.background is not None:
+            await self.background()
 
 
 class Middleware:
