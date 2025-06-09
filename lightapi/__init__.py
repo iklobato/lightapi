@@ -11,6 +11,8 @@ __all__ = [
     'LightApi',
     'Response',
     'Middleware',
+    'CORSMiddleware',
+    'AuthenticationMiddleware',
     'RestEndpoint',
     'Validator',
     'JWTAuthentication',

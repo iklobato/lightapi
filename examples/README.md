@@ -4,6 +4,15 @@ This directory contains example applications demonstrating various features of t
 
 ## Basic Examples
 
+- **user_goal_example.py**: Comprehensive demonstration of intended LightAPI usage patterns
+  - Shows the exact API design philosophy and usage as envisioned
+  - Demonstrates custom validators with field-specific validation methods
+  - Implements JWT authentication with proper configuration
+  - Shows multiple endpoints with different authentication requirements
+  - Illustrates custom middleware integration (commented for clarity)
+  - Includes CORS support and proper environment variable usage
+  - **Note**: Some advanced features (caching + pagination) are commented out due to current limitations
+
 - **basic_rest_api.py**: A simple REST API with default CRUD operations
   - Demonstrates minimal setup for a REST endpoint
   - Shows automatic handling of GET, POST, PUT, DELETE operations
@@ -113,6 +122,9 @@ The examples now include improved CORS and authentication. Test with:
 # Start the custom_snippet example
 LIGHTAPI_JWT_SECRET="test-secret-key-123" python examples/custom_snippet.py
 
+# Start the user goal example (comprehensive demonstration)
+LIGHTAPI_JWT_SECRET="test-secret-key-123" python examples/user_goal_example.py
+
 # Test CORS preflight (should work without authentication)
 curl -X OPTIONS http://localhost:8000/custom -v
 
@@ -135,66 +147,60 @@ curl -X GET http://localhost:8000/custom \
   -v
 ```
 
-## Example API Requests
+## Known Limitations & Troubleshooting
 
-Each example includes instructions for testing the API endpoints using `curl` or through the Swagger UI.
+### Current Limitations
 
-For example, to test the basic REST API:
+1. **Caching + Pagination Compatibility**: Currently, using both `caching_class` and `pagination_class` together in the same endpoint configuration can cause serialization issues. If you need both features, implement them at different layers or use manual caching.
 
+2. **Custom Response Serialization**: When using custom Response objects with complex middleware stacks, ensure proper JSON serialization to avoid `TypeError: memoryview: a bytes-like object is required, not 'dict'` errors.
+
+### Common Issues
+
+**Port Already in Use Error**
 ```bash
-# List all users
-curl http://localhost:8000/users
+ERROR: [Errno 48] error while attempting to bind on address ('127.0.0.1', 8000): address already in use
+```
+Solution: Kill existing processes or use a different port:
+```bash
+# Kill processes using port 8000
+lsof -ti:8000 | xargs kill -9
 
-# Create a new user
-curl -X POST http://localhost:8000/users \
-  -H "Content-Type: application/json" \
-  -d '{"name": "John Doe", "email": "john@example.com", "role": "admin"}'
-
-# Get a user by ID
-curl http://localhost:8000/users/1
-
-# Update a user
-curl -X PUT http://localhost:8000/users/1 \
-  -H "Content-Type: application/json" \
-  -d '{"name": "John Smith", "email": "john.smith@example.com", "role": "admin"}'
-
-# Delete a user
-curl -X DELETE http://localhost:8000/users/1
+# Or use a different port
+export LIGHTAPI_PORT="8001"
 ```
 
-## Environment Variables
+**JWT Authentication Issues**
+- Ensure `LIGHTAPI_JWT_SECRET` environment variable is set
+- Verify JWT token format and expiration
+- Check that OPTIONS requests are handled properly for CORS
 
-Many examples now support environment variable configuration:
+**Content-Length Errors**
+If you encounter "Response content longer than Content-Length" errors:
+- Avoid mixing complex middleware with custom response handling
+- Use built-in Response classes when possible
+- Check for proper JSON serialization in custom middleware
 
-```bash
-# JWT Authentication
-export LIGHTAPI_JWT_SECRET="your-secret-key"
+### Response Format Options
 
-# Database
-export LIGHTAPI_DATABASE_URL="postgresql://user:pass@localhost/db"
+LightAPI supports multiple response formats for flexibility:
 
-# Redis Caching
-export LIGHTAPI_REDIS_HOST="localhost"
-export LIGHTAPI_REDIS_PORT="6379"
+```python
+# Tuple format (status code, data)
+def get(self, request):
+    return {'data': 'ok'}, 200
 
-# Server Configuration
-export LIGHTAPI_HOST="0.0.0.0"
-export LIGHTAPI_PORT="8000"
-export LIGHTAPI_DEBUG="True"
+# Response object (more control)
+def post(self, request):
+    return Response(
+        {'data': 'created'},
+        status_code=201,
+        content_type='application/json'
+    )
 
-# CORS
-export LIGHTAPI_CORS_ORIGINS='["https://myapp.com"]'
-
-# Swagger
-export LIGHTAPI_SWAGGER_TITLE="My API"
-export LIGHTAPI_ENABLE_SWAGGER="True"
+# Simple dictionary (assumes 200 status)
+def get(self, request):
+    return {'data': 'ok'}
 ```
 
 ## Notes
-
-- These examples are designed for learning and demonstration purposes
-- For production use, you should implement proper security, error handling, and database configuration
-- The examples use SQLite for simplicity, but LightAPI works with any SQLAlchemy-supported database
-- **New**: Built-in middleware reduces boilerplate code and provides better defaults
-- **New**: CORS and authentication work seamlessly together
-- **New**: Redis caching is more reliable with fixed JSON serialization 

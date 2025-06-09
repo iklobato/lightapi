@@ -384,10 +384,7 @@ app.add_middleware([
         allow_headers=['*'],
         allow_credentials=True
     ),
-    AuthenticationMiddleware(
-        JWTAuthentication,
-        secret_key=Config.JWT_SECRET
-    )
+    AuthenticationMiddleware(JWTAuthentication)
 ])
 
 # Register API endpoints
@@ -439,11 +436,7 @@ app.add_middleware([
     ),
     
     # Authentication Layer
-    AuthenticationMiddleware(
-        JWTAuthentication,
-        secret_key=os.getenv('JWT_SECRET'),
-        exclude_paths=['/health', '/metrics', '/api/docs']
-    )
+    AuthenticationMiddleware(JWTAuthentication)
 ])
 
 app.register({'/api/v1/data': APIEndpoint})

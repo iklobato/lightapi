@@ -170,7 +170,32 @@ swagger_config = SwaggerConfig(
 app = LightApi(swagger_config=swagger_config)
 ```
 
+## Getting Started
+
+Ready to build your first LightAPI application? Check out our comprehensive guides:
+
+- **[User Goal Example](../examples/user_goal_example.py)**: See the exact usage pattern LightAPI was designed for
+- **[Troubleshooting Guide](troubleshooting.md)**: Solutions for common issues and best practices
+- **[API Reference](api-reference/)**: Complete documentation of all classes and methods
+
 ## Real-World Example
+
+### User Goal Example
+
+The `examples/user_goal_example.py` demonstrates the exact usage pattern envisioned for LightAPI, showcasing:
+
+- **Custom Validators**: Field-specific validation with custom logic
+- **JWT Authentication**: Secure endpoints with environment-based configuration  
+- **Multiple Endpoint Types**: Different authentication requirements per endpoint
+- **Built-in Middleware**: CORS support with proper integration
+- **Flexible Response Formats**: Both tuple and Response object patterns
+
+```bash
+# Run the comprehensive example
+LIGHTAPI_JWT_SECRET="test-secret-key-123" python examples/user_goal_example.py
+```
+
+### Enterprise Features Example
 
 Here's a comprehensive example showing LightAPI's enterprise capabilities:
 

@@ -152,6 +152,9 @@ from lightapi.auth import JWTAuthentication
 from datetime import timedelta
 import redis
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 class EnterpriseJWTAuth(JWTAuthentication):
     """Enterprise JWT authentication with advanced features"""

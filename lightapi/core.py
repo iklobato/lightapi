@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, List, Type, TYPE_CHECKING
 
 import uvicorn
 from starlette.applications import Starlette
-from starlette.middleware.cors import CORSMiddleware
+# from starlette.middleware.cors import CORSMiddleware  # Not needed - we have our own
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
@@ -439,7 +439,7 @@ class Response(JSONResponse):
             if isinstance(body, bytes):
                 return body.decode('utf-8')
             return str(body) if body is not None else json.dumps({})
-        except:
+        except (AttributeError, UnicodeDecodeError, TypeError):
             return json.dumps({})
 
 
@@ -479,9 +479,9 @@ class CORSMiddleware(Middleware):
     
     def __init__(
         self, 
-        allow_origins=['*'], 
-        allow_methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], 
-        allow_headers=['Authorization', 'Content-Type']
+        allow_origins=None, 
+        allow_methods=None, 
+        allow_headers=None
     ):
         """
         Initialize CORS middleware.
@@ -491,6 +491,13 @@ class CORSMiddleware(Middleware):
             allow_methods: List of allowed HTTP methods
             allow_headers: List of allowed headers
         """
+        if allow_origins is None:
+            allow_origins = ['*']
+        if allow_methods is None:
+            allow_methods = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+        if allow_headers is None:
+            allow_headers = ['Authorization', 'Content-Type']
+            
         self.allow_origins = allow_origins
         self.allow_methods = allow_methods
         self.allow_headers = allow_headers
@@ -552,7 +559,7 @@ class CORSMiddleware(Middleware):
                     status_code=response.status_code,
                     headers=all_headers
                 )
-            except:
+            except (json.JSONDecodeError, AttributeError, UnicodeDecodeError):
                 # If we can't extract content, just add headers to existing response
                 response.headers.update(cors_headers)
                 return response

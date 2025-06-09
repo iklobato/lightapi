@@ -131,16 +131,16 @@ def test_authentication_edge_cases(monkeypatch):
         # Test with invalid token - first hit middleware
         invalid_headers = {"Authorization": "Bearer invalid_token"}
         resp = client.get("/custom", headers=invalid_headers)
-        # Should get 401 from JWT authentication, not 403 from middleware
-        assert resp.status_code in [401, 403]  # Allow either based on implementation
+        # Authentication middleware returns 403 for invalid token
+        assert resp.status_code == 403
         
         # Test with expired token
         expired_payload = {"user": "test", "exp": datetime.now(timezone.utc) - timedelta(hours=1)}
         expired_token = jwt.encode(expired_payload, config.jwt_secret, algorithm="HS256")
         expired_headers = {"Authorization": f"Bearer {expired_token}"}
         resp = client.get("/custom", headers=expired_headers)
-        # Should pass middleware but fail JWT validation
-        assert resp.status_code in [401, 403, 500]  # Depending on implementation
+        # Authentication middleware returns 403 for expired token
+        assert resp.status_code == 403
         
         # Test with malformed Authorization header
         malformed_headers = {"Authorization": "InvalidFormat"}
