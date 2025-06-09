@@ -68,7 +68,7 @@ class CustomEndpoint(RestEndpoint):
 
     def post(self, request):
         """Create a new resource."""
-        return {'data': 'created', 'message': 'POST request successful', 'body': getattr(request, 'data', {})}, 201
+        return {'data': 'ok', 'message': 'POST request successful', 'body': getattr(request, 'data', {})}, 200
 
     def put(self, request):
         """Update an existing resource (full update)."""
