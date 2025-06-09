@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String
 
-from lightapi.core import LightApi, Response, Middleware
+from lightapi.core import LightApi, Response, Middleware, CORSMiddleware, AuthenticationMiddleware
 from lightapi.rest import RestEndpoint, Validator
 from lightapi.pagination import Paginator
 from lightapi.auth import JWTAuthentication
@@ -25,22 +25,24 @@ class Company(RestEndpoint):
     website = Column(String)
 
     class Configuration:
-        http_method_names = ['GET', 'POST']
+        http_method_names = ['GET', 'POST', 'OPTIONS']
         validator_class = CustomEndpointValidator
         filter_class = ParameterFilter
 
     def post(self, request):
-        return Response(
-            {'data': 'ok', 'data': getattr(request, 'data', {})},
-            status_code=200,
-            content_type='application/json'
+        from starlette.responses import JSONResponse
+        return JSONResponse(
+            {'status': 'ok', 'data': getattr(request, 'data', {})},
+            status_code=200
         )
 
     def get(self, request):
         return {'data': 'ok'}, 200
 
     def headers(self, request):
-        request.headers['X-New-Header'] = 'my new header value'
+        # Headers in starlette are typically immutable during request processing
+        # This method demonstrates header handling but shouldn't modify request headers
+        # Instead, headers should be modified in the response
         return request
 
 
@@ -51,42 +53,53 @@ class CustomPaginator(Paginator):
 
 class CustomEndpoint(RestEndpoint):
     class Configuration:
-        http_method_names = ['GET', 'POST']
+        # Remove the http_method_names restriction to get full CRUD automatically
+        # http_method_names = ['GET', 'POST', 'OPTIONS']  # This was limiting the methods!
+        # OR specify all CRUD methods explicitly:
+        http_method_names = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
         authentication_class = JWTAuthentication
         caching_class = RedisCache
         caching_method_names = ['GET']
         pagination_class = CustomPaginator
 
-    def post(self, request):
-        return {'data': 'ok'}, 200
-
     def get(self, request):
-        return {'data': 'ok'}, 200
+        """Retrieve resource(s)."""
+        return {'data': 'ok', 'message': 'GET request successful'}, 200
 
+    def post(self, request):
+        """Create a new resource."""
+        return {'data': 'created', 'message': 'POST request successful', 'body': getattr(request, 'data', {})}, 201
 
-class MyCustomMiddleware(Middleware):
-    def process(self, request, response):
-        if 'Authorization' not in request.headers:
-            return Response({'error': 'not allowed'}, status_code=403)
-        return response
+    def put(self, request):
+        """Update an existing resource (full update)."""
+        return {'data': 'updated', 'message': 'PUT request successful', 'body': getattr(request, 'data', {})}, 200
 
+    def patch(self, request):
+        """Partially update an existing resource."""
+        return {'data': 'patched', 'message': 'PATCH request successful', 'body': getattr(request, 'data', {})}, 200
 
-class CORSMiddleware(Middleware):
-    def process(self, request, response):
-        if response is None:
-            return None
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
-        if request.method == 'OPTIONS':
-            return Response(status_code=200)
-        return response
+    def delete(self, request):
+        """Delete a resource."""
+        return {'data': 'deleted', 'message': 'DELETE request successful'}, 200
+
+    def options(self, request):
+        """Return allowed HTTP methods."""
+        return {
+            'allowed_methods': ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+            'message': 'OPTIONS request successful'
+        }, 200
 
 
 def create_app():
     app = LightApi()
     app.register({'/custom': CustomEndpoint})
-    app.add_middleware([MyCustomMiddleware, CORSMiddleware])
+    
+    # Use built-in middleware classes
+    app.add_middleware([
+        AuthenticationMiddleware,  # Handles authentication automatically
+        CORSMiddleware             # Handles CORS with proper defaults
+    ])
+    
     return app
 
 

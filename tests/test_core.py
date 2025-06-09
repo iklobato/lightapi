@@ -36,7 +36,7 @@ class TestLightApi:
         app.register({'/test': TestModel})
         
         # Count routes that are actual endpoints (not docs or other utility routes)
-        endpoint_routes = [r for r in app.routes if isinstance(r, Route) and not r.path.startswith('/api/docs')]
+        endpoint_routes = [r for r in app.routes if isinstance(r, Route) and not r.path.startswith('/api/docs') and r.path != '/openapi.json']
         assert len(endpoint_routes) == 1
 
         # Find the route for /test

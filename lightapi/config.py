@@ -27,6 +27,9 @@ class Config:
         self.swagger_version: str = os.getenv("LIGHTAPI_SWAGGER_VERSION", "1.0.0")
         self.swagger_description: str = os.getenv("LIGHTAPI_SWAGGER_DESCRIPTION", "API automatic documentation")
         self.enable_swagger: bool = self._parse_bool(os.getenv("LIGHTAPI_ENABLE_SWAGGER", "True"))
+        
+        # Cache settings
+        self.cache_timeout: int = int(os.getenv("LIGHTAPI_CACHE_TIMEOUT", "3600"))  # Default 1 hour
 
     @staticmethod
     def _parse_bool(value: str) -> bool:

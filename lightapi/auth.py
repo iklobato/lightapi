@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional
 from datetime import datetime, timedelta
 
 import jwt
+from starlette.responses import JSONResponse
 
 from .config import config
 
@@ -27,6 +28,18 @@ class BaseAuthentication:
         """
         return True
 
+    def get_auth_error_response(self, request):
+        """
+        Get the response to return when authentication fails.
+        
+        Args:
+            request: The HTTP request object.
+            
+        Returns:
+            Response object for authentication error.
+        """
+        return JSONResponse({'error': 'not allowed'}, status_code=403)
+
 
 class JWTAuthentication(BaseAuthentication):
     """
@@ -34,6 +47,7 @@ class JWTAuthentication(BaseAuthentication):
     
     Authenticates requests using JWT tokens from the Authorization header.
     Validates token signatures and expiration times.
+    Automatically skips authentication for OPTIONS requests (CORS preflight).
     
     Attributes:
         secret_key: Secret key for signing tokens.
@@ -53,6 +67,7 @@ class JWTAuthentication(BaseAuthentication):
     def authenticate(self, request):
         """
         Authenticate a request using JWT token.
+        Automatically allows OPTIONS requests for CORS preflight.
         
         Args:
             request: The HTTP request object.
@@ -60,6 +75,10 @@ class JWTAuthentication(BaseAuthentication):
         Returns:
             bool: True if authentication succeeds, False otherwise.
         """
+        # Skip authentication for OPTIONS requests (CORS preflight)
+        if request.method == 'OPTIONS':
+            return True
+            
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
             return False

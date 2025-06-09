@@ -52,6 +52,7 @@ class TestCustomJWTAuth:
         # Create a mock request with the token
         class MockRequest:
             headers = {'Authorization': f'Bearer {token}'}
+            method = 'GET'
             
             def __init__(self):
                 self.state = type('state', (), {})
@@ -76,6 +77,7 @@ class TestCustomJWTAuth:
         # Create a mock request without a token
         class MockRequest:
             headers = {}
+            method = 'GET'
         
         # Create the auth instance and test authentication
         auth = CustomJWTAuth()
@@ -90,6 +92,7 @@ class TestCustomJWTAuth:
         # Create a mock request with an invalid token
         class MockRequest:
             headers = {'Authorization': 'Bearer invalid.token.here'}
+            method = 'GET'
         
         # Create the auth instance and test authentication
         auth = CustomJWTAuth()
@@ -113,6 +116,7 @@ class TestCustomJWTAuth:
         # Create a mock request with the expired token
         class MockRequest:
             headers = {'Authorization': f'Bearer {token}'}
+            method = 'GET'
         
         # Create the auth instance and test authentication
         auth = CustomJWTAuth()
