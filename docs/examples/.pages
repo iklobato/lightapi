@@ -1,5 +1,12 @@
 title: Examples
 
 nav:
-  - Basic CRUD Examples: basic-crud.md
-  - Custom Application Example: custom-application.md
+  - Basic REST API: basic-rest.md
+  - Authentication: auth.md
+  - Caching: caching.md
+  - Filtering and Pagination: filtering-pagination.md
+  - Middleware: middleware.md
+  - Relationships: relationships.md
+  - Swagger Documentation: swagger.md
+  - Validation: validation.md
+  - Custom Snippets: custom-snippets.md

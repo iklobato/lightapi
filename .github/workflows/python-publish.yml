@@ -1,4 +1,4 @@
-# This workflow will upload a Python Package using Twine when a release is created
+# This workflow will upload a Python Package using Twine when code is pushed to main
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
 
 # This workflow uses actions that are not certified by GitHub.
@@ -9,31 +9,121 @@
 name: Upload Python Package
 
 on:
+  push:
+    branches: [ "master" ]
   release:
     types: [published]
 
 permissions:
-  contents: read
+  contents: write
+  id-token: write
 
 jobs:
-  deploy:
-
+  test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
 
     steps:
     - uses: actions/checkout@v4
-    - name: Set up Python
-      uses: actions/setup-python@v3
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
+        python-version: ${{ matrix.python-version }}
+    
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install build
+        pip install -e .[test,dev]
+    
+    - name: Run tests
+      run: |
+        pytest tests/ -v
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine tomli-w tomli
+    
+    - name: Create version update script
+      run: |
+        cat > update_version.py << 'EOF'
+        import sys
+        import os
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib
+        import tomli_w
+
+        def get_current_version():
+            with open('pyproject.toml', 'rb') as f:
+                data = tomllib.load(f)
+            return data['project']['version']
+
+        def increment_version(version):
+            parts = version.split('.')
+            parts[-1] = str(int(parts[-1]) + 1)
+            return '.'.join(parts)
+
+        def update_version(new_version):
+            with open('pyproject.toml', 'rb') as f:
+                data = tomllib.load(f)
+            
+            data['project']['version'] = new_version
+            
+            with open('pyproject.toml', 'wb') as f:
+                tomli_w.dump(data, f)
+
+        if __name__ == "__main__":
+            current = get_current_version()
+            new = increment_version(current)
+            update_version(new)
+            print(f"Updated version from {current} to {new}")
+            
+            # Write to GitHub output
+            with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                f.write(f"new_version={new}\n")
+        EOF
+    
+    - name: Update version
+      id: update_version
+      run: python update_version.py
+    
     - name: Build package
       run: python -m build
-    - name: Publish package
-      uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
-      with:
-        user: __token__
-        password: ${{ secrets.PYPI_API_TOKEN }}
+    
+    - name: Check package
+      run: twine check dist/*
+    
+    - name: Publish package to PyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        twine upload dist/*
+    
+    - name: Commit version update
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add pyproject.toml
+        git commit -m "Bump version to ${{ steps.update_version.outputs.new_version }}" || exit 0
+        git push
