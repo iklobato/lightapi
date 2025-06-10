@@ -1,0 +1,80 @@
+# This workflow runs tests on the development branch
+# It runs tests but does not publish to PyPI
+
+name: Development Tests
+
+on:
+  push:
+    branches: [ "development" ]
+  pull_request:
+    branches: [ "development", "master" ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[test,dev]
+    
+    - name: Run linting (Python 3.11 only)
+      if: matrix.python-version == '3.11'
+      run: |
+        # Install linting tools
+        pip install black isort flake8 mypy
+        
+        # Run code formatting checks
+        black --check --diff .
+        
+        # Run import sorting checks
+        isort --check-only --diff .
+        
+        # Run style checks
+        flake8 lightapi/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 lightapi/ --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+    
+    - name: Run tests
+      run: |
+        pytest tests/ -v --tb=short
+    
+    - name: Test package build
+      if: matrix.python-version == '3.11'
+      run: |
+        pip install build
+        python -m build
+        
+    - name: Check package
+      if: matrix.python-version == '3.11'
+      run: |
+        pip install twine
+        twine check dist/*
+
+  # Job to check if all tests passed
+  test-summary:
+    needs: test
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+    - name: Check test results
+      run: |
+        if [ "${{ needs.test.result }}" = "success" ]; then
+          echo "✅ All tests passed! Ready for merge to master."
+        else
+          echo "❌ Tests failed. Please fix issues before merging."
+          exit 1
+        fi 
