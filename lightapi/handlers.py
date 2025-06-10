@@ -19,14 +19,14 @@ def create_handler(model: Type[Base]) -> List[web.RouteDef]:
         list: A list of aiohttp web routes for the specified model.
     """
     return [
-        web.post(f'/{model.__tablename__}/', CreateHandler(model)),
-        web.get(f'/{model.__tablename__}/', RetrieveAllHandler(model)),
-        web.get(f'/{model.__tablename__}/{{id}}', ReadHandler(model)),
-        web.put(f'/{model.__tablename__}/{{id}}', UpdateHandler(model)),
-        web.delete(f'/{model.__tablename__}/{{id}}', DeleteHandler(model)),
-        web.patch(f'/{model.__tablename__}/{{id}}', PatchHandler(model)),
-        web.options(f'/{model.__tablename__}/', OptionsHandler(model)),
-        web.head(f'/{model.__tablename__}/', HeadHandler(model)),
+        web.post(f"/{model.__tablename__}/", CreateHandler(model)),
+        web.get(f"/{model.__tablename__}/", RetrieveAllHandler(model)),
+        web.get(f"/{model.__tablename__}/{{id}}", ReadHandler(model)),
+        web.put(f"/{model.__tablename__}/{{id}}", UpdateHandler(model)),
+        web.delete(f"/{model.__tablename__}/{{id}}", DeleteHandler(model)),
+        web.patch(f"/{model.__tablename__}/{{id}}", PatchHandler(model)),
+        web.options(f"/{model.__tablename__}/", OptionsHandler(model)),
+        web.head(f"/{model.__tablename__}/", HeadHandler(model)),
     ]
 
 
@@ -147,7 +147,7 @@ class AbstractHandler(ABC):
         Returns:
             web.Response: The JSON response containing the error message.
         """
-        return web.json_response({'error': error_message}, status=status)
+        return web.json_response({"error": error_message}, status=status)
 
 
 class CreateHandler(AbstractHandler):
@@ -188,17 +188,17 @@ class ReadHandler(AbstractHandler):
         Returns:
             web.Response: The JSON response containing the item(s) or an error message.
         """
-        if 'id' not in request.match_info:
+        if "id" not in request.match_info:
             items = db.query(self.model).all()
             response = [item.serialize() for item in items]
             return self.json_response(response, status=200)
         else:
-            item_id = int(request.match_info['id'])
+            item_id = int(request.match_info["id"])
             item = self.get_item_by_id(db, item_id)
             if item:
                 return self.json_response(item, status=200)
             else:
-                return self.json_error_response('Item not found', status=404)
+                return self.json_error_response("Item not found", status=404)
 
 
 class UpdateHandler(AbstractHandler):
@@ -217,10 +217,10 @@ class UpdateHandler(AbstractHandler):
         Returns:
             web.Response: The JSON response containing the updated item or an error message.
         """
-        item_id = int(request.match_info['id'])
+        item_id = int(request.match_info["id"])
         item = self.get_item_by_id(db, item_id)
         if not item:
-            return self.json_error_response('Item not found', status=404)
+            return self.json_error_response("Item not found", status=404)
 
         data = await self.get_request_json(request)
         for key, value in data.items():
@@ -246,10 +246,10 @@ class PatchHandler(AbstractHandler):
         Returns:
             web.Response: The JSON response containing the updated item or an error message.
         """
-        item_id = int(request.match_info['id'])
+        item_id = int(request.match_info["id"])
         item = self.get_item_by_id(db, item_id)
         if not item:
-            return self.json_error_response('Item not found', status=404)
+            return self.json_error_response("Item not found", status=404)
 
         data = await self.get_request_json(request)
         for key, value in data.items():
@@ -275,10 +275,10 @@ class DeleteHandler(AbstractHandler):
         Returns:
             web.Response: An empty response with status 204 if the item is deleted.
         """
-        item_id = int(request.match_info['id'])
+        item_id = int(request.match_info["id"])
         item = self.get_item_by_id(db, item_id)
         if not item:
-            return self.json_error_response('Item not found', status=404)
+            return self.json_error_response("Item not found", status=404)
 
         self.delete_and_commit_item(db, item)
         return web.Response(status=204)
@@ -323,17 +323,17 @@ class OptionsHandler(AbstractHandler):
         """
         return web.json_response(
             {
-                'allowed_methods': [
-                    'GET',
-                    'POST',
-                    'PUT',
-                    'DELETE',
-                    'PATCH',
-                    'OPTIONS',
-                    'HEAD',
+                "allowed_methods": [
+                    "GET",
+                    "POST",
+                    "PUT",
+                    "DELETE",
+                    "PATCH",
+                    "OPTIONS",
+                    "HEAD",
                 ],
-                'allowed_headers': ['Content-Type', 'Authorization'],
-                'max_age': 3600,
+                "allowed_headers": ["Content-Type", "Authorization"],
+                "max_age": 3600,
             }
         )
 
@@ -354,4 +354,4 @@ class HeadHandler(AbstractHandler):
         Returns:
             web.Response: An empty response with status 200.
         """
-        return web.Response(status=200, headers={'Content-Type': 'application/json'})
+        return web.Response(status=200, headers={"Content-Type": "application/json"})

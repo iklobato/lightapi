@@ -1,6 +1,8 @@
-import pytest
-from unittest.mock import MagicMock, patch
 import json
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 from lightapi.cache import BaseCache, RedisCache
 
 
@@ -17,17 +19,17 @@ class TestBaseCache:
 
 
 class TestRedisCache:
-    @patch('redis.Redis')
+    @patch("redis.Redis")
     def test_init(self, mock_redis):
         mock_redis_instance = MagicMock()
         mock_redis.return_value = mock_redis_instance
 
         cache = RedisCache()
 
-        mock_redis.assert_called_once_with(host='localhost', port=6379, db=0)
+        mock_redis.assert_called_once_with(host="localhost", port=6379, db=0)
         assert cache.client == mock_redis_instance
 
-    @patch('redis.Redis')
+    @patch("redis.Redis")
     def test_get_with_data(self, mock_redis):
         mock_redis_instance = MagicMock()
         mock_redis.return_value = mock_redis_instance
@@ -46,7 +48,7 @@ class TestRedisCache:
         # Check that the data was properly deserialized
         assert result == {"test": "data"}
 
-    @patch('redis.Redis')
+    @patch("redis.Redis")
     def test_get_no_data(self, mock_redis):
         mock_redis_instance = MagicMock()
         mock_redis.return_value = mock_redis_instance
@@ -63,7 +65,7 @@ class TestRedisCache:
         # Check that None was returned
         assert result is None
 
-    @patch('redis.Redis')
+    @patch("redis.Redis")
     def test_set(self, mock_redis):
         mock_redis_instance = MagicMock()
         mock_redis.return_value = mock_redis_instance

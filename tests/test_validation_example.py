@@ -1,8 +1,8 @@
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 
-from examples.validation_example import ProductValidator, Product
+from examples.validation_example import Product, ProductValidator
 
 
 class TestProductValidator:
@@ -30,7 +30,9 @@ class TestProductValidator:
         """
         # Test valid names with different formats
         assert validator.validate_name("Product") == "Product"
-        assert validator.validate_name("  Product with spaces  ") == "Product with spaces"
+        assert (
+            validator.validate_name("  Product with spaces  ") == "Product with spaces"
+        )
         assert validator.validate_name("X-123") == "X-123"
 
     def test_validate_name_invalid(self, validator):
@@ -88,7 +90,7 @@ class TestProductValidator:
         """
         # Test valid SKU (exactly 8 characters)
         assert validator.validate_sku("PROD1234") == "PROD1234"
-        
+
         # Test lowercase SKU (should be converted to uppercase)
         assert validator.validate_sku("prod1234") == "PROD1234"
 
@@ -143,18 +145,15 @@ class TestProductModel:
             db_session: The SQLAlchemy session fixture.
             monkeypatch: Pytest's monkeypatch fixture for mocking.
         """
+
         # Create a mock request with valid data
         class MockRequest:
-            data = {
-                "name": "Test Product",
-                "price": 29.99,
-                "sku": "TESTPROD"
-            }
+            data = {"name": "Test Product", "price": 29.99, "sku": "TESTPROD"}
 
         # Create a product instance and set up its environment
         product = Product()
         product.session = db_session
-        
+
         # Mock the validator
         validator = ProductValidator()
         product.validator = validator
@@ -182,18 +181,19 @@ class TestProductModel:
         Args:
             db_session: The SQLAlchemy session fixture.
         """
+
         # Create a mock request with invalid data
         class MockRequest:
             data = {
                 "name": "",  # Invalid: empty name
                 "price": -10,  # Invalid: negative price
-                "sku": "SHORT"  # Invalid: not 8 characters
+                "sku": "SHORT",  # Invalid: not 8 characters
             }
 
         # Create a product instance and set up its environment
         product = Product()
         product.session = db_session
-        
+
         # Set up the validator
         product.validator = ProductValidator()
 
@@ -207,4 +207,4 @@ class TestProductModel:
 
         # Verify no product was saved to the database
         product_count = db_session.query(Product).count()
-        assert product_count == 0 
+        assert product_count == 0

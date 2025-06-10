@@ -1,33 +1,33 @@
-import pytest
 from unittest.mock import MagicMock, patch
-from lightapi.swagger import SwaggerGenerator, swagger_ui_route, openapi_json_route
-from lightapi.rest import RestEndpoint
+
+import pytest
 from sqlalchemy import Column, Integer, String
+
+from lightapi.rest import RestEndpoint
+from lightapi.swagger import SwaggerGenerator, openapi_json_route, swagger_ui_route
 
 
 class TestEndpoint(RestEndpoint):
-    __tablename__ = 'test_models'
+    __tablename__ = "test_models"
 
     id = Column(Integer, primary_key=True)
     name = Column(String)
     email = Column(String, unique=True)
 
     class Configuration:
-        http_method_names = ['GET', 'POST']
+        http_method_names = ["GET", "POST"]
 
     def get(self, request):
-        return {'data': 'ok'}, 200
+        return {"data": "ok"}, 200
 
     def post(self, request):
-        return {'data': 'created'}, 201
+        return {"data": "created"}, 201
 
 
 class TestSwaggerGenerator:
     def test_init(self):
         generator = SwaggerGenerator(
-            title="Test API",
-            version="1.0.0",
-            description="Test description"
+            title="Test API", version="1.0.0", description="Test description"
         )
 
         assert generator.title == "Test API"
@@ -52,9 +52,7 @@ class TestSwaggerGenerator:
 
     def test_generate_openapi_spec(self):
         generator = SwaggerGenerator(
-            title="Test API",
-            version="1.0.0",
-            description="Test description"
+            title="Test API", version="1.0.0", description="Test description"
         )
         generator.register_endpoint("/test", TestEndpoint)
 

@@ -1,5 +1,7 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+
 from lightapi.core import Middleware, Response
 
 
@@ -12,7 +14,7 @@ class LoggingMiddleware(Middleware):
 class HeaderModifyingMiddleware(Middleware):
     def process(self, request, response):
         if response:
-            response.headers['X-Test-Header'] = 'test-value'
+            response.headers["X-Test-Header"] = "test-value"
         return response
 
 
@@ -57,7 +59,7 @@ class TestMiddleware:
         result = middleware.process(mock_request, mock_response)
 
         assert result == mock_response
-        assert result.headers['X-Test-Header'] == 'test-value'
+        assert result.headers["X-Test-Header"] == "test-value"
 
     def test_response_modifying_middleware(self):
         middleware = ResponseModifyingMiddleware()

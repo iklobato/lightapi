@@ -1,8 +1,11 @@
-import pytest
 import time
 from unittest.mock import MagicMock
+
 import jwt
+import pytest
+
 from lightapi.auth import JWTAuthentication
+
 from .conftest import TEST_JWT_SECRET
 
 
@@ -23,8 +26,8 @@ class TestJWTAuthentication:
         result = auth.authenticate(mock_request)
 
         assert result is True
-        assert hasattr(mock_request.state, 'user')
-        assert mock_request.state.user['user_id'] == 1
+        assert hasattr(mock_request.state, "user")
+        assert mock_request.state.user["user_id"] == 1
 
     def test_authenticate_invalid_token(self):
         auth = JWTAuthentication()
