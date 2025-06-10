@@ -127,3 +127,56 @@ jobs:
         git add pyproject.toml
         git commit -m "Bump version to ${{ steps.update_version.outputs.new_version }}" || exit 0
         git push
+    
+    - name: Create Git Tag
+      run: |
+        git tag v${{ steps.update_version.outputs.new_version }}
+        git push origin v${{ steps.update_version.outputs.new_version }}
+    
+    - name: Generate Release Notes
+      id: release_notes
+      run: |
+        # Get commits since last tag
+        LAST_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+        if [ -z "$LAST_TAG" ]; then
+          # First release - get all commits
+          COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges HEAD~10..HEAD)
+        else
+          # Get commits since last tag
+          COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges $LAST_TAG..HEAD~1)
+        fi
+        
+        # Create release notes file
+        cat > release_notes.md << EOF
+        ## 🚀 Release v${{ steps.update_version.outputs.new_version }}
+        
+        ### What's Changed
+        $COMMITS
+        
+        ### 📦 Installation
+        \`\`\`bash
+        pip install lightapi==${{ steps.update_version.outputs.new_version }}
+        \`\`\`
+        
+        ### 📖 Documentation
+        - [Getting Started](https://iklobato.github.io/lightapi/getting-started/installation/)
+        - [API Reference](https://iklobato.github.io/lightapi/api-reference/core/)
+        - [Examples](https://iklobato.github.io/lightapi/examples/basic-rest/)
+        
+        **Full Changelog**: https://github.com/iklobato/lightapi/compare/${LAST_TAG}...v${{ steps.update_version.outputs.new_version }}
+        EOF
+        
+        echo "Generated release notes for v${{ steps.update_version.outputs.new_version }}"
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ steps.update_version.outputs.new_version }}
+        name: "LightAPI v${{ steps.update_version.outputs.new_version }}"
+        body_path: release_notes.md
+        draft: false
+        prerelease: false
+        files: |
+          dist/lightapi-${{ steps.update_version.outputs.new_version }}-py3-none-any.whl
+          dist/lightapi-${{ steps.update_version.outputs.new_version }}.tar.gz
+        token: ${{ secrets.GITHUB_TOKEN }}
