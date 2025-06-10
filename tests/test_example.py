@@ -1,12 +1,14 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+from sqlalchemy import Column, Integer, String
+
 from lightapi.core import LightApi
 from lightapi.rest import RestEndpoint
-from sqlalchemy import Column, Integer, String
 
 
 class Company(RestEndpoint):
-    __tablename__ = 'companies'
+    __tablename__ = "companies"
 
     id = Column(Integer, primary_key=True)
     name = Column(String)
@@ -14,13 +16,13 @@ class Company(RestEndpoint):
     website = Column(String)
 
     class Configuration:
-        http_method_names = ['GET', 'POST']
+        http_method_names = ["GET", "POST"]
 
 
 class TestExample:
-    @patch('sqlalchemy.create_engine')
-    @patch('lightapi.models.Base.metadata.create_all')
-    @patch('uvicorn.run')
+    @patch("sqlalchemy.create_engine")
+    @patch("lightapi.models.Base.metadata.create_all")
+    @patch("uvicorn.run")
     def test_example_app(self, mock_run, mock_create_all, mock_create_engine):
         mock_engine = MagicMock()
         mock_create_engine.return_value = mock_engine
@@ -29,10 +31,10 @@ class TestExample:
             database_url="sqlite:///example.db",
             swagger_title="Example API",
             swagger_version="1.0.0",
-            swagger_description="Example API"
+            swagger_description="Example API",
         )
 
-        app.register({'/companies': Company})
+        app.register({"/companies": Company})
         app.run(host="0.0.0.0", port=8000, debug=True, reload=True)
 
         # Check app configuration

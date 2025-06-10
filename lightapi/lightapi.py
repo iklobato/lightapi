@@ -98,7 +98,7 @@ class LightApi:
         for r in self.routes:
             logging.info(f"{r.method} {r.path}")
 
-    def run(self, host: str = '0.0.0.0', port: int = 8000) -> None:
+    def run(self, host: str = "0.0.0.0", port: int = 8000) -> None:
         """
         Starts the web application and begins listening for incoming requests.
 

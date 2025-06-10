@@ -45,7 +45,7 @@ class GetRequestHandlerStrategy(RequestHandlerStrategy):
         Raises:
             NotImplementedError: If the GET method is not implemented by the endpoint.
         """
-        if hasattr(endpoint, 'get'):
+        if hasattr(endpoint, "get"):
             response = endpoint.get()
             return json.dumps(response)
         else:
@@ -71,7 +71,7 @@ class PostRequestHandlerStrategy(RequestHandlerStrategy):
         Raises:
             NotImplementedError: If the POST method is not implemented by the endpoint.
         """
-        if hasattr(endpoint, 'post'):
+        if hasattr(endpoint, "post"):
             response = endpoint.post()
             return json.dumps(response)
         else:
@@ -222,7 +222,7 @@ class Handler(BaseHTTPRequestHandler, metaclass=MultiEndpointHandlerSingleton):
         """
         endpoint = self.router.get_endpoint(self.path)
         if not endpoint:
-            self.send_error(404, 'Endpoint Not Found')
+            self.send_error(404, "Endpoint Not Found")
             return
 
         command = ConcreteRequestCommand(strategy)
@@ -232,7 +232,7 @@ class Handler(BaseHTTPRequestHandler, metaclass=MultiEndpointHandlerSingleton):
         except NotImplementedError as e:
             self.send_error(405, str(e))
 
-    def respond(self, status_code=200, content_type='application/json', body=None):
+    def respond(self, status_code=200, content_type="application/json", body=None):
         """
         Send an HTTP response with the given status code and body.
 
@@ -242,7 +242,7 @@ class Handler(BaseHTTPRequestHandler, metaclass=MultiEndpointHandlerSingleton):
             body (str, optional): The body of the response. Defaults to None.
         """
         self.send_response(status_code)
-        self.send_header('Content-type', content_type)
+        self.send_header("Content-type", content_type)
         self.end_headers()
         if body:
-            self.wfile.write(body.encode('utf-8'))
+            self.wfile.write(body.encode("utf-8"))

@@ -1,5 +1,7 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+
 from lightapi.pagination import Paginator
 
 
@@ -9,7 +11,7 @@ class CustomPaginator(Paginator):
     sort = True
 
     def apply_sorting(self, queryset):
-        return queryset.order_by('id')
+        return queryset.order_by("id")
 
 
 class TestPaginator:
@@ -80,7 +82,7 @@ class TestPaginator:
         results = paginator.paginate(mock_queryset)
 
         # Verify correct methods were called
-        mock_queryset.order_by.assert_called_once_with('id')
+        mock_queryset.order_by.assert_called_once_with("id")
         mock_sorted.limit.assert_called_once_with(20)
         mock_limited.offset.assert_called_once_with(5)
         mock_offset.all.assert_called_once()
