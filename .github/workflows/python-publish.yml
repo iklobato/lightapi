@@ -10,7 +10,7 @@ name: Upload Python Package
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]
   release:
     types: [published]
 
@@ -44,7 +44,7 @@ jobs:
   deploy:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/master'
 
     steps:
     - uses: actions/checkout@v4
