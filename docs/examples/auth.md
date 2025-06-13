@@ -483,4 +483,6 @@ class DebugJWTAuth(JWTAuthentication):
 - **[Middleware Example](middleware.md)** - Custom middleware patterns
 - **[Validation Example](validation.md)** - Request validation
 - **[Caching Example](caching.md)** - Performance optimization
-- **[API Reference](../api-reference/auth.md)** - Authentication API details 
+- **[API Reference](../api-reference/auth.md)** - Authentication API details
+
+> **Note:** Only GET, POST, PUT, PATCH, DELETE HTTP verbs are supported. OPTIONS and HEAD are not available. Required fields must be NOT NULL in the schema. Constraint violations (NOT NULL, UNIQUE, FK) return 409. 

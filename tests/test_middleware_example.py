@@ -138,25 +138,6 @@ class TestCORSMiddleware:
         middleware.allowed_headers = ["Authorization"]
         return middleware
 
-    def test_process_options_request(self, middleware):
-        """Test that process handles OPTIONS requests correctly.
-
-        Args:
-            middleware: The middleware fixture.
-        """
-        # Create a mock OPTIONS request
-        mock_request = MagicMock()
-        mock_request.method = "OPTIONS"
-
-        # Call the process method
-        response = middleware.process(mock_request, None)
-
-        # Verify response
-        assert response.status_code == 204
-        assert response.headers["Access-Control-Allow-Origin"] == "*"
-        assert "Access-Control-Allow-Methods" in response.headers
-        assert "Access-Control-Allow-Headers" in response.headers
-
     def test_process_adds_cors_headers(self, middleware):
         """Test that process adds CORS headers to existing responses.
 

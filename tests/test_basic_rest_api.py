@@ -207,28 +207,3 @@ class TestUserEndpoint:
         # Verify that the user was actually deleted from the database
         user_count = db_session.query(User).count()
         assert user_count == 0
-
-    def test_options(self, db_session):
-        """Test that OPTIONS returns allowed HTTP methods.
-
-        Args:
-            db_session: The SQLAlchemy session fixture.
-        """
-        # Create a User instance and set up its environment
-        user_endpoint = User()
-        user_endpoint.session = db_session
-
-        # Create a mock request
-        class MockRequest:
-            pass
-
-        # Call the options method
-        response, status_code = user_endpoint.options(MockRequest())
-
-        # Assert the response contains the expected data
-        assert status_code == 200
-        assert "allowed_methods" in response
-        # Compare sets instead of lists to make the test more robust to order changes
-        assert set(response["allowed_methods"]) == set(
-            ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
-        )

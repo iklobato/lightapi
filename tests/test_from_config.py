@@ -47,7 +47,7 @@ def temp_db_and_config():
     config = {
         'database_url': f'sqlite:///{db_path}',
         'tables': [
-            {'name': 'users', 'crud': ['get', 'post', 'put', 'delete', 'patch', 'options', 'head']}
+            {'name': 'users', 'crud': ['get', 'post', 'put', 'delete', 'patch']}
         ]
     }
     config_fd, config_path = tempfile.mkstemp(suffix='.yaml')
@@ -72,7 +72,7 @@ class TestFromConfigExtensive:
         config = {
             'database_url': f'sqlite:///{temp_db}',
             'tables': [
-                {'name': 'users', 'crud': ['get', 'post', 'put', 'delete', 'patch', 'options', 'head']},
+                {'name': 'users', 'crud': ['get', 'post', 'put', 'delete', 'patch']},
                 {'name': 'posts', 'crud': ['get', 'post']},
             ]
         }
@@ -922,16 +922,6 @@ class TestFromConfig:
             assert resp.status == 200
             user = await resp.json()
             assert user['name'] == 'Alice3'
-
-            # HEAD
-            resp = await client.head('/users/')
-            assert resp.status == 200
-
-            # OPTIONS
-            resp = await client.options('/users/')
-            assert resp.status == 200
-            options = await resp.json()
-            assert 'allowed_methods' in options
 
             # DELETE
             resp = await client.delete(f'/users/{user_id}')

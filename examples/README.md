@@ -204,3 +204,6 @@ def get(self, request):
 ```
 
 ## Notes
+- All required fields must be defined as NOT NULL in your database schema for correct enforcement.
+- The API will return 409 Conflict if you attempt to create or update a record missing a NOT NULL field, or violating a UNIQUE or FOREIGN KEY constraint.
+- Only GET, POST, PUT, PATCH, DELETE HTTP verbs are supported. OPTIONS and HEAD are not available.

@@ -156,3 +156,5 @@ LightAPI is released under the [MIT License](https://github.com/henriqueblobato/
 
 *Built with ❤️ for Python developers who value simplicity and productivity.*
 
+> **Note:** Only GET, POST, PUT, PATCH, DELETE HTTP verbs are supported. OPTIONS and HEAD are not available. Required fields must be NOT NULL in the schema. Constraint violations (NOT NULL, UNIQUE, FK) return 409.
+

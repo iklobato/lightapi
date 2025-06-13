@@ -193,4 +193,6 @@ except ValueError as e:
 
 - [Database](database.md) - Database integration
 - [REST API](rest.md) - REST endpoint implementation
-- [Validation](validation.md) - Request validation 
+- [Validation](validation.md) - Request validation
+
+> **Note:** Only GET, POST, PUT, PATCH, DELETE HTTP verbs are supported. OPTIONS and HEAD are not available. Required fields must be NOT NULL in the schema. Constraint violations (NOT NULL, UNIQUE, FK) return 409. 

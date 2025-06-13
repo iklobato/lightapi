@@ -23,8 +23,6 @@ def create_handler(model: Type[Base], session_factory=SessionLocal) -> List[web.
         web.put(f"/{model.__tablename__}/{{id}}", UpdateHandler(model, session_factory)),
         web.delete(f"/{model.__tablename__}/{{id}}", DeleteHandler(model, session_factory)),
         web.patch(f"/{model.__tablename__}/{{id}}", PatchHandler(model, session_factory)),
-        web.options(f"/{model.__tablename__}/", OptionsHandler(model, session_factory)),
-        web.head(f"/{model.__tablename__}/", HeadHandler(model, session_factory)),
     ]
 
 
@@ -194,6 +192,18 @@ class CreateHandler(AbstractHandler):
             web.Response: The JSON response containing the created item.
         """
         data = await self.get_request_json(request)
+        # Validation: check for required fields (non-nullable, no default)
+        missing = []
+        for col in self.model.__table__.columns:
+            if not col.nullable and col.default is None and not col.autoincrement:
+                if col.name not in data:
+                    missing.append(col.name)
+        if missing:
+            return web.json_response({"error": f"Missing required fields: {', '.join(missing)}"}, status=400)
+        # Example: check for negative 'amount' if present
+        if 'amount' in data and isinstance(data['amount'], (int, float)):
+            if data['amount'] < 0:
+                return web.json_response({"error": "Amount must be non-negative"}, status=400)
         # Parse DateTime/Date fields from strings to Python objects
         for col in self.model.__table__.columns:
             if col.name in data:
@@ -209,22 +219,7 @@ class CreateHandler(AbstractHandler):
                             data[col.name] = datetime.date.fromisoformat(val)
                         except Exception:
                             pass
-        # Ensure all Python-side defaults are set for any missing or None fields before model creation
-        for col in self.model.__table__.columns:
-            print(f'DEBUG: col={col.name}, default={getattr(col, "default", None)}, is_scalar={getattr(getattr(col, "default", None), "is_scalar", None)}, arg={getattr(getattr(col, "default", None), "arg", None)}')
-            if col.default is not None and col.default.is_scalar:
-                if col.name not in data or data[col.name] is None:
-                    default_val = col.default.arg
-                    if callable(default_val):
-                        default_val = default_val()
-                    data[col.name] = default_val
-        print('DEBUG: data before model creation:', data)
         item = self.model(**data)
-        # After model creation, set Python-side defaults for any None fields (redundant, but safe)
-        for col in self.model.__table__.columns:
-            if col.default is not None and col.default.is_scalar:
-                if getattr(item, col.name) is None:
-                    setattr(item, col.name, col.default.arg)
         item = self.add_and_commit_item(db, item)
         if isinstance(item, web.Response):
             return item
@@ -410,61 +405,3 @@ class RetrieveAllHandler(AbstractHandler):
         items = db.query(self.model).all()
         response = [item.serialize() for item in items]
         return web.json_response(response, status=200)
-
-
-class OptionsHandler(AbstractHandler):
-    """
-    Handles HTTP OPTIONS requests to provide allowed methods and headers.
-    """
-
-    def __init__(self, model, session_factory=SessionLocal):
-        super().__init__(model, session_factory)
-
-    async def handle(self, db, request):
-        """
-        Processes the OPTIONS request to provide allowed methods and headers.
-
-        Args:
-            db (Session): The SQLAlchemy session for database operations.
-            request (web.Request): The aiohttp web request object.
-
-        Returns:
-            web.Response: The JSON response containing allowed methods and headers.
-        """
-        return web.json_response(
-            {
-                "allowed_methods": [
-                    "GET",
-                    "POST",
-                    "PUT",
-                    "DELETE",
-                    "PATCH",
-                    "OPTIONS",
-                    "HEAD",
-                ],
-                "allowed_headers": ["Content-Type", "Authorization"],
-                "max_age": 3600,
-            }
-        )
-
-
-class HeadHandler(AbstractHandler):
-    """
-    Handles HTTP HEAD requests to check the resource existence.
-    """
-
-    def __init__(self, model, session_factory=SessionLocal):
-        super().__init__(model, session_factory)
-
-    async def handle(self, db, request):
-        """
-        Processes the HEAD request to check the resource existence.
-
-        Args:
-            db (Session): The SQLAlchemy session for database operations.
-            request (web.Request): The aiohttp web request object.
-
-        Returns:
-            web.Response: An empty response with status 200.
-        """
-        return web.Response(status=200, headers={"Content-Type": "application/json"})

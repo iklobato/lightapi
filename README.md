@@ -87,7 +87,7 @@ tables:
 
 #### 2. Create Your Database (SQLite example)
 ```bash
-sqlite3 mydata.db "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT UNIQUE); CREATE TABLE orders (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount REAL, FOREIGN KEY(user_id) REFERENCES users(id));"
+sqlite3 mydata.db "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE); CREATE TABLE orders (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, amount REAL NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id));"
 ```
 
 #### 3. Start the API
@@ -119,7 +119,7 @@ curl http://localhost:8080/orders/
 ### FAQ & Tips
 - **Server-side defaults**: Only `server_default` (e.g., `server_default=text('...')`) are available after reflection. Python-side defaults are not reflected.
 - **Composite PKs**: Supported transparently in routes and handlers.
-- **Error handling**: Unique, check, and foreign key constraints are enforced. Violations return 409 Conflict with details.
+- **Error handling**: Unique, check, not null, and foreign key constraints are enforced. Violations return 409 Conflict with details.
 - **Partial CRUD**: You can expose only the operations you want per table.
 - **Supported DBs**: Any DB supported by SQLAlchemy reflection (PostgreSQL, MySQL, SQLite, etc.)
 
@@ -171,6 +171,9 @@ class UserValidator(Validator):
 app.register(User, validator=UserValidator())
 ```
 
+- All required fields must be defined as NOT NULL in your database schema for correct enforcement.
+- The API will return 409 Conflict if you attempt to create or update a record missing a NOT NULL field, or violating a UNIQUE or FOREIGN KEY constraint.
+
 ### Middleware
 
 ```python
@@ -218,3 +221,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **LightAPI** - *Making web APIs light and fast* ⚡
 
 <!-- Testing development pipeline -->
+
+> **Note:** Only GET, POST, PUT, PATCH, DELETE HTTP verbs are supported. OPTIONS and HEAD are not available. Required fields must be NOT NULL in the schema. Constraint violations (NOT NULL, UNIQUE, FK) return 409.

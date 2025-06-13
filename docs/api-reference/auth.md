@@ -566,4 +566,6 @@ class DebugAuth(JWTAuthentication):
 
 - **[Core API](core.md)** - Application and middleware setup
 - **[REST Endpoints](rest.md)** - Endpoint authentication configuration
-- **[Authentication Example](../examples/auth.md)** - Complete implementation example 
+- **[Authentication Example](../examples/auth.md)** - Complete implementation example
+
+> **Note:** Only GET, POST, PUT, PATCH, DELETE HTTP verbs are supported. OPTIONS and HEAD are not available. Required fields must be NOT NULL in the schema. Constraint violations (NOT NULL, UNIQUE, FK) return 409. 

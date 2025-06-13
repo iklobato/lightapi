@@ -13,7 +13,7 @@ from sqlalchemy.sql.sqltypes import LargeBinary
 from lightapi.database import Base, engine
 from lightapi.handlers import (
     CreateHandler, ReadHandler, UpdateHandler, PatchHandler, DeleteHandler,
-    RetrieveAllHandler, OptionsHandler, HeadHandler
+    RetrieveAllHandler
 )
 from lightapi.rest import RestEndpoint
 
@@ -167,8 +167,6 @@ class LightApi:
             "put": (UpdateHandler, lambda t: (f"/{t}/{{id}}", "put")),
             "patch": (PatchHandler, lambda t: (f"/{t}/{{id}}", "patch")),
             "delete": (DeleteHandler, lambda t: (f"/{t}/{{id}}", "delete")),
-            "options": (OptionsHandler, lambda t: (f"/{t}/", "options")),
-            "head": (HeadHandler, lambda t: (f"/{t}/", "head")),
         }
 
         # Prepare routes
@@ -176,6 +174,9 @@ class LightApi:
         for table_cfg in config["tables"]:
             table_name = table_cfg["name"] if isinstance(table_cfg, dict) else table_cfg
             verbs = [v.lower() for v in table_cfg.get("crud", [])]
+            # Remove 'options' and 'head' from verbs to avoid duplicate route registration
+            verbs = [v for v in verbs if v not in ("options", "head")]
+            print(f"[DEBUG] Registering table: {table_name}, verbs: {verbs}")
             if table_name not in metadata.tables:
                 raise ValueError(f"Table '{table_name}' not found in database.")
             table = metadata.tables[table_name]
@@ -307,25 +308,27 @@ class LightApi:
             # Register only the specified CRUD routes for this table
             for verb in verbs:
                 if verb == "get":
-                    # GET all
                     handler_cls, route_fn = HANDLER_MAP["get"]
                     path, method = route_fn(table_name)
+                    print(f"[DEBUG] Registering route: {method.upper()} {path}")
                     routes.append(getattr(web, method)(path, handler_cls(model, session_factory)))
-                    # GET by id
                     handler_cls, route_fn = HANDLER_MAP["get_id"]
                     if isinstance(model.pk, tuple):
                         pk_path = ",".join([f"{{{col.name}}}" for col in model.pk])
                         path = f"/{table_name}/{{id}}"
                     else:
                         path, method = route_fn(table_name)
+                    print(f"[DEBUG] Registering route: {method.upper()} {path}")
                     routes.append(getattr(web, method)(path, handler_cls(model, session_factory)))
                 elif verb == "post":
                     handler_cls, route_fn = HANDLER_MAP["post"]
                     path, method = route_fn(table_name)
+                    print(f"[DEBUG] Registering route: {method.upper()} {path}")
                     routes.append(getattr(web, method)(path, CustomCreateHandler(model, session_factory)))
                 elif verb in HANDLER_MAP:
                     handler_cls, route_fn = HANDLER_MAP[verb]
                     path, method = route_fn(table_name)
+                    print(f"[DEBUG] Registering route: {method.upper()} {path}")
                     routes.append(getattr(web, method)(path, handler_cls(model, session_factory)))
 
         # Create the LightApi instance and set its routes
