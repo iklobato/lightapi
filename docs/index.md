@@ -158,3 +158,5 @@ LightAPI is released under the [MIT License](https://github.com/henriqueblobato/
 
 > **Note:** Only GET, POST, PUT, PATCH, DELETE HTTP verbs are supported. OPTIONS and HEAD are not available. Required fields must be NOT NULL in the schema. Constraint violations (NOT NULL, UNIQUE, FK) return 409.
 
+> To start your API, always use `api.run(host, port)`. Do not use external libraries or 'app = api.app' to start the server directly.
+

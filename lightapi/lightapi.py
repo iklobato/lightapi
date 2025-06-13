@@ -119,6 +119,7 @@ class LightApi:
             port (int): The port number on which the server will listen. Defaults to 8000.
         """
         self.app.add_routes(self.routes)
+        # Only use this method to start the server
         web.run_app(self.app, host=host, port=port)
 
     @classmethod

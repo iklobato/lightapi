@@ -83,24 +83,14 @@ app.add_middleware([
 **Parameters:**
 - `middleware_classes` (List[Type[Middleware]]): List of middleware classes to add
 
-#### run()
+#### run(host: str = "0.0.0.0", port: int = 8000, debug: bool = False) -> None
 
-Starts the development server.
-
-```python
-app.run(
-    host="0.0.0.0",
-    port=8000,
-    debug=True,
-    reload=True
-)
-```
+Starts the server. This is the only supported way to start the application. Do not use external libraries to start the server directly.
 
 **Parameters:**
 - `host` (str): Server host address
 - `port` (int): Server port number
 - `debug` (bool): Enable debug mode
-- `reload` (bool): Enable auto-reload on code changes
 
 ### Advanced Configuration
 

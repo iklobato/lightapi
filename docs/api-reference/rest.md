@@ -747,8 +747,10 @@ class User(RestEndpoint):
 - [Core API](core.md) - Core framework functionality
 - [Models](models.md) - Data models and schemas
 - [Filtering](filters.md) - Advanced filtering options
-- [Pagination](pagination.md) - Pagination configuration
+- [Pagination](pagination.md) - Pagination configuration 
 
 - Only GET, POST, PUT, PATCH, DELETE HTTP verbs are supported. OPTIONS and HEAD are not available.
 - All required fields must be defined as NOT NULL in your database schema for correct enforcement.
 - The API will return 409 Conflict if you attempt to create or update a record missing a NOT NULL field, or violating a UNIQUE or FOREIGN KEY constraint. 
+
+To start your API, always use `api.run(host, port)`. Do not use external libraries or 'app = api.app' to start the server directly. 

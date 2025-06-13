@@ -50,7 +50,7 @@ Adds application-wide middleware.
 
 #### run(host: str = "0.0.0.0", port: int = 8000, debug: bool = False) -> None
 
-Starts the ASGI server using Uvicorn.
+Starts the server. This is the only supported way to start the application. Do not use external libraries to start the server directly.
 
 - **Parameters:**
   - `host`: Host address to bind (default: `"0.0.0.0"`).

@@ -93,12 +93,8 @@ sqlite3 mydata.db "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, nam
 #### 3. Start the API
 ```python
 from lightapi import LightApi
-import aiohttp.web
-
-api = LightApi.from_config('my_api_config.yaml')
-app = api.app
-
-aiohttp.web.run_app(app, port=8080)
+api = LightApi.from_config('config.yaml')
+api.run(host="0.0.0.0", port=8081)
 ```
 
 #### 4. Use the API (with curl)
