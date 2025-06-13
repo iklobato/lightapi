@@ -640,7 +640,7 @@ class RobustEndpoint(RestEndpoint):
     
     id = Column(Integer, primary_key=True)
     name = Column(String(100))
-    
+
     def get(self, request):
         try:
             return super().get(request)

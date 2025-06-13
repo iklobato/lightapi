@@ -555,7 +555,7 @@ class DebugAuth(JWTAuthentication):
         
         result = super().authenticate(request)
         print(f"Auth result: {result}")
-        
+
         if hasattr(request.state, 'user'):
             print(f"User: {request.state.user}")
         

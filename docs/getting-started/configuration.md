@@ -41,3 +41,29 @@ LIGHTAPI_JWT_SECRET=supersecretkey
 ```
 
 Use `python-dotenv` or your own environment loader to populate these variables before starting your app.
+
+## YAML Config for Dynamic API Generation
+
+You can define your API using a YAML config file for dynamic, reflection-based API generation. This is useful for exposing existing databases without writing models.
+
+**Example:**
+```yaml
+database_url: sqlite:///mydata.db
+tables:
+  - name: users
+    crud: [get, post, put, patch, delete]
+  - name: logs
+    crud: [get]
+```
+
+- `database_url`: Connection string (can use environment variables or a file path)
+- `tables`: List of tables to expose, with allowed CRUD operations per table
+  - `name`: Table name in your database
+  - `crud`: List of allowed HTTP verbs (get, post, put, patch, delete)
+
+**Notes:**
+- Only server-side defaults (e.g., `server_default`) are available after reflection.
+- All SQLAlchemy-reflectable constraints (unique, foreign key, etc.) are enforced.
+- Errors (e.g., constraint violations) return 409 Conflict with details.
+
+See the [Quickstart](quickstart.md#dynamic-api-from-yaml-config-sqlalchemy-reflection) or [README](../../README.md) for more details and advanced usage.

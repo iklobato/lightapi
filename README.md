@@ -61,6 +61,70 @@ That's it! You now have a fully functional REST API with:
 - `DELETE /users/{id}` - Delete user
 - `OPTIONS /users` - CORS preflight support
 
+## Dynamic API from YAML Config (SQLAlchemy Reflection)
+
+LightAPI can instantly generate a REST API from a YAML configuration file, reflecting your database schema at runtime using SQLAlchemy. This is ideal for exposing existing databases with zero model code.
+
+### How It Works
+- **Reflects** the schema of specified tables from your database (PostgreSQL, MySQL, SQLite, etc.)
+- **Dynamically generates** SQLAlchemy models and CRUD endpoints for each table
+- **Configurable**: You control which tables and which CRUD operations (GET, POST, PUT, PATCH, DELETE) are exposed
+- **Composite primary keys, unique constraints, foreign keys, BLOBs, JSON, and more** are supported
+- **Advanced edge cases** (triggers, generated columns, partial unique constraints, etc.) are handled
+
+### End-to-End Example
+
+#### 1. Create a YAML Config
+```yaml
+database_url: sqlite:///mydata.db
+
+tables:
+  - name: users
+    crud: [get, post, put, patch, delete]
+  - name: orders
+    crud: [get, post]
+```
+
+#### 2. Create Your Database (SQLite example)
+```bash
+sqlite3 mydata.db "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT UNIQUE); CREATE TABLE orders (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount REAL, FOREIGN KEY(user_id) REFERENCES users(id));"
+```
+
+#### 3. Start the API
+```python
+from lightapi import LightApi
+import aiohttp.web
+
+api = LightApi.from_config('my_api_config.yaml')
+app = api.app
+
+aiohttp.web.run_app(app, port=8080)
+```
+
+#### 4. Use the API (with curl)
+```bash
+# Create a user
+curl -X POST http://localhost:8080/users/ -H 'Content-Type: application/json' -d '{"name": "Alice", "email": "alice@example.com"}'
+
+# List users
+curl http://localhost:8080/users/
+
+# Create an order for Alice (id=1)
+curl -X POST http://localhost:8080/orders/ -H 'Content-Type: application/json' -d '{"user_id": 1, "amount": 42.5}'
+
+# List orders
+curl http://localhost:8080/orders/
+```
+
+### FAQ & Tips
+- **Server-side defaults**: Only `server_default` (e.g., `server_default=text('...')`) are available after reflection. Python-side defaults are not reflected.
+- **Composite PKs**: Supported transparently in routes and handlers.
+- **Error handling**: Unique, check, and foreign key constraints are enforced. Violations return 409 Conflict with details.
+- **Partial CRUD**: You can expose only the operations you want per table.
+- **Supported DBs**: Any DB supported by SQLAlchemy reflection (PostgreSQL, MySQL, SQLite, etc.)
+
+See the [docs](./docs/getting-started/quickstart.md#dynamic-api-from-yaml-config-sqlalchemy-reflection) for more advanced examples and details.
+
 ## Documentation
 
 Visit our comprehensive documentation at: https://iklobato.github.io/lightapi/

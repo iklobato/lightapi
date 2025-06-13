@@ -14,6 +14,7 @@ description: Enterprise-grade REST API framework for Python
 - **Automatic OpenAPI/Swagger documentation** - Interactive API docs generated automatically
 - **Built-in validation** - Request/response validation with customizable validators
 - **Database integration** - Seamless SQLAlchemy integration with automatic table creation
+- **Dynamic API from YAML** - Instantly generate REST APIs from a YAML config file using SQLAlchemy reflection
 
 ### 🔒 **Security & Authentication**
 - **JWT Authentication** - Built-in JSON Web Token support
@@ -134,9 +135,12 @@ Environment-based configuration with sensible defaults:
 Ready to build your first API? Check out our guides:
 
 1. **[Getting Started](getting-started/)** - Basic setup and your first API
-2. **[Tutorial](tutorial/)** - Step-by-step walkthrough
-3. **[Examples](examples/)** - Real-world examples and patterns
-4. **[API Reference](api-reference/)** - Complete API documentation
+2. **[Dynamic API from YAML Config](getting-started/quickstart.md#dynamic-api-from-yaml-config-sqlalchemy-reflection)** - Instantly expose your database as an API from a config file
+3. **[Tutorial](tutorial/)** - Step-by-step walkthrough
+4. **[Examples](examples/)** - Real-world examples and patterns
+5. **[API Reference](api-reference/)** - Complete API documentation
+
+See the [README](../README.md) for a full feature overview and advanced usage.
 
 ## Community & Support
 

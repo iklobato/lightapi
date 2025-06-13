@@ -1,6 +1,8 @@
 import sqlalchemy
 import sqlalchemy.orm
 from sqlalchemy import Boolean, Column, Integer, String
+import base64
+import datetime
 
 from lightapi.database import Base
 
@@ -102,6 +104,18 @@ class Person(Base):
             "email_verified": self.email_verified,
         }
 
+    def serialize(self):
+        result = {}
+        for col in self.__table__.columns:
+            val = getattr(self, col.name)
+            if isinstance(val, bytes):
+                result[col.name] = base64.b64encode(val).decode()
+            elif isinstance(val, (datetime.datetime, datetime.date)):
+                result[col.name] = val.isoformat()
+            else:
+                result[col.name] = val
+        return result
+
 
 class Company(Base):
     """
@@ -134,3 +148,15 @@ class Company(Base):
             "email": self.email,
             "website": self.website,
         }
+
+    def serialize(self):
+        result = {}
+        for col in self.__table__.columns:
+            val = getattr(self, col.name)
+            if isinstance(val, bytes):
+                result[col.name] = base64.b64encode(val).decode()
+            elif isinstance(val, (datetime.datetime, datetime.date)):
+                result[col.name] = val.isoformat()
+            else:
+                result[col.name] = val
+        return result

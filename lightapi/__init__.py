@@ -1,9 +1,9 @@
 from .auth import JWTAuthentication
 from .cache import RedisCache
+from .lightapi import LightApi
 from .core import (
     AuthenticationMiddleware,
     CORSMiddleware,
-    LightApi,
     Middleware,
     Response,
 )
