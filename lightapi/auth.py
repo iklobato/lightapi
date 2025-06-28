@@ -57,9 +57,7 @@ class JWTAuthentication(BaseAuthentication):
 
     def __init__(self):
         if not config.jwt_secret:
-            raise ValueError(
-                "JWT secret key not configured. Set LIGHTAPI_JWT_SECRET environment variable."
-            )
+            raise ValueError("JWT secret key not configured. Set LIGHTAPI_JWT_SECRET environment variable.")
         self.secret_key = config.jwt_secret
         self.algorithm = "HS256"
         self.expiration = 3600  # 1 hour default

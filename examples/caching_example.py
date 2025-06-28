@@ -168,9 +168,7 @@ if __name__ == "__main__":
         swagger_description="Example showing caching capabilities with LightAPI",
     )
 
-    app.register(
-        {"/weather/{city}": WeatherEndpoint, "/resource": ConfigurableCacheEndpoint}
-    )
+    app.register({"/weather/{city}": WeatherEndpoint, "/resource": ConfigurableCacheEndpoint})
 
     print("Server running at http://localhost:8000")
     print("API documentation available at http://localhost:8000/docs")

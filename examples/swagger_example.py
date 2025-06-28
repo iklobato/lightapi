@@ -102,12 +102,8 @@ class Task(RestEndpoint):
     title = Column(String(100), nullable=False, doc="Task title")
     description = Column(Text, doc="Detailed task description")
     completed = Column(Boolean, default=False, doc="Whether the task is completed")
-    priority = Column(
-        Integer, default=1, doc="Task priority (1-5, with 5 being highest)"
-    )
-    project_id = Column(
-        Integer, ForeignKey("projects.id"), doc="ID of the parent project"
-    )
+    priority = Column(Integer, default=1, doc="Task priority (1-5, with 5 being highest)")
+    project_id = Column(Integer, ForeignKey("projects.id"), doc="ID of the parent project")
 
     # Relationships
     project = relationship("Project", back_populates="tasks")
@@ -218,9 +214,7 @@ class CustomSwaggerGenerator(SwaggerGenerator):
         ]
 
         # Add custom security scheme
-        self.security_schemes = {
-            "ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"}
-        }
+        self.security_schemes = {"ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"}}
 
     # Add tag information to endpoint paths
     def generate_path_item(self, endpoint_class, path):

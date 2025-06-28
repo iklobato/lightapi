@@ -101,9 +101,7 @@ class TestCustomCache:
         assert expiration > time.time() + 119  # just under 120 seconds
 
         # Verify logging message shows custom TTL
-        mock_print.assert_any_call(
-            f"Cache SET for 'test_key' (expires in {custom_ttl}s)"
-        )
+        mock_print.assert_any_call(f"Cache SET for 'test_key' (expires in {custom_ttl}s)")
 
     @patch("examples.caching_example.print")
     def test_delete(self, mock_print, cache):
@@ -347,9 +345,7 @@ class TestConfigurableCacheEndpoint:
         assert "generated_at" in response.body
 
         # Verify cache was set with custom TTL
-        mock_print.assert_any_call(
-            "Cache SET for 'resource:resource123' (expires in 45s)"
-        )
+        mock_print.assert_any_call("Cache SET for 'resource:resource123' (expires in 45s)")
 
         # Verify sleep was called to simulate slow operation
         mock_sleep.assert_called_once_with(1)
@@ -378,9 +374,7 @@ class TestConfigurableCacheEndpoint:
         assert response.headers["X-Cache"] == "MISS"
 
         # Verify cache was set with default TTL
-        mock_print.assert_any_call(
-            "Cache SET for 'resource:resource123' (expires in 60s)"
-        )
+        mock_print.assert_any_call("Cache SET for 'resource:resource123' (expires in 60s)")
 
     @patch("examples.caching_example.time.sleep")
     @patch("examples.caching_example.print")

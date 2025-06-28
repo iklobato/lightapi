@@ -143,9 +143,7 @@ def test_authentication_edge_cases(monkeypatch):
             "user": "test",
             "exp": datetime.now(timezone.utc) - timedelta(hours=1),
         }
-        expired_token = jwt.encode(
-            expired_payload, config.jwt_secret, algorithm="HS256"
-        )
+        expired_token = jwt.encode(expired_payload, config.jwt_secret, algorithm="HS256")
         expired_headers = {"Authorization": f"Bearer {expired_token}"}
         resp = client.get("/custom", headers=expired_headers)
         # Authentication middleware returns 403 for expired token
@@ -201,9 +199,7 @@ def test_caching_behavior(monkeypatch):
         assert len(tracking_redis.get_calls) >= 1
 
         # Should have made either a set call or setex call (Redis cache implementation detail)
-        cache_was_set = (
-            len(tracking_redis.set_calls) >= 1 or len(tracking_redis.setex_calls) >= 1
-        )
+        cache_was_set = len(tracking_redis.set_calls) >= 1 or len(tracking_redis.setex_calls) >= 1
         assert (
             cache_was_set
         ), f"Cache should have been set. set_calls: {tracking_redis.set_calls}, setex_calls: {tracking_redis.setex_calls}"

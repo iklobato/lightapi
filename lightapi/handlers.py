@@ -1,14 +1,14 @@
+import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Type
 
 from aiohttp import web
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy import inspect
+from sqlalchemy.exc import IntegrityError, StatementError
+from sqlalchemy.orm import Session, sessionmaker
 
 from lightapi.database import Base, SessionLocal
-import datetime
 
 
 def create_handler(model: Type[Base], session_factory=SessionLocal) -> List[web.RouteDef]:
@@ -109,20 +109,20 @@ class AbstractHandler(ABC):
             db.add(item)
             db.commit()
             db.refresh(item)
-            # Re-fetch the item from the DB using PK(s) to ensure all DB defaults are loaded
-            if hasattr(self.model, 'pk'):
+
+            if hasattr(self.model, "pk"):
                 if isinstance(self.model.pk, tuple):
                     filters = [col == getattr(item, col.name) for col in self.model.pk]
                     item = db.query(self.model).filter(*filters).first()
                 else:
                     item = db.query(self.model).filter(self.model.pk == getattr(item, self.model.pk.name)).first()
-            # Set Python-side defaults if still None
+
             mapper = inspect(self.model)
             for col in self.model.__table__.columns:
                 if getattr(item, col.name) is None and col.default is not None and col.default.is_scalar:
                     setattr(item, col.name, col.default.arg)
-                # For Date columns, if value is a string, convert to datetime.date
-                if hasattr(col.type, 'python_type') and col.type.python_type is datetime.date:
+
+                if hasattr(col.type, "python_type") and col.type.python_type is datetime.date:
                     val = getattr(item, col.name)
                     if isinstance(val, str):
                         try:
@@ -192,7 +192,7 @@ class CreateHandler(AbstractHandler):
             web.Response: The JSON response containing the created item.
         """
         data = await self.get_request_json(request)
-        # Validation: check for required fields (non-nullable, no default)
+
         missing = []
         for col in self.model.__table__.columns:
             if not col.nullable and col.default is None and not col.autoincrement:
@@ -200,15 +200,15 @@ class CreateHandler(AbstractHandler):
                     missing.append(col.name)
         if missing:
             return web.json_response({"error": f"Missing required fields: {', '.join(missing)}"}, status=400)
-        # Example: check for negative 'amount' if present
-        if 'amount' in data and isinstance(data['amount'], (int, float)):
-            if data['amount'] < 0:
+
+        if "amount" in data and isinstance(data["amount"], (int, float)):
+            if data["amount"] < 0:
                 return web.json_response({"error": "Amount must be non-negative"}, status=400)
-        # Parse DateTime/Date fields from strings to Python objects
+
         for col in self.model.__table__.columns:
             if col.name in data:
                 val = data[col.name]
-                if hasattr(col.type, 'python_type'):
+                if hasattr(col.type, "python_type"):
                     if col.type.python_type is datetime.datetime and isinstance(val, str):
                         try:
                             data[col.name] = datetime.datetime.fromisoformat(val)
@@ -245,27 +245,26 @@ class ReadHandler(AbstractHandler):
         Returns:
             web.Response: The JSON response containing the item(s) or an error message.
         """
-        # Support composite PKs: /table/{pk1}/{pk2}
+
         if isinstance(self.model.pk, tuple):
-            pk_values = request.match_info.get('id')
+            pk_values = request.match_info.get("id")
             if pk_values is None:
-                return web.json_response({'error': 'Missing composite key'}, status=400)
-            pk_values = pk_values.split(',')
+                return web.json_response({"error": "Missing composite key"}, status=400)
+            pk_values = pk_values.split(",")
             if len(pk_values) != len(self.model.pk):
-                return web.json_response({'error': 'Composite key count mismatch'}, status=400)
+                return web.json_response({"error": "Composite key count mismatch"}, status=400)
             filters = [col == self._parse_pk_value(val, col) for col, val in zip(self.model.pk, pk_values)]
             item = db.query(self.model).filter(*filters).first()
         else:
-            pk_value = request.match_info.get('id')
+            pk_value = request.match_info.get("id")
             item = db.query(self.model).filter(self.model.pk == self._parse_pk_value(pk_value, self.model.pk)).first()
         if not item:
-            return web.json_response({'error': 'Not found'}, status=404)
+            return web.json_response({"error": "Not found"}, status=404)
         return self.json_response(item, status=200)
 
     def _parse_pk_value(self, value, col):
-        # Try to cast to int if the column is Integer, else leave as string
         try:
-            if hasattr(col.type, 'python_type') and col.type.python_type is int:
+            if hasattr(col.type, "python_type") and col.type.python_type is int:
                 return int(value)
         except Exception:
             pass
@@ -331,11 +330,11 @@ class PatchHandler(AbstractHandler):
             return self.json_error_response("Item not found", status=404)
 
         data = await self.get_request_json(request)
-        # Parse DateTime/Date fields from strings to Python objects
+
         for col in self.model.__table__.columns:
             if col.name in data:
                 val = data[col.name]
-                if hasattr(col.type, 'python_type'):
+                if hasattr(col.type, "python_type"):
                     if col.type.python_type is datetime.datetime and isinstance(val, str):
                         try:
                             data[col.name] = datetime.datetime.fromisoformat(val)

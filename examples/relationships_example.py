@@ -36,9 +36,7 @@ class Category(RestEndpoint):
     description = Column(String(200))
 
     # Many-to-many relationship with products
-    products = relationship(
-        "Product", secondary=product_category_association, back_populates="categories"
-    )
+    products = relationship("Product", secondary=product_category_association, back_populates="categories")
 
     # Override GET to include related products
     def get(self, request):
@@ -47,9 +45,7 @@ class Category(RestEndpoint):
 
         if category_id:
             # Get a specific category with its products
-            category = (
-                self.session.query(self.__class__).filter_by(id=category_id).first()
-            )
+            category = self.session.query(self.__class__).filter_by(id=category_id).first()
 
             if not category:
                 return {"error": "Category not found"}, 404
@@ -120,9 +116,7 @@ class Product(RestEndpoint):
     supplier = relationship("Supplier", back_populates="products")
 
     # Many-to-many relationship with categories
-    categories = relationship(
-        "Category", secondary=product_category_association, back_populates="products"
-    )
+    categories = relationship("Category", secondary=product_category_association, back_populates="products")
 
     # One-to-many relationship with order items
     order_items = relationship("OrderItem", back_populates="product")
@@ -134,9 +128,7 @@ class Product(RestEndpoint):
 
         if product_id:
             # Get a specific product with relationships
-            product = (
-                self.session.query(self.__class__).filter_by(id=product_id).first()
-            )
+            product = self.session.query(self.__class__).filter_by(id=product_id).first()
 
             if not product:
                 return {"error": "Product not found"}, 404
@@ -147,12 +139,8 @@ class Product(RestEndpoint):
                 "name": product.name,
                 "price": product.price,
                 "sku": product.sku,
-                "created_at": product.created_at.isoformat()
-                if product.created_at
-                else None,
-                "updated_at": product.updated_at.isoformat()
-                if product.updated_at
-                else None,
+                "created_at": product.created_at.isoformat() if product.created_at else None,
+                "updated_at": product.updated_at.isoformat() if product.updated_at else None,
                 "supplier": None,
                 "categories": [],
             }
@@ -202,18 +190,14 @@ class Product(RestEndpoint):
 
             # Set supplier relationship
             if supplier_id:
-                supplier = (
-                    self.session.query(Supplier).filter_by(id=supplier_id).first()
-                )
+                supplier = self.session.query(Supplier).filter_by(id=supplier_id).first()
                 if supplier:
                     product.supplier = supplier
 
             # Set category relationships
             if categories_data:
                 for category_id in categories_data:
-                    category = (
-                        self.session.query(Category).filter_by(id=category_id).first()
-                    )
+                    category = self.session.query(Category).filter_by(id=category_id).first()
                     if category:
                         product.categories.append(category)
 
@@ -260,9 +244,7 @@ class Order(RestEndpoint):
     customer = relationship("Customer", back_populates="orders")
 
     # One-to-many relationship with order items
-    items = relationship(
-        "OrderItem", back_populates="order", cascade="all, delete-orphan"
-    )
+    items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
 
     # Override GET to include relationships
     def get(self, request):
@@ -279,9 +261,7 @@ class Order(RestEndpoint):
             # Format order with relationships
             result = {
                 "id": order.id,
-                "order_date": order.order_date.isoformat()
-                if order.order_date
-                else None,
+                "order_date": order.order_date.isoformat() if order.order_date else None,
                 "status": order.status,
                 "customer": {
                     "id": order.customer.id,
@@ -304,9 +284,7 @@ class Order(RestEndpoint):
                     {
                         "id": item.id,
                         "product_id": item.product_id,
-                        "product_name": item.product.name
-                        if item.product
-                        else "Unknown",
+                        "product_name": item.product.name if item.product else "Unknown",
                         "quantity": item.quantity,
                         "price": item.price,
                         "total": item_total,
@@ -328,13 +306,9 @@ class Order(RestEndpoint):
                 results.append(
                     {
                         "id": order.id,
-                        "order_date": order.order_date.isoformat()
-                        if order.order_date
-                        else None,
+                        "order_date": order.order_date.isoformat() if order.order_date else None,
                         "status": order.status,
-                        "customer_name": order.customer.name
-                        if order.customer
-                        else "Unknown",
+                        "customer_name": order.customer.name if order.customer else "Unknown",
                         "item_count": len(order.items),
                         "total": total,
                     }
@@ -372,9 +346,7 @@ def init_database():
     # Check if we already have data
     if session.query(Product).count() == 0:
         # Create categories
-        electronics = Category(
-            name="Electronics", description="Electronic devices and accessories"
-        )
+        electronics = Category(name="Electronics", description="Electronic devices and accessories")
         clothing = Category(name="Clothing", description="Apparel and fashion items")
         books = Category(name="Books", description="Books and publications")
         session.add_all([electronics, clothing, books])
@@ -396,14 +368,10 @@ def init_database():
         laptop = Product(name="Laptop", price=999.99, sku="TECH001", supplier=supplier1)
         laptop.categories.append(electronics)
 
-        phone = Product(
-            name="Smartphone", price=499.99, sku="TECH002", supplier=supplier1
-        )
+        phone = Product(name="Smartphone", price=499.99, sku="TECH002", supplier=supplier1)
         phone.categories.append(electronics)
 
-        tshirt = Product(
-            name="T-Shirt", price=19.99, sku="CLOTH001", supplier=supplier2
-        )
+        tshirt = Product(name="T-Shirt", price=19.99, sku="CLOTH001", supplier=supplier2)
         tshirt.categories.append(clothing)
 
         novel = Product(name="Novel", price=14.99, sku="BOOK001")
@@ -412,21 +380,15 @@ def init_database():
         session.add_all([laptop, phone, tshirt, novel])
 
         # Create customer
-        customer = Customer(
-            name="Alice Johnson", email="alice@example.com", phone="555-1234"
-        )
+        customer = Customer(name="Alice Johnson", email="alice@example.com", phone="555-1234")
         session.add(customer)
 
         # Create order with items
         order = Order(customer=customer, status="completed", order_date=datetime.now())
 
         # Add items to order
-        order_item1 = OrderItem(
-            order=order, product=laptop, quantity=1, price=laptop.price
-        )
-        order_item2 = OrderItem(
-            order=order, product=tshirt, quantity=2, price=tshirt.price
-        )
+        order_item1 = OrderItem(order=order, product=laptop, quantity=1, price=laptop.price)
+        order_item2 = OrderItem(order=order, product=tshirt, quantity=2, price=tshirt.price)
 
         session.add_all([order, order_item1, order_item2])
 

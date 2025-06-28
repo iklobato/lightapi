@@ -87,9 +87,7 @@ class TestLoggingMiddleware:
             middleware: The middleware fixture.
         """
         # Set up a mock UUID for the request ID
-        with patch(
-            "examples.middleware_example.uuid.uuid4", return_value="test-uuid-123"
-        ):
+        with patch("examples.middleware_example.uuid.uuid4", return_value="test-uuid-123"):
             # Create a mock request
             mock_request = MagicMock()
             mock_request.method = "GET"

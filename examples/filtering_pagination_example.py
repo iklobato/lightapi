@@ -92,9 +92,7 @@ class ProductPaginator(Paginator):
 
                     # Validate the sort field
                     if sort_field in self.valid_sort_fields:
-                        column = getattr(
-                            queryset.column_descriptions[0]["type"], sort_field
-                        )
+                        column = getattr(queryset.column_descriptions[0]["type"], sort_field)
                         if descending:
                             queryset = queryset.order_by(column.desc())
                         else:
@@ -241,9 +239,7 @@ def init_database():
                 category="Clothing",
                 description="Cotton t-shirt",
             ),
-            Product(
-                name="Jeans", price=6000, category="Clothing", description="Denim jeans"
-            ),
+            Product(name="Jeans", price=6000, category="Clothing", description="Denim jeans"),
             Product(
                 name="Sneakers",
                 price=8000,

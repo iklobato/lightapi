@@ -30,9 +30,7 @@ class TestProductValidator:
         """
         # Test valid names with different formats
         assert validator.validate_name("Product") == "Product"
-        assert (
-            validator.validate_name("  Product with spaces  ") == "Product with spaces"
-        )
+        assert validator.validate_name("  Product with spaces  ") == "Product with spaces"
         assert validator.validate_name("X-123") == "X-123"
 
     def test_validate_name_invalid(self, validator):

@@ -1,6 +1,5 @@
 from .auth import JWTAuthentication
 from .cache import RedisCache
-from .lightapi import LightApi
 from .core import (
     AuthenticationMiddleware,
     CORSMiddleware,
@@ -8,6 +7,7 @@ from .core import (
     Response,
 )
 from .filters import ParameterFilter
+from .lightapi import LightApi
 from .models import Base
 from .pagination import Paginator
 from .rest import RestEndpoint, Validator

@@ -9,9 +9,7 @@ from lightapi.pagination import Paginator
 from lightapi.rest import RestEndpoint, Validator
 
 
-def create_mock_request(
-    method="GET", data=None, headers=None, query_params=None, path_params=None
-):
+def create_mock_request(method="GET", data=None, headers=None, query_params=None, path_params=None):
     mock_request = MagicMock()
     mock_request.method = method
     mock_request.data = data or {}

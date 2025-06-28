@@ -6,7 +6,7 @@ from sqlalchemy import inspect as sql_inspect
 from starlette.requests import Request
 
 from .core import Response
-from .database import Base
+from .database import Base, SessionLocal
 
 
 class RestEndpoint:
@@ -29,7 +29,7 @@ class RestEndpoint:
 
     def __init__(self, **kwargs):
         """
-        Initialize endpoint instance and assign keyword arguments to attributes.
+        Initialize an endpoint instance and assign keyword arguments to attributes.
 
         Args:
             **kwargs: Arbitrary keyword arguments that will be set as instance attributes.
@@ -57,6 +57,70 @@ class RestEndpoint:
             cls.__abstract__ = True
 
     id = None
+
+    @property
+    def routes(self):
+        """
+        Get the routes for this endpoint.
+
+        Returns:
+            List of web.RouteDef objects associated with this endpoint.
+        """
+        from aiohttp import web
+
+        if hasattr(self, "__tablename__") and self.__tablename__:
+            base_path = f"/{self.__tablename__}"
+        else:
+            base_path = f"/{self.__class__.__name__.lower()}"
+
+        async def endpoint_handler(request):
+            session = SessionLocal()
+
+            try:
+                class RequestAdapter:
+                    def __init__(self, aiohttp_request):
+                        self.aiohttp_request = aiohttp_request
+                        self.path_params = aiohttp_request.match_info
+                        self.query_params = aiohttp_request.query
+
+                    async def get_data(self):
+                        if hasattr(self, '_data'):
+                            return self._data
+                        try:
+                            self._data = await self.aiohttp_request.json()
+                        except:
+                            self._data = {}
+                        return self._data
+
+                    @property
+                    def data(self):
+                        import asyncio
+                        loop = asyncio.get_event_loop()
+                        return loop.run_until_complete(self.get_data())
+
+                adapted_request = RequestAdapter(request)
+                setup_result = self._setup(adapted_request, session)
+                if setup_result:
+                    return setup_result
+
+                method = request.method.lower()
+                if hasattr(self, method):
+                    result_data, status_code = getattr(self, method)(adapted_request)
+                    return web.json_response(result_data, status=status_code)
+                else:
+                    return web.json_response({"error": "Method not allowed"}, status=405)
+            finally:
+                session.close()
+
+        return [
+            web.get(base_path, endpoint_handler),
+            web.post(base_path, endpoint_handler),
+            web.get(f"{base_path}/{{id}}", endpoint_handler),
+            web.put(f"{base_path}/{{id}}", endpoint_handler),
+            web.delete(f"{base_path}/{{id}}", endpoint_handler),
+            web.patch(f"{base_path}/{{id}}", endpoint_handler),
+            web.options(base_path, endpoint_handler),
+        ]
 
     class Configuration:
         """
@@ -87,10 +151,7 @@ class RestEndpoint:
         Returns:
             bool: True if the endpoint is a SQLAlchemy model, False otherwise.
         """
-        return (
-            hasattr(self.__class__, "__tablename__")
-            and self.__class__.__tablename__ is not None
-        )
+        return hasattr(self.__class__, "__tablename__") and self.__class__.__tablename__ is not None
 
     def _get_columns(self):
         """
@@ -102,11 +163,7 @@ class RestEndpoint:
         if self._is_sa_model():
             return [column.name for column in sql_inspect(self.__class__).columns]
         else:
-            return [
-                attr
-                for attr in dir(self)
-                if not attr.startswith("_") and not callable(getattr(self, attr))
-            ]
+            return [attr for attr in dir(self) if not attr.startswith("_") and not callable(getattr(self, attr))]
 
     def _setup(self, request, session):
         """
@@ -142,35 +199,27 @@ class RestEndpoint:
             Response: Authentication error response if authentication fails, None otherwise.
         """
         config = getattr(self, "Configuration", None)
-        if (
-            config
-            and hasattr(config, "authentication_class")
-            and config.authentication_class
-        ):
+        if config and hasattr(config, "authentication_class") and config.authentication_class:
             self.auth = config.authentication_class()
             if not self.auth.authenticate(self.request):
                 return Response({"error": "Authentication failed"}, status_code=401)
 
     def _setup_cache(self):
-        """Set up caching for the endpoint."""
         config = getattr(self, "Configuration", None)
         if config and hasattr(config, "caching_class") and config.caching_class:
             self.cache = config.caching_class()
 
     def _setup_filter(self):
-        """Set up filtering for the endpoint."""
         config = getattr(self, "Configuration", None)
         if config and hasattr(config, "filter_class") and config.filter_class:
             self.filter = config.filter_class()
 
     def _setup_validator(self):
-        """Set up validation for the endpoint."""
         config = getattr(self, "Configuration", None)
         if config and hasattr(config, "validator_class") and config.validator_class:
             self.validator = config.validator_class()
 
     def _setup_pagination(self):
-        """Set up pagination for the endpoint."""
         config = getattr(self, "Configuration", None)
         if config and hasattr(config, "pagination_class") and config.pagination_class:
             self.paginator = config.pagination_class()
@@ -281,9 +330,7 @@ class RestEndpoint:
             if not object_id:
                 return {"error": "ID is required"}, 400
 
-            instance = (
-                self.session.query(self.__class__).filter_by(id=object_id).first()
-            )
+            instance = self.session.query(self.__class__).filter_by(id=object_id).first()
             if not instance:
                 return {"error": "Object not found"}, 404
 
@@ -334,9 +381,7 @@ class RestEndpoint:
             if not object_id:
                 return {"error": "ID is required"}, 400
 
-            instance = (
-                self.session.query(self.__class__).filter_by(id=object_id).first()
-            )
+            instance = self.session.query(self.__class__).filter_by(id=object_id).first()
             if not instance:
                 return {"error": "Object not found"}, 404
 

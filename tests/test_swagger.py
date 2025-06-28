@@ -26,9 +26,7 @@ class TestEndpoint(RestEndpoint):
 
 class TestSwaggerGenerator:
     def test_init(self):
-        generator = SwaggerGenerator(
-            title="Test API", version="1.0.0", description="Test description"
-        )
+        generator = SwaggerGenerator(title="Test API", version="1.0.0", description="Test description")
 
         assert generator.title == "Test API"
         assert generator.version == "1.0.0"
@@ -51,9 +49,7 @@ class TestSwaggerGenerator:
         assert generator.components["schemas"]["TestEndpoint"]["type"] == "object"
 
     def test_generate_openapi_spec(self):
-        generator = SwaggerGenerator(
-            title="Test API", version="1.0.0", description="Test description"
-        )
+        generator = SwaggerGenerator(title="Test API", version="1.0.0", description="Test description")
         generator.register_endpoint("/test", TestEndpoint)
 
         spec = generator.generate_openapi_spec()

@@ -179,9 +179,7 @@ class MultiEndpointHandlerSingleton(type):
             Handler: The singleton instance of the handler.
         """
         if cls not in cls._instances:
-            cls._instances[cls] = super(MultiEndpointHandlerSingleton, cls).__call__(
-                *args, **kwargs
-            )
+            cls._instances[cls] = super(MultiEndpointHandlerSingleton, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
 
 

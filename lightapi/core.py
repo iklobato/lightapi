@@ -98,8 +98,7 @@ class LightApi:
         for path, endpoint_class in endpoints.items():
             methods = (
                 endpoint_class.Configuration.http_method_names
-                if hasattr(endpoint_class, "Configuration")
-                and hasattr(endpoint_class.Configuration, "http_method_names")
+                if hasattr(endpoint_class, "Configuration") and hasattr(endpoint_class.Configuration, "http_method_names")
                 else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
             )
             handler = self._create_handler(endpoint_class, methods)
@@ -114,9 +113,7 @@ class LightApi:
                 self.routes.append(Route("/openapi.json", openapi_json_route))
                 first = False
 
-    def _create_handler(
-        self, endpoint_class: Type["RestEndpoint"], methods: List[str]
-    ) -> Callable:
+    def _create_handler(self, endpoint_class: Type["RestEndpoint"], methods: List[str]) -> Callable:
         """
         Create a request handler for an endpoint class.
 
@@ -144,38 +141,14 @@ class LightApi:
                 else:
                     request.data = {}
 
-                # Pre-processing middleware before endpoint setup
-                for middleware_class in self.middleware:
-                    middleware = middleware_class()
-                    response = middleware.process(request, None)
-                    if response is not None:
-                        return response
-
-                # Check for endpoint-level authentication
-                config = getattr(endpoint_class, "Configuration", None)
-                if (
-                    config
-                    and hasattr(config, "authentication_class")
-                    and config.authentication_class
-                    and request.method != "OPTIONS"
-                ):
-                    authenticator = config.authentication_class()
-                    if not authenticator.authenticate(request):
-                        return authenticator.get_auth_error_response(request)
-
                 # Setup the endpoint and check for authentication errors
                 setup_result = endpoint._setup(request, self.Session())
                 if setup_result:
                     return setup_result
 
-                if hasattr(endpoint, "headers"):
-                    request = endpoint.headers(request)
-
                 method = request.method.lower()
                 if method.upper() not in [m.upper() for m in methods]:
-                    return JSONResponse(
-                        {"error": f"Method {method} not allowed"}, status_code=405
-                    )
+                    return JSONResponse({"error": f"Method {method} not allowed"}, status_code=405)
 
                 func = getattr(endpoint, method)
                 if iscoroutinefunction(func):
@@ -183,65 +156,15 @@ class LightApi:
                 else:
                     result = func(request)
 
-                # Convert returned value to a Response instance and prepare caching data
-                original_body = None
-                original_status = None
-
+                # Convert returned value to a Response instance
                 if isinstance(result, (Response, JSONResponse)):
                     response = result
-                    # For caching, try to get the original content if available
-                    if hasattr(result, "_test_content"):
-                        original_body = result._test_content
-                        original_status = result.status_code
                 else:
                     if isinstance(result, tuple) and len(result) == 2:
                         body, status = result
                     else:
                         body, status = result, 200
-                    original_body = body
-                    original_status = status
                     response = JSONResponse(body, status_code=status)
-
-                # Caching support
-                config = getattr(endpoint_class, "Configuration", None)
-                if (
-                    hasattr(endpoint, "cache")
-                    and config
-                    and getattr(config, "caching_method_names", [])
-                    and method.upper()
-                    in [m.upper() for m in config.caching_method_names]
-                ):
-                    cache_key_source = f"{request.url}"
-                    if request.data:
-                        cache_key_source += json.dumps(request.data, sort_keys=True)
-                    cache_key = hashlib.md5(cache_key_source.encode()).hexdigest()
-
-                    cached = endpoint.cache.get(cache_key)
-                    if cached:
-                        response = JSONResponse(
-                            cached["body"],
-                            status_code=cached.get("status", response.status_code),
-                            headers=response.headers,
-                        )
-                    else:
-                        # Cache this response for next time using original data
-                        if original_body is not None:
-                            cache_data = {
-                                "body": original_body,
-                                "status": original_status or response.status_code,
-                            }
-                            # Get cache timeout from config or default
-                            cache_timeout = getattr(config, "cache_timeout", 3600)
-                            endpoint.cache.set(
-                                cache_key, cache_data, timeout=cache_timeout
-                            )
-
-                # Post-processing middleware in reverse order
-                for middleware_class in reversed(self.middleware):
-                    middleware = middleware_class()
-                    processed = middleware.process(request, response)
-                    if processed is not None:
-                        response = processed
 
                 return response
 
@@ -297,9 +220,7 @@ class LightApi:
                     elif hasattr(route.endpoint, "__class__"):
                         endpoint_name = route.endpoint.__class__.__name__
 
-                endpoint_info.append(
-                    {"path": path, "methods": methods_str, "name": endpoint_name}
-                )
+                endpoint_info.append({"path": path, "methods": methods_str, "name": endpoint_name})
 
         if not endpoint_info:
             print("📡 No API endpoints found (only system routes)")
@@ -310,16 +231,12 @@ class LightApi:
         max_methods_len = max(len(info["methods"]) for info in endpoint_info)
 
         # Print header
-        print(
-            f"{'Path':<{max_path_len + 2}} {'Methods':<{max_methods_len + 2}} Endpoint"
-        )
+        print(f"{'Path':<{max_path_len + 2}} {'Methods':<{max_methods_len + 2}} Endpoint")
         print("-" * (max_path_len + max_methods_len + 20))
 
         # Print each endpoint
         for info in sorted(endpoint_info, key=lambda x: x["path"]):
-            print(
-                f"{info['path']:<{max_path_len + 2}} {info['methods']:<{max_methods_len + 2}} {info['name']}"
-            )
+            print(f"{info['path']:<{max_path_len + 2}} {info['methods']:<{max_methods_len + 2}} {info['name']}")
 
         # Print additional info
         if self.enable_swagger:
@@ -614,9 +531,7 @@ class CORSMiddleware(Middleware):
                     import json
 
                     content = json.loads(content.decode("utf-8"))
-                return JSONResponse(
-                    content, status_code=response.status_code, headers=all_headers
-                )
+                return JSONResponse(content, status_code=response.status_code, headers=all_headers)
             except (json.JSONDecodeError, AttributeError, UnicodeDecodeError):
                 # If we can't extract content, just add headers to existing response
                 response.headers.update(cors_headers)

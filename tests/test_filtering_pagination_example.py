@@ -273,9 +273,7 @@ class TestProductPaginator:
         query = db_session.query(Product)
 
         # Mock the request context with page and limit parameters
-        paginator.request = type(
-            "obj", (object,), {"query_params": {"page": "2", "limit": "2"}}
-        )
+        paginator.request = type("obj", (object,), {"query_params": {"page": "2", "limit": "2"}})
 
         # Paginate the query
         page = paginator.paginate(query)
@@ -455,9 +453,7 @@ class TestProductModel:
         # Call the init_database function with a custom engine
         from unittest.mock import patch
 
-        with patch(
-            "examples.filtering_pagination_example.create_engine", return_value=engine
-        ):
+        with patch("examples.filtering_pagination_example.create_engine", return_value=engine):
             init_database()
 
         # Create a session to verify the data

@@ -52,9 +52,7 @@ class TestIntegration:
     @patch("sqlalchemy.orm.sessionmaker")
     @patch("sqlalchemy.create_engine")
     @patch("lightapi.models.Base.metadata.create_all")
-    def test_complete_setup(
-        self, mock_create_all, mock_create_engine, mock_sessionmaker
-    ):
+    def test_complete_setup(self, mock_create_all, mock_create_engine, mock_sessionmaker):
         # Setup mocks
         mock_engine = MagicMock()
         mock_create_engine.return_value = mock_engine
@@ -86,9 +84,7 @@ class TestIntegration:
     @patch("sqlalchemy.create_engine")
     @patch("lightapi.models.Base.metadata.create_all")
     @patch("uvicorn.run")
-    def test_run_app(
-        self, mock_run, mock_create_all, mock_create_engine, mock_sessionmaker
-    ):
+    def test_run_app(self, mock_run, mock_create_all, mock_create_engine, mock_sessionmaker):
         # Setup mocks
         mock_engine = MagicMock()
         mock_create_engine.return_value = mock_engine

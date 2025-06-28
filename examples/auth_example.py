@@ -140,8 +140,6 @@ if __name__ == "__main__":
         'curl -X POST http://localhost:8000/auth/login -H \'Content-Type: application/json\' -d \'{"username": "admin", "password": "password"}\''
     )
     print("\nTo access protected resource:")
-    print(
-        "curl -X GET http://localhost:8000/secret -H 'Authorization: Bearer YOUR_TOKEN'"
-    )
+    print("curl -X GET http://localhost:8000/secret -H 'Authorization: Bearer YOUR_TOKEN'")
 
     app.run(host="localhost", port=8000, debug=True)

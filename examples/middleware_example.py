@@ -42,9 +42,7 @@ class LoggingMiddleware(Middleware):
             return super().process(request, response)
         else:
             # Log response details
-            print(
-                f"[{getattr(request, 'id', 'unknown')}] Response: {response.status_code}"
-            )
+            print(f"[{getattr(request, 'id', 'unknown')}] Response: {response.status_code}")
 
             # Add response headers
             if not hasattr(response, "headers"):
@@ -95,9 +93,7 @@ class CORSMiddleware(Middleware):
             )
         elif response:
             # Add CORS headers to the response
-            response.headers["Access-Control-Allow-Origin"] = ",".join(
-                self.allowed_origins
-            )
+            response.headers["Access-Control-Allow-Origin"] = ",".join(self.allowed_origins)
             return response
         else:
             # Continue processing
@@ -215,8 +211,6 @@ if __name__ == "__main__":
     print("API documentation available at http://localhost:8000/docs")
     print("\nTest the endpoints:")
     print("curl -X GET http://localhost:8000/hello")
-    print(
-        "curl -X POST http://localhost:8000/hello -H 'Content-Type: application/json' -d '{\"name\": \"Alice\"}'"
-    )
+    print("curl -X POST http://localhost:8000/hello -H 'Content-Type: application/json' -d '{\"name\": \"Alice\"}'")
 
     app.run(host="localhost", port=8000, debug=True)

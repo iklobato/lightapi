@@ -1,8 +1,9 @@
+import base64
+import datetime
+
 import sqlalchemy
 import sqlalchemy.orm
 from sqlalchemy import Boolean, Column, Integer, String
-import base64
-import datetime
 
 from lightapi.database import Base
 

@@ -38,9 +38,7 @@ class Company(RestEndpoint):
     def post(self, request):
         from starlette.responses import JSONResponse
 
-        return JSONResponse(
-            {"status": "ok", "data": getattr(request, "data", {})}, status_code=200
-        )
+        return JSONResponse({"status": "ok", "data": getattr(request, "data", {})}, status_code=200)
 
     def get(self, request):
         return {"data": "ok"}, 200

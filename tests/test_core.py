@@ -40,11 +40,7 @@ class TestLightApi:
 
         # Count routes that are actual endpoints (not docs or other utility routes)
         endpoint_routes = [
-            r
-            for r in app.routes
-            if isinstance(r, Route)
-            and not r.path.startswith("/api/docs")
-            and r.path != "/openapi.json"
+            r for r in app.routes if isinstance(r, Route) and not r.path.startswith("/api/docs") and r.path != "/openapi.json"
         ]
         assert len(endpoint_routes) == 1
 
@@ -74,8 +70,6 @@ class TestLightApi:
         mock_run.assert_called_once()
 
     def test_response(self):
-        response = Response(
-            {"test": "data"}, status_code=200, content_type="application/json"
-        )
+        response = Response({"test": "data"}, status_code=200, content_type="application/json")
         assert response.status_code == 200
         assert response.media_type == "application/json"

@@ -67,8 +67,7 @@ class SwaggerGenerator:
         """
         methods = (
             endpoint_class.Configuration.http_method_names
-            if hasattr(endpoint_class, "Configuration")
-            and hasattr(endpoint_class.Configuration, "http_method_names")
+            if hasattr(endpoint_class, "Configuration") and hasattr(endpoint_class.Configuration, "http_method_names")
             else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
         )
 
@@ -79,9 +78,7 @@ class SwaggerGenerator:
         for method in methods:
             method_lower = method.lower()
             if hasattr(endpoint_class, method_lower):
-                operation = self._generate_operation(
-                    endpoint_class, method_lower, model_name
-                )
+                operation = self._generate_operation(endpoint_class, method_lower, model_name)
                 path_operations[method_lower] = operation
 
         self.paths[path] = path_operations
@@ -102,25 +99,16 @@ class SwaggerGenerator:
         properties = {}
         required = []
 
-        if (
-            hasattr(endpoint_class, "__table__")
-            and endpoint_class.__table__ is not None
-        ):
+        if hasattr(endpoint_class, "__table__") and endpoint_class.__table__ is not None:
             for column in endpoint_class.__table__.columns:
                 column_type = self._map_sql_type_to_openapi(column.type)
                 properties[column.name] = column_type
 
-                if (
-                    not column.nullable
-                    and not column.default
-                    and not column.server_default
-                ):
+                if not column.nullable and not column.default and not column.server_default:
                     required.append(column.name)
         else:
             for attr_name in dir(endpoint_class):
-                if attr_name.startswith("_") or callable(
-                    getattr(endpoint_class, attr_name)
-                ):
+                if attr_name.startswith("_") or callable(getattr(endpoint_class, attr_name)):
                     continue
 
                 attr = getattr(endpoint_class, attr_name)
@@ -170,9 +158,7 @@ class SwaggerGenerator:
             return type_map[type_name]
         return {"type": "string"}
 
-    def _generate_operation(
-        self, endpoint_class: Type[RestEndpoint], method: str, model_name: str
-    ) -> Dict[str, Any]:
+    def _generate_operation(self, endpoint_class: Type[RestEndpoint], method: str, model_name: str) -> Dict[str, Any]:
         """
         Generate an OpenAPI operation object for an endpoint method.
 
@@ -196,11 +182,7 @@ class SwaggerGenerator:
             "responses": {
                 "200": {
                     "description": "Successful response",
-                    "content": {
-                        "application/json": {
-                            "schema": {"$ref": f"#/components/schemas/{model_name}"}
-                        }
-                    },
+                    "content": {"application/json": {"schema": {"$ref": f"#/components/schemas/{model_name}"}}},
                 },
                 "400": {"description": "Bad request"},
                 "401": {"description": "Unauthorized"},
@@ -209,19 +191,11 @@ class SwaggerGenerator:
             },
         }
 
-        if hasattr(endpoint_class, "Configuration") and hasattr(
-            endpoint_class.Configuration, "authentication_class"
-        ):
+        if hasattr(endpoint_class, "Configuration") and hasattr(endpoint_class.Configuration, "authentication_class"):
             operation["security"] = [{"bearerAuth": []}]
 
         if method in ["post", "put", "patch"]:
-            operation["requestBody"] = {
-                "content": {
-                    "application/json": {
-                        "schema": {"$ref": f"#/components/schemas/{model_name}"}
-                    }
-                }
-            }
+            operation["requestBody"] = {"content": {"application/json": {"schema": {"$ref": f"#/components/schemas/{model_name}"}}}}
 
         return operation
 

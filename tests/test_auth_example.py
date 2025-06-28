@@ -249,9 +249,7 @@ class TestProtectedResource:
             db_session: The SQLAlchemy session fixture.
         """
         # Add a test profile to the database
-        profile = UserProfile(
-            user_id="user_123", full_name="Test User", email="test@example.com"
-        )
+        profile = UserProfile(user_id="user_123", full_name="Test User", email="test@example.com")
         db_session.add(profile)
         db_session.commit()
 

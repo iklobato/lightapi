@@ -57,6 +57,4 @@ class Base:
         Returns:
             dict: A dictionary representation of the model instance.
         """
-        return {
-            column.name: getattr(self, column.name) for column in self.table.columns
-        }
+        return {column.name: getattr(self, column.name) for column in self.table.columns}
