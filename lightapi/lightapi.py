@@ -117,11 +117,22 @@ class LightApi:
                 raise
         
         new_routes = self.routes[initial_route_count:]
+        max_method_length = max(len(route.method) for route in new_routes if hasattr(route, 'method'))
+        grouped_routes = {}
         for route in new_routes:
             if hasattr(route, 'method') and hasattr(route, 'path'):
-                logging.info(f"Registered route: {route.method} {route.path}")
-            else:
-                logging.info(f"Registered route: {route}")
+                base_path = route.path.split('/')[1]  # Get the base path
+                if base_path not in grouped_routes:
+                    grouped_routes[base_path] = []
+                # Avoid duplicating routes with and without trailing slashes
+                if route.path.endswith('/') and route.path[:-1] in [r[1] for r in grouped_routes[base_path]]:
+                    continue
+                grouped_routes[base_path].append((route.method, route.path))
+
+        for base_path, routes in grouped_routes.items():
+            logging.info(f"Routes for /{base_path}:")
+            for method, path in routes:
+                logging.info(f"  {method.ljust(max_method_length)} {path}")
 
     def _create_rest_endpoint_routes(self, endpoint_instance):
         """Create aiohttp route handlers for a RestEndpoint instance."""
