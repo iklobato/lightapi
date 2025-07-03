@@ -5,6 +5,7 @@ from sqlalchemy.orm import relationship
 
 from lightapi import LightApi, RestEndpoint
 from lightapi.database import Base
+from lightapi.models import Post
 
 
 class BlogPost(Base):
@@ -31,6 +32,7 @@ class Comment(Base):
 
 
 class Endpoint(RestEndpoint):
+    __tablename__ = "asdasd"
 
     def get(self, post_id: int):
         return {"status": "ok"}, 200
@@ -40,8 +42,13 @@ class Endpoint(RestEndpoint):
 
 
 if __name__ == "__main__":
-    app = LightApi()
-    app.register(BlogPost)
+    app = LightApi(
+        enable_swagger=True,
+        swagger_title="Blog Post API",
+        swagger_version="1.0.0",
+        swagger_description="API documentation for the Blog Post application",
+    )
+    app.register(Post)
     app.register(Comment)
     app.register(Endpoint)
 

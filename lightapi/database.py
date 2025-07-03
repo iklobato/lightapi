@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 from sqlalchemy import Column, Integer, create_engine
 from sqlalchemy.orm import as_declarative, declared_attr, sessionmaker
@@ -25,6 +26,8 @@ class Base:
 
     __table__ = None
 
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
     @property
     def table(self):
         """
@@ -47,14 +50,23 @@ class Base:
         """
         return cls.__name__.lower()
 
+    @property
+    def pk(self):
+        return self.id
+
     def serialize(self) -> dict:
         """
         Convert the model instance into a dictionary representation.
 
         Each key in the dictionary corresponds to a column name, and the value
-        is the data stored in that column.
+        is the data stored in that column. Datetime objects are converted to strings.
 
         Returns:
             dict: A dictionary representation of the model instance.
         """
-        return {column.name: getattr(self, column.name) for column in self.table.columns}
+        return {
+            column.name: (
+                getattr(self, column.name).isoformat() if isinstance(getattr(self, column.name), datetime) else getattr(self, column.name)
+            )
+            for column in self.table.columns
+        }

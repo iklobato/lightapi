@@ -1,4 +1,5 @@
 import datetime
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Type
@@ -92,7 +93,7 @@ class AbstractHandler(ABC):
         Returns:
             Base: The item retrieved from the database, or None if not found.
         """
-        return db.query(self.model).filter(self.model.pk == item_id).first()
+        return db.query(self.model).filter(self.model.id == item_id).first()
 
     def add_and_commit_item(self, db: Session, item):
         """
@@ -110,12 +111,12 @@ class AbstractHandler(ABC):
             db.commit()
             db.refresh(item)
 
-            if hasattr(self.model, "pk"):
-                if isinstance(self.model.pk, tuple):
-                    filters = [col == getattr(item, col.name) for col in self.model.pk]
+            if hasattr(self.model, "id"):
+                if isinstance(self.model.id, tuple):
+                    filters = [col == getattr(item, col.name) for col in self.model.id]
                     item = db.query(self.model).filter(*filters).first()
                 else:
-                    item = db.query(self.model).filter(self.model.pk == getattr(item, self.model.pk.name)).first()
+                    item = db.query(self.model).filter(self.model.id == getattr(item, self.model.id.name)).first()
 
             mapper = inspect(self.model)
             for col in self.model.__table__.columns:
@@ -170,6 +171,13 @@ class AbstractHandler(ABC):
             web.Response: The JSON response containing the error message.
         """
         return web.json_response({"error": error_message}, status=status)
+
+
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
 
 
 class CreateHandler(AbstractHandler):
@@ -246,18 +254,18 @@ class ReadHandler(AbstractHandler):
             web.Response: The JSON response containing the item(s) or an error message.
         """
 
-        if isinstance(self.model.pk, tuple):
+        if isinstance(self.model.id, tuple):
             pk_values = request.match_info.get("id")
             if pk_values is None:
                 return web.json_response({"error": "Missing composite key"}, status=400)
             pk_values = pk_values.split(",")
-            if len(pk_values) != len(self.model.pk):
+            if len(pk_values) != len(self.model.id):
                 return web.json_response({"error": "Composite key count mismatch"}, status=400)
-            filters = [col == self._parse_pk_value(val, col) for col, val in zip(self.model.pk, pk_values)]
+            filters = [col == self._parse_pk_value(val, col) for col, val in zip(self.model.id, pk_values)]
             item = db.query(self.model).filter(*filters).first()
         else:
             pk_value = request.match_info.get("id")
-            item = db.query(self.model).filter(self.model.pk == self._parse_pk_value(pk_value, self.model.pk)).first()
+            item = db.query(self.model).filter(self.model.id == self._parse_pk_value(pk_value, self.model.id)).first()
         if not item:
             return web.json_response({"error": "Not found"}, status=404)
         return self.json_response(item, status=200)
@@ -403,4 +411,4 @@ class RetrieveAllHandler(AbstractHandler):
         """
         items = db.query(self.model).all()
         response = [item.serialize() for item in items]
-        return web.json_response(response, status=200)
+        return web.json_response(response, status=200, dumps=json.dumps)

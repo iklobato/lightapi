@@ -55,7 +55,15 @@ class LightApi:
             Create a LightApi instance from a YAML configuration file.
     """
 
-    def __init__(self, initialize_callback: Callable = None, initialize_arguments: Dict = None) -> None:
+    def __init__(
+        self,
+        initialize_callback: Callable = None,
+        initialize_arguments: Dict = None,
+        swagger_title: str = "LightAPI Documentation",
+        swagger_version: str = "1.0.0",
+        swagger_description: str = "API documentation",
+        enable_swagger: bool = False,
+    ) -> None:
         """
         Initializes the LightApi, sets up the aiohttp application, and creates tables in the database.
 
@@ -65,6 +73,15 @@ class LightApi:
         Raises:
             SQLAlchemyError: If there is an error during the creation of tables.
         """
+        self.enable_swagger = enable_swagger
+        if self.enable_swagger:
+            from lightapi.swagger import SwaggerGenerator
+
+            self.swagger_generator = SwaggerGenerator(
+                title=swagger_title,
+                version=swagger_version,
+                description=swagger_description,
+            )
         self.initialize(callback=initialize_callback, callback_arguments=initialize_arguments)
         self.app = web.Application()
         self.routes = []
@@ -85,96 +102,92 @@ class LightApi:
         logging.debug(f"Initializing LightApi with {callback_arguments}")
         callback(**callback_arguments)
 
-    from typing import Union, Type, Dict, Any
-    import logging
-    import inspect
+    def register(self, handler):
+        """
+        Register a model or endpoint class/instance. For RestEndpoint classes, use __tablename__ if present, otherwise the class name as the endpoint path.
+        """
+        import inspect
 
-    def register(self, handler: Union[Type[Base], Type[RestEndpoint], Base, Dict[str, Any]]) -> None:
         initial_route_count = len(self.routes)
-        
-        handlers_to_process = handler.items() if isinstance(handler, dict) else [(None, handler)]
-        
-        for path, single_handler in handlers_to_process:
-            try:
-                if isinstance(single_handler, RestEndpoint):
-                    self.routes.extend(self._create_rest_endpoint_routes(single_handler))
-                elif inspect.isclass(single_handler) and issubclass(single_handler, RestEndpoint):
-                    endpoint_instance = single_handler()
-                    self.routes.extend(self._create_rest_endpoint_routes(endpoint_instance))
-                elif (inspect.isclass(single_handler) and 
-                      hasattr(single_handler, "__tablename__") and 
-                      getattr(single_handler, "__tablename__") is not None):
-                    self.routes.extend(create_handler(single_handler))
-                else:
-                    handler_name = f"class {single_handler.__name__}" if inspect.isclass(single_handler) else type(single_handler).__name__
-                    raise TypeError(
-                        f"Handler must be a SQLAlchemy model class, RestEndpoint class, "
-                        f"or RestEndpoint instance. Got: {handler_name}"
-                    )
-            except TypeError as e:
-                if path is not None:
-                    raise TypeError(f"Handler for path '{path}': {str(e)}")
-                raise
-        
+
+        if inspect.isclass(handler) and issubclass(handler, RestEndpoint):
+            tablename = getattr(handler, "__tablename__", None)
+            if tablename:
+                path = f"/{tablename.lower()}"
+            else:
+                path = f"/{handler.__name__.lower()}"
+            endpoint_instance = handler()
+            self.routes.extend(self._create_rest_endpoint_routes(endpoint_instance, path))
+        elif inspect.isclass(handler) and hasattr(handler, "__tablename__") and getattr(handler, "__tablename__") is not None:
+            self.routes.extend(create_handler(handler))
+        else:
+            handler_name = f"class {handler.__name__}" if inspect.isclass(handler) else type(handler).__name__
+            raise TypeError(f"Handler must be a SQLAlchemy model class or RestEndpoint class. Got: {handler_name}")
+
         new_routes = self.routes[initial_route_count:]
-        max_method_length = max(len(route.method) for route in new_routes if hasattr(route, 'method'))
+        max_method_length = max(len(route.method) for route in new_routes if hasattr(route, "method")) if new_routes else 0
         grouped_routes = {}
         for route in new_routes:
-            if hasattr(route, 'method') and hasattr(route, 'path'):
-                base_path = route.path.split('/')[1]  # Get the base path
+            if hasattr(route, "method") and hasattr(route, "path"):
+                base_path = route.path.split("/")[1]
                 if base_path not in grouped_routes:
                     grouped_routes[base_path] = []
-                # Avoid duplicating routes with and without trailing slashes
-                if route.path.endswith('/') and route.path[:-1] in [r[1] for r in grouped_routes[base_path]]:
+
+                if route.path.endswith("/") and route.path[:-1] in [r[1] for r in grouped_routes[base_path]]:
                     continue
                 grouped_routes[base_path].append((route.method, route.path))
-
         for base_path, routes in grouped_routes.items():
             logging.info(f"Routes for /{base_path}:")
             for method, path in routes:
                 logging.info(f"  {method.ljust(max_method_length)} {path}")
 
-    def _create_rest_endpoint_routes(self, endpoint_instance):
-        """Create aiohttp route handlers for a RestEndpoint instance."""
+    def _create_rest_endpoint_routes(self, endpoint_instance, base_path=None):
+        """Create aiohttp route handlers for a RestEndpoint instance at a given base path."""
         from aiohttp import web
-        
-        if hasattr(endpoint_instance, "__tablename__") and endpoint_instance.__tablename__:
-            base_path = f"/{endpoint_instance.__tablename__}"
-        else:
-            base_path = f"/{endpoint_instance.__class__.__name__.lower()}"
-        
+
+        if base_path is None:
+            if hasattr(endpoint_instance, "__tablename__") and endpoint_instance.__tablename__:
+                base_path = f"/{endpoint_instance.__tablename__.lower()}"
+            else:
+                base_path = f"/{endpoint_instance.__class__.__name__.lower()}"
+
+        if not base_path.startswith("/"):
+            base_path = f"/{base_path}"
+
+        base_path = base_path.rstrip("/")
+
         async def endpoint_handler(request):
             from lightapi.database import SessionLocal
+
             session = SessionLocal()
-            
             try:
-                # Create an adapter for the request object
+
                 class RequestAdapter:
                     def __init__(self, aiohttp_request):
                         self.aiohttp_request = aiohttp_request
                         self.path_params = aiohttp_request.match_info
                         self.query_params = aiohttp_request.query
-                    
+
                     async def get_data(self):
-                        if hasattr(self, '_data'):
+                        if hasattr(self, "_data"):
                             return self._data
                         try:
                             self._data = await self.aiohttp_request.json()
                         except:
                             self._data = {}
                         return self._data
-                    
+
                     @property
                     def data(self):
                         import asyncio
+
                         loop = asyncio.get_event_loop()
                         return loop.run_until_complete(self.get_data())
-                
+
                 adapted_request = RequestAdapter(request)
                 setup_result = endpoint_instance._setup(adapted_request, session)
                 if setup_result:
                     return setup_result
-                
                 method = request.method.lower()
                 if hasattr(endpoint_instance, method):
                     result_data, status_code = getattr(endpoint_instance, method)(adapted_request)
@@ -183,18 +196,16 @@ class LightApi:
                     return web.json_response({"error": "Method not allowed"}, status=405)
             finally:
                 session.close()
-        
+
         return [
             web.get(base_path, endpoint_handler),
-            web.get(base_path + '/', endpoint_handler),
+            web.get(base_path + "/", endpoint_handler),
             web.post(base_path, endpoint_handler),
-            web.post(base_path + '/', endpoint_handler),
+            web.post(base_path + "/", endpoint_handler),
             web.get(f"{base_path}/{{id}}", endpoint_handler),
             web.put(f"{base_path}/{{id}}", endpoint_handler),
             web.delete(f"{base_path}/{{id}}", endpoint_handler),
             web.patch(f"{base_path}/{{id}}", endpoint_handler),
-            web.options(base_path, endpoint_handler),
-            web.options(base_path + '/', endpoint_handler),
         ]
 
     def run(self, host: str = "0.0.0.0", port: int = 8000) -> None:
@@ -290,7 +301,15 @@ class LightApi:
                 return result
 
             try:
-                model = type(table_name.capitalize(), (Base,), {"__table__": table, "__tablename__": table_name, "serialize": serialize})
+                model = type(
+                    table_name.capitalize(),
+                    (Base,),
+                    {
+                        "__table__": table,
+                        "__tablename__": table_name,
+                        "serialize": serialize,
+                    },
+                )
 
                 pk_cols = [col.name for col in table.primary_key.columns]
                 if not pk_cols:
@@ -397,8 +416,7 @@ class LightApi:
                     print(f"[DEBUG] Registering route: {method.upper()} {path}")
                     routes.append(getattr(web, method)(path, handler_cls(model, session_factory)))
                     handler_cls, route_fn = HANDLER_MAP["get_id"]
-                    if isinstance(model.pk, tuple):
-
+                    if isinstance(model.id, tuple):
                         path = f"/{table_name}/{{id}}"
                     else:
                         path, method = route_fn(table_name)

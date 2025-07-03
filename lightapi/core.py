@@ -109,9 +109,13 @@ class LightApi:
 
             if self.enable_swagger and first:
                 self.routes.append(Route("/api/docs", swagger_ui_route))
-
                 self.routes.append(Route("/openapi.json", openapi_json_route))
                 first = False
+
+        # Ensure Swagger routes are added if Swagger is enabled
+        if self.enable_swagger and first:
+            self.routes.append(Route("/api/docs", swagger_ui_route))
+            self.routes.append(Route("/openapi.json", openapi_json_route))
 
     def _create_handler(self, endpoint_class: Type["RestEndpoint"], methods: List[str]) -> Callable:
         """

@@ -77,6 +77,7 @@ class RestEndpoint:
             session = SessionLocal()
 
             try:
+
                 class RequestAdapter:
                     def __init__(self, aiohttp_request):
                         self.aiohttp_request = aiohttp_request
@@ -84,7 +85,7 @@ class RestEndpoint:
                         self.query_params = aiohttp_request.query
 
                     async def get_data(self):
-                        if hasattr(self, '_data'):
+                        if hasattr(self, "_data"):
                             return self._data
                         try:
                             self._data = await self.aiohttp_request.json()
@@ -95,6 +96,7 @@ class RestEndpoint:
                     @property
                     def data(self):
                         import asyncio
+
                         loop = asyncio.get_event_loop()
                         return loop.run_until_complete(self.get_data())
 
@@ -393,6 +395,58 @@ class RestEndpoint:
             self.session.rollback()
             return {"error": str(e)}, 400
 
+    def patch(self, request):
+        """
+        Handle PATCH requests.
+
+        Partially updates an existing object in the database using the request data.
+        Validates the data if a validator is configured.
+
+        Args:
+            request: The HTTP request.
+
+        Returns:
+            tuple: A tuple containing the response data and status code.
+        """
+        try:
+            # First try to get ID from path parameters
+            object_id = request.path_params.get("id")
+
+            # If not found, try query parameters
+            if not object_id and hasattr(request, "query_params"):
+                object_id = request.query_params.get("id")
+
+            if not object_id:
+                return {"error": "ID is required"}, 400
+
+            instance = self.session.query(self.__class__).filter_by(id=object_id).first()
+            if not instance:
+                return {"error": "Object not found"}, 404
+
+            data = getattr(request, "data", {})
+
+            if hasattr(self, "validator"):
+                validated_data = self.validator.validate(data)
+                data = validated_data
+
+            for field, value in data.items():
+                setattr(instance, field, value)
+
+            self.session.commit()
+
+            result = {}
+            if self._is_sa_model():
+                for column in sql_inspect(instance.__class__).columns:
+                    result[column.name] = getattr(instance, column.name)
+            else:
+                for attr in self._get_columns():
+                    result[attr] = getattr(instance, attr)
+
+            return {"result": result}, 200
+        except Exception as e:
+            self.session.rollback()
+            return {"error": str(e)}, 400
+
     def options(self, request):
         """
         Handle OPTIONS requests.
@@ -406,6 +460,20 @@ class RestEndpoint:
             tuple: A tuple containing the response data and status code.
         """
         return {"allowed_methods": self.Configuration.http_method_names}, 200
+
+    def __getattr__(self, name):
+        """
+        Return NotImplemented for unspecified HTTP methods.
+
+        Args:
+            name (str): The name of the attribute being accessed.
+
+        Returns:
+            NotImplemented: If the method is not implemented.
+        """
+        if name.upper() in self.Configuration.http_method_names:
+            return lambda *args, **kwargs: ("Method not implemented", 501)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
 
 class Validator:

@@ -1,9 +1,9 @@
 import base64
-import datetime
+from datetime import datetime
 
 import sqlalchemy
 import sqlalchemy.orm
-from sqlalchemy import Boolean, Column, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
 
 from lightapi.database import Base
 
@@ -111,7 +111,7 @@ class Person(Base):
             val = getattr(self, col.name)
             if isinstance(val, bytes):
                 result[col.name] = base64.b64encode(val).decode()
-            elif isinstance(val, (datetime.datetime, datetime.date)):
+            elif isinstance(val, (datetime, datetime.date)):
                 result[col.name] = val.isoformat()
             else:
                 result[col.name] = val
@@ -156,7 +156,52 @@ class Company(Base):
             val = getattr(self, col.name)
             if isinstance(val, bytes):
                 result[col.name] = base64.b64encode(val).decode()
-            elif isinstance(val, (datetime.datetime, datetime.date)):
+            elif isinstance(val, (datetime, datetime.date)):
+                result[col.name] = val.isoformat()
+            else:
+                result[col.name] = val
+        return result
+
+
+class Post(Base):
+    """
+    Post model representing a blog post.
+
+    Attributes:
+        id: Primary key.
+        title: Title of the post.
+        content: Content of the post.
+        created_at: Timestamp when the post was created.
+    """
+
+    __tablename__ = "post"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String, nullable=False)
+    content = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def as_dict(self):
+        """
+        Convert the model instance to a dictionary.
+
+        Returns:
+            dict: Dictionary representation of the post.
+        """
+        return {
+            "id": self.id,
+            "title": self.title,
+            "content": self.content,
+            "created_at": self.created_at.isoformat(),
+        }
+
+    def serialize(self):
+        result = {}
+        for col in self.__table__.columns:
+            val = getattr(self, col.name)
+            if isinstance(val, bytes):
+                result[col.name] = base64.b64encode(val).decode()
+            elif isinstance(val, (datetime, datetime.date)):
                 result[col.name] = val.isoformat()
             else:
                 result[col.name] = val
