@@ -480,13 +480,21 @@ class LightApi:
             debug (bool): Whether to enable debug mode. Defaults to False.
             reload (bool): Whether to enable auto-reload. Defaults to False.
         """
-        uvicorn.run(
-            "run_server:app",
-            host=host,
-            port=port,
-            reload=reload,
-            log_level="debug" if debug else "info",
-        )
+        # Try to run the actual app instance (aiohttp or Starlette)
+        # Prefer Starlette routes if present, else fallback to aiohttp app
+        import uvicorn
+        if hasattr(self, 'starlette_routes') and self.starlette_routes:
+            # Build a Starlette app dynamically if needed
+            from starlette.applications import Starlette
+            app = Starlette(routes=self.starlette_routes)
+            uvicorn.run(app, host=host, port=port, reload=reload, log_level="debug" if debug else "info")
+        elif hasattr(self, 'app'):
+            # Assume self.app is an aiohttp app
+            import asyncio
+            from aiohttp import web
+            web.run_app(self.app, host=host, port=port)
+        else:
+            raise RuntimeError("No application instance found to run.")
 
     @classmethod
     def from_config(cls, config_path: str, engine=None) -> "LightApi":
