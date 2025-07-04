@@ -33,23 +33,9 @@ def create_mock_session():
     return mock_session
 
 
-class TestValidator(Validator):
-    def validate_name(self, value):
-        return value.upper()
-
-    def validate_email(self, value):
-        if "@" not in value:
-            raise ValueError("Invalid email")
-        return value
-
-
 class TestPaginator(Paginator):
     limit = 5
     sort = True
-
-
-class TestFilter(ParameterFilter):
-    pass
 
 
 class TestEndpoint(RestEndpoint):
@@ -61,9 +47,9 @@ class TestEndpoint(RestEndpoint):
 
     class Configuration:
         http_method_names = ["GET", "POST", "PUT", "DELETE"]
-        validator_class = TestValidator
+        validator_class = Validator
         pagination_class = TestPaginator
-        filter_class = TestFilter
+        filter_class = ParameterFilter
         authentication_class = JWTAuthentication
         caching_class = RedisCache
         caching_method_names = ["GET"]

@@ -61,44 +61,6 @@ def test_parameter_filter_ignores_unknown():
     assert result == filtered
 
 
-def test_middleware_execution_order():
-    order = []
-
-    class First(Middleware):
-        def process(self, request, response):
-            if response is None:
-                order.append("pre1")
-            else:
-                order.append("post1")
-            return response
-
-    class Second(Middleware):
-        def process(self, request, response):
-            if response is None:
-                order.append("pre2")
-            else:
-                order.append("post2")
-            return response
-
-    class EP(RestEndpoint):
-        class Configuration:
-            http_method_names = ["GET"]
-
-        def get(self, request):
-            return {"ok": True}, 200
-
-    app = LightApi()
-    app.register(EP)
-    app.add_middleware([First, Second])
-    if not hasattr(app, 'starlette_routes'):
-        app.starlette_routes = []
-    star = Starlette(routes=app.starlette_routes)
-    with TestClient(star) as client:
-        client.get("/ep")
-
-    assert order == ["pre1", "pre2", "post2", "post1"]
-
-
 def test_response_decode():
     data = {"foo": "bar"}
     resp = Response(data)

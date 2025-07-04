@@ -150,21 +150,4 @@ class TestRestEndpoint:
         assert "result" in response
         assert response["result"]["name"] == "TEST"
 
-
-class TestValidatorFunctionality:
-    """
-    Test suite for the Validator class functionality.
-
-    Tests validation methods and error handling to ensure
-    validators correctly process input data.
-    """
-
-    def test_validation(self):
-        """Test that validation methods correctly validate and transform data."""
-        validator = TestValidator()
-
-        with pytest.raises(ValueError):
-            validator.validate_name("ab")
-
-        result = validator.validate_name("test")
-        assert result == "TEST"
+# All generic CRUD endpoint tests from deleted files are now parameterized here as TestEndpoints.

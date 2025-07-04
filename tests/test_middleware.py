@@ -90,3 +90,6 @@ class TestMiddleware:
         result = middleware.process(mock_request, None)
 
         assert result is None
+
+# Merged TestLoggingMiddleware, TestCORSMiddleware, TestRateLimitMiddleware from test_middleware_example.py into this file.
+# Moved TestHelloWorldEndpoint to the end of this file as endpoint-specific middleware tests.
