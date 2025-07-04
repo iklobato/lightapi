@@ -754,3 +754,18 @@ class User(RestEndpoint):
 - The API will return 409 Conflict if you attempt to create or update a record missing a NOT NULL field, or violating a UNIQUE or FOREIGN KEY constraint. 
 
 To start your API, always use `api.run(host, port)`. Do not use external libraries or 'app = api.app' to start the server directly. 
+
+## Custom Endpoint Registration with route_patterns
+
+When registering custom (non-model) endpoints, you must specify the intended REST path(s) using the `route_patterns` attribute. Fallback to class names is not supported for custom endpoints.
+
+```python
+class HelloWorldEndpoint(RestEndpoint):
+    route_patterns = ["/hello"]
+    def get(self, request):
+        return {"message": "Hello, World!"}
+
+app.register(HelloWorldEndpoint)
+```
+
+> See the mega example for a comprehensive demonstration of registering multiple endpoints with custom paths. 

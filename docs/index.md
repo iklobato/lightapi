@@ -160,3 +160,30 @@ LightAPI is released under the [MIT License](https://github.com/henriqueblobato/
 
 > To start your API, always use `api.run(host, port)`. Do not use external libraries or 'app = api.app' to start the server directly.
 
+## Mega Example: All Features in One App
+
+The `examples/mega_example.py` script demonstrates the full capabilities of LightAPI:
+- RESTful models (products, categories, orders, users, etc.)
+- Custom endpoints (auth, weather, hello, secret, public, etc.)
+- JWT authentication and protected resources
+- Middleware (logging, CORS, rate limiting, authentication)
+- Caching, filtering, pagination, and more
+
+**Available Endpoints:**
+
+| Path                  | Methods                                    | Description                  |
+|-----------------------|--------------------------------------------|------------------------------|
+| /products             | GET, POST, PUT, PATCH, DELETE, OPTIONS     | Product CRUD                 |
+| /categories           | GET, POST, PUT, PATCH, DELETE, OPTIONS     | Category CRUD                |
+| /orders               | GET, POST, PUT, PATCH, DELETE, OPTIONS     | Order CRUD                   |
+| /order_items          | GET, POST, PUT, PATCH, DELETE, OPTIONS     | Order item CRUD              |
+| /users                | GET, POST, PUT, PATCH, DELETE, OPTIONS     | User CRUD                    |
+| /user_profiles        | GET, POST, PUT, PATCH, DELETE, OPTIONS     | User profile (JWT protected) |
+| /auth/login           | POST, OPTIONS                              | JWT login                    |
+| /secret               | GET, OPTIONS (JWT required)                | Protected resource           |
+| /public               | GET, OPTIONS                               | Public resource              |
+| /weather/{city}       | GET, OPTIONS                               | Weather info (custom path)   |
+| /hello                | GET, OPTIONS                               | Hello world (custom path)    |
+
+> All endpoints are registered with explicit RESTful or custom paths using `route_patterns` or `__tablename__`.
+

@@ -33,6 +33,21 @@ app = LightApi()
 app.register({'/custom-users': CustomUserEndpoint})
 ```
 
+## Registering Custom Endpoints with route_patterns
+
+When defining a custom endpoint (not a SQLAlchemy model), always specify the intended path(s) using the `route_patterns` attribute:
+
+```python
+class HelloWorldEndpoint(RestEndpoint):
+    route_patterns = ["/hello"]
+    def get(self, request):
+        return {"message": "Hello, World!"}
+
+app.register(HelloWorldEndpoint)
+```
+
+> See the mega example for a comprehensive demonstration of this pattern.
+
 ## HTTP Method Configuration
 
 - `http_method_names`: List of allowed HTTP methods.

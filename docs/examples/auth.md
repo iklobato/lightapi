@@ -158,52 +158,41 @@ curl -X POST http://localhost:8000/auth/login \
 }
 ```
 
-### 2. Access Public Endpoint
+### 2. Access User Profile (JWT-protected)
+
+> **Note:** The `user_id` field in the profile must match the JWT `sub` claim (e.g., `user_1`).
 
 ```bash
-curl http://localhost:8000/public
-```
+curl -X POST http://localhost:8000/user_profiles \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "user_id": "user_1",
+    "full_name": "Admin User",
+    "email": "admin@example.com"
+  }'
 
-**Response:**
-```json
-{
-  "message": "This is public information"
-}
-```
-
-### 3. Access Protected Endpoint
-
-```bash
-# Without token (will fail)
-curl http://localhost:8000/secret
-```
-
-**Response:**
-```json
-{
-  "error": "Authentication failed"
-}
-```
-
-```bash
-# With valid token
 curl -H "Authorization: Bearer YOUR_TOKEN" \
-     http://localhost:8000/secret
+     http://localhost:8000/user_profiles
 ```
 
 **Response:**
 ```json
 {
-  "message": "Hello, admin! You have admin access.",
-  "secret_data": "This is protected information"
+  "id": 2,
+  "user_id": "user_1",
+  "full_name": "Admin User",
+  "email": "admin@example.com"
 }
 ```
 
-### 4. Access User Profile
+### 3. Troubleshooting
+
+- If you get `{ "error": "Profile not found" }`, ensure you created the profile with `user_id` matching the JWT `sub` claim.
+- Always set the environment variable before running the server:
 
 ```bash
-curl -H "Authorization: Bearer YOUR_TOKEN" \
-     http://localhost:8000/profile
+export LIGHTAPI_JWT_SECRET="your-super-secret-key"
 ```
 
 ## JWT Token Structure

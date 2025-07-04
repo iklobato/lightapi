@@ -732,3 +732,7 @@ app.add_middleware([SecurityHeadersMiddleware])
 ```
 
 This comprehensive authentication system provides enterprise-grade security while maintaining the simplicity and performance that LightAPI is known for. The modular design allows you to implement exactly the authentication strategy your application needs, from simple API keys to complex multi-factor authentication systems.
+
+> **Note:** All JWT-protected endpoints require the `LIGHTAPI_JWT_SECRET` environment variable to be set before running the server.
+
+> **Custom endpoints must specify their intended paths using `route_patterns`. See the mega example for a full-stack authentication and registration demo.**
