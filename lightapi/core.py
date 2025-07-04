@@ -85,37 +85,62 @@ class LightApi:
                 description=config.swagger_description,
             )
 
-    def register(self, endpoints: Dict[str, Type["RestEndpoint"]]):
+    def register(self, handler):
         """
-        Register endpoints with the application.
-
-        Args:
-            endpoints: Dictionary mapping paths to endpoint classes.
+        Register a model or endpoint class with the application.
+        Accepts a single SQLAlchemy model or RestEndpoint subclass per call.
         """
         from .swagger import openapi_json_route, swagger_ui_route
 
-        first = True
-        for path, endpoint_class in endpoints.items():
+        # If handler has route_patterns (custom endpoints)
+        route_patterns = getattr(handler, "route_patterns", None)
+        if route_patterns:
             methods = (
-                endpoint_class.Configuration.http_method_names
-                if hasattr(endpoint_class, "Configuration") and hasattr(endpoint_class.Configuration, "http_method_names")
+                handler.Configuration.http_method_names
+                if hasattr(handler, "Configuration") and hasattr(handler.Configuration, "http_method_names")
                 else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
             )
-            handler = self._create_handler(endpoint_class, methods)
-            self.routes.append(Route(path, handler, methods=methods))
+            endpoint_handler = self._create_handler(handler, methods)
+            for pattern in route_patterns:
+                self.routes.append(Route(pattern, endpoint_handler, methods=methods))
+                if self.enable_swagger:
+                    self.swagger_generator.register_endpoint(pattern, handler)
+            return
 
+        # If it's a SQLAlchemy model (RESTful resource)
+        if hasattr(handler, "__tablename__") and handler.__tablename__:
+            tablename = handler.__tablename__
+            methods = (
+                handler.Configuration.http_method_names
+                if hasattr(handler, "Configuration") and hasattr(handler.Configuration, "http_method_names")
+                else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+            )
+            endpoint_handler = self._create_handler(handler, methods)
+            # Register /tablename and /tablename/{id}
+            base_path = f"/{tablename}"
+            id_path = f"/{tablename}/{{id}}"
+            self.routes.append(Route(base_path, endpoint_handler, methods=methods))
+            self.routes.append(Route(id_path, endpoint_handler, methods=methods))
             if self.enable_swagger:
-                self.swagger_generator.register_endpoint(path, endpoint_class)
+                self.swagger_generator.register_endpoint(base_path, handler)
+                self.swagger_generator.register_endpoint(id_path, handler)
+            return
 
-            if self.enable_swagger and first:
-                self.routes.append(Route("/api/docs", swagger_ui_route))
-                self.routes.append(Route("/openapi.json", openapi_json_route))
-                first = False
+        # If it's a RestEndpoint subclass without route_patterns or __tablename__
+        if hasattr(handler, "Configuration") or hasattr(handler, "get") or hasattr(handler, "post"):
+            path = f"/{handler.__name__.lower()}"
+            methods = (
+                handler.Configuration.http_method_names
+                if hasattr(handler, "Configuration") and hasattr(handler.Configuration, "http_method_names")
+                else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+            )
+            endpoint_handler = self._create_handler(handler, methods)
+            self.routes.append(Route(path, endpoint_handler, methods=methods))
+            if self.enable_swagger:
+                self.swagger_generator.register_endpoint(path, handler)
+            return
 
-        # Ensure Swagger routes are added if Swagger is enabled
-        if self.enable_swagger and first:
-            self.routes.append(Route("/api/docs", swagger_ui_route))
-            self.routes.append(Route("/openapi.json", openapi_json_route))
+        raise TypeError(f"Handler must be a SQLAlchemy model class or RestEndpoint class. Got: {handler}")
 
     def _create_handler(self, endpoint_class: Type["RestEndpoint"], methods: List[str]) -> Callable:
         """

@@ -28,7 +28,7 @@ product_category_association = Table(
 
 
 # Define models with relationships
-class Category(RestEndpoint):
+class Category(Base, RestEndpoint):
     __tablename__ = "categories"
 
     id = Column(Integer, primary_key=True)
@@ -88,7 +88,7 @@ class Category(RestEndpoint):
             return {"results": results}, 200
 
 
-class Supplier(RestEndpoint):
+class Supplier(Base, RestEndpoint):
     __tablename__ = "suppliers"
 
     id = Column(Integer, primary_key=True)
@@ -101,7 +101,7 @@ class Supplier(RestEndpoint):
     products = relationship("Product", back_populates="supplier")
 
 
-class Product(RestEndpoint):
+class Product(Base, RestEndpoint):
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True)
@@ -220,7 +220,7 @@ class Product(RestEndpoint):
             return {"error": str(e)}, 400
 
 
-class Customer(RestEndpoint):
+class Customer(Base, RestEndpoint):
     __tablename__ = "customers"
 
     id = Column(Integer, primary_key=True)
@@ -232,7 +232,7 @@ class Customer(RestEndpoint):
     orders = relationship("Order", back_populates="customer")
 
 
-class Order(RestEndpoint):
+class Order(Base, RestEndpoint):
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True)
@@ -317,7 +317,7 @@ class Order(RestEndpoint):
             return {"results": results}, 200
 
 
-class OrderItem(RestEndpoint):
+class OrderItem(Base, RestEndpoint):
     __tablename__ = "order_items"
 
     id = Column(Integer, primary_key=True)

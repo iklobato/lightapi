@@ -266,7 +266,8 @@ if __name__ == "__main__":
     )
 
     # Register endpoints
-    app.register({"/projects": Project, "/tasks": Task})
+    app.register(Project)
+    app.register(Task)
 
     print("Server running at http://localhost:8000")
     print("API documentation available at http://localhost:8000/docs")

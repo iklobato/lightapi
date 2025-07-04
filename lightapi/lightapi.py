@@ -138,23 +138,28 @@ class LightApi:
 
     def register(self, handler):
         if inspect.isclass(handler) and issubclass(handler, RestEndpoint):
-            path = f"/{handler.__name__.lower()}"
+            # Use __tablename__ if available, else fallback to class name
+            route_patterns = getattr(handler, "route_patterns", None)
+            if route_patterns:
+                # Use custom route patterns for registration (custom endpoints, not models)
+                patterns = route_patterns
+            elif hasattr(handler, "__tablename__") and getattr(handler, "__tablename__", None):
+                # Use __tablename__ for RESTful paths (SQLAlchemy models only)
+                tablename = getattr(handler, "__tablename__")
+                patterns = [f"/{tablename.lower()}", f"/{tablename.lower()}/{{id}}"]
+            else:
+                raise ValueError(f"Handler {handler.__name__} must define either route_patterns or __tablename__.")
             endpoint_instance = handler()
-
-            aiohttp_new_routes = self._create_rest_endpoint_routes(endpoint_instance, path)
-            self.aiohttp_routes.extend(aiohttp_new_routes)
-
             allowed_methods = getattr(getattr(endpoint_instance, "Configuration", None), "http_method_names", None)
             if not allowed_methods:
                 allowed_methods = [m.upper() for m in ["get", "post", "put", "patch", "delete"]]
             else:
                 allowed_methods = [m.upper() for m in allowed_methods]
-
             all_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
-            for method in all_methods:
-                if method in allowed_methods:
-                    for p in [path, path + "/", path.rstrip("/")]:
-                        if p and not any(r.path == p and method in r.methods for r in self.starlette_routes):
+            for pattern in patterns:
+                for method in all_methods:
+                    if method in allowed_methods:
+                        if pattern and not any(r.path == pattern and method in r.methods for r in self.starlette_routes):
 
                             def make_starlette_handler(handler, method):
                                 async def starlette_handler(request):
@@ -212,9 +217,7 @@ class LightApi:
                                             return self._state
 
                                     adapted_request = RequestAdapter(request)
-
                                     composed_handler = handler
-
                                     if hasattr(endpoint_instance, "middleware") and endpoint_instance.middleware:
 
                                         async def wrapped_with_middleware(req):
@@ -239,7 +242,6 @@ class LightApi:
                                             return response
 
                                         composed_handler = wrapped_with_middleware
-
                                     if hasattr(endpoint_instance, "cache_decorator"):
                                         composed_handler = endpoint_instance.cache_decorator(composed_handler)
                                     result = composed_handler(adapted_request)
@@ -268,7 +270,7 @@ class LightApi:
 
                             self.starlette_routes.append(
                                 StarletteRoute(
-                                    p,
+                                    pattern,
                                     make_starlette_handler(
                                         getattr(endpoint_instance, method.lower(), lambda req: web.Response(status=405)), method
                                     ),
@@ -480,18 +482,21 @@ class LightApi:
             debug (bool): Whether to enable debug mode. Defaults to False.
             reload (bool): Whether to enable auto-reload. Defaults to False.
         """
-        # Try to run the actual app instance (aiohttp or Starlette)
-        # Prefer Starlette routes if present, else fallback to aiohttp app
         import uvicorn
-        if hasattr(self, 'starlette_routes') and self.starlette_routes:
-            # Build a Starlette app dynamically if needed
-            from starlette.applications import Starlette
+        from starlette.applications import Starlette
+
+        if hasattr(self, "starlette_routes") and self.starlette_routes:
+            print("\nRegistered Starlette routes:")
+            for r in self.starlette_routes:
+                print(f"  {r.path} -> {r.endpoint.__name__} [{','.join(r.methods)}]")
             app = Starlette(routes=self.starlette_routes)
             uvicorn.run(app, host=host, port=port, reload=reload, log_level="debug" if debug else "info")
-        elif hasattr(self, 'app'):
+        elif hasattr(self, "app"):
             # Assume self.app is an aiohttp app
             import asyncio
+
             from aiohttp import web
+
             web.run_app(self.app, host=host, port=port)
         else:
             raise RuntimeError("No application instance found to run.")

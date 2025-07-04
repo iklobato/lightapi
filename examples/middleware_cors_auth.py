@@ -103,7 +103,7 @@ class CustomEndpoint(RestEndpoint):
 
 def create_app():
     app = LightApi()
-    app.register({"/company": Company})
+    app.register(Company)
     app.register(CustomEndpoint)
     # Use built-in middleware classes
     app.add_middleware([CORSMiddleware, AuthenticationMiddleware])

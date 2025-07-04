@@ -4,8 +4,8 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from lightapi import LightApi
-from lightapi.rest import RestEndpoint
 from lightapi.database import Base
+from lightapi.rest import RestEndpoint
 
 print(f"DEBUG: LightApi loaded from {LightApi.__module__}")
 
