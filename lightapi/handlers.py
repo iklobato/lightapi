@@ -271,12 +271,18 @@ class ReadHandler(AbstractHandler):
             pk_values = [request.match_info.get(col) for col in self.pk_cols]
             if None in pk_values:
                 return web.json_response({"error": "Missing composite key(s)"}, status=400)
-            filters = [getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)]
+            filters = [
+                getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)
+            ]
             item = db.query(self.model).filter(*filters).first()
         else:
             pk_col = self.pk_cols[0] if self.pk_cols else "id"
             pk_value = request.match_info.get(pk_col)
-            item = db.query(self.model).filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col))).first()
+            item = (
+                db.query(self.model)
+                .filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col)))
+                .first()
+            )
         if not item:
             return web.json_response({"error": "Not found"}, status=404)
         return self.json_response(item, status=200)
@@ -306,12 +312,18 @@ class UpdateHandler(AbstractHandler):
             pk_values = [request.match_info.get(col) for col in self.pk_cols]
             if None in pk_values:
                 return self.json_error_response("Missing composite key(s)", status=400)
-            filters = [getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)]
+            filters = [
+                getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)
+            ]
             item = db.query(self.model).filter(*filters).first()
         else:
             pk_col = self.pk_cols[0] if self.pk_cols else "id"
             pk_value = request.match_info.get(pk_col)
-            item = db.query(self.model).filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col))).first()
+            item = (
+                db.query(self.model)
+                .filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col)))
+                .first()
+            )
         if not item:
             return self.json_error_response("Item not found", status=404)
 
@@ -349,12 +361,18 @@ class PatchHandler(AbstractHandler):
             pk_values = [request.match_info.get(col) for col in self.pk_cols]
             if None in pk_values:
                 return self.json_error_response("Missing composite key(s)", status=400)
-            filters = [getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)]
+            filters = [
+                getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)
+            ]
             item = db.query(self.model).filter(*filters).first()
         else:
             pk_col = self.pk_cols[0] if self.pk_cols else "id"
             pk_value = request.match_info.get(pk_col)
-            item = db.query(self.model).filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col))).first()
+            item = (
+                db.query(self.model)
+                .filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col)))
+                .first()
+            )
         if not item:
             return self.json_error_response("Item not found", status=404)
 
@@ -407,12 +425,18 @@ class DeleteHandler(AbstractHandler):
             pk_values = [request.match_info.get(col) for col in self.pk_cols]
             if None in pk_values:
                 return self.json_error_response("Missing composite key(s)", status=400)
-            filters = [getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)]
+            filters = [
+                getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)
+            ]
             item = db.query(self.model).filter(*filters).first()
         else:
             pk_col = self.pk_cols[0] if self.pk_cols else "id"
             pk_value = request.match_info.get(pk_col)
-            item = db.query(self.model).filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col))).first()
+            item = (
+                db.query(self.model)
+                .filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col)))
+                .first()
+            )
         if not item:
             return self.json_error_response("Item not found", status=404)
 

@@ -8,9 +8,9 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from lightapi.cache import RedisCache
-from lightapi.lightapi import LightApi
 from lightapi.core import Middleware, Response
 from lightapi.filters import ParameterFilter
+from lightapi.lightapi import LightApi
 from lightapi.rest import RestEndpoint
 
 

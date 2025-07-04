@@ -1,6 +1,7 @@
-import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import json
 from datetime import datetime, timedelta, timezone
@@ -10,8 +11,8 @@ from starlette.testclient import TestClient
 
 from examples.middleware_cors_auth import Company, CustomEndpoint, create_app
 from lightapi.config import config
-from lightapi.lightapi import LightApi
 from lightapi.core import Middleware, Response
+from lightapi.lightapi import LightApi
 
 
 class DummyRedis:

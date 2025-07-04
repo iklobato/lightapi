@@ -1,8 +1,11 @@
-import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import pytest
+
 from lightapi.rest import Validator
+
 
 class TestValidators:
     def test_product_validator(self):
@@ -11,6 +14,7 @@ class TestValidators:
                 if not value or len(value) < 3:
                     raise ValueError("Name too short")
                 return value.upper()
+
         validator = ProductValidator()
         with pytest.raises(ValueError):
             validator.validate_name("ab")
@@ -22,6 +26,7 @@ class TestValidators:
                 if "@" not in value:
                     raise ValueError("Invalid email")
                 return value
+
         validator = EmailValidator()
         with pytest.raises(ValueError):
             validator.validate_email("notanemail")
@@ -33,7 +38,8 @@ class TestValidators:
                 if len(value) < 3:
                     raise ValueError("too short")
                 return value.upper()
+
         validator = CustomValidator()
         with pytest.raises(ValueError):
             validator.validate_name("ab")
-        assert validator.validate_name("test") == "TEST" 
+        assert validator.validate_name("test") == "TEST"

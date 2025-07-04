@@ -1,18 +1,18 @@
-import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from unittest.mock import MagicMock, patch
 
 import pytest
+from conftest import TEST_DATABASE_URL
 from sqlalchemy import Column, Integer, String
 from starlette.routing import Route
 
-from lightapi.lightapi import LightApi
 from lightapi.core import Middleware, Response
+from lightapi.lightapi import LightApi
 from lightapi.rest import RestEndpoint
-
-from conftest import TEST_DATABASE_URL
 
 
 class TestMiddleware(Middleware):

@@ -150,4 +150,5 @@ class TestRestEndpoint:
         assert "result" in response
         assert response["result"]["name"] == "TEST"
 
+
 # All generic CRUD endpoint tests from deleted files are now parameterized here as TestEndpoints.

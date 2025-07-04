@@ -1,13 +1,13 @@
-from unittest.mock import MagicMock, patch, ANY
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 from sqlalchemy import Column, Integer, String
 
 from lightapi.auth import JWTAuthentication
 from lightapi.cache import RedisCache
-from lightapi.lightapi import LightApi
 from lightapi.core import Middleware, Response
 from lightapi.filters import ParameterFilter
+from lightapi.lightapi import LightApi
 from lightapi.pagination import Paginator
 from lightapi.rest import RestEndpoint, Validator
 

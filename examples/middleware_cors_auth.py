@@ -3,8 +3,8 @@ from sqlalchemy import Column, String
 from lightapi.auth import JWTAuthentication
 from lightapi.cache import RedisCache
 from lightapi.core import AuthenticationMiddleware, CORSMiddleware, Middleware, Response
-from lightapi.lightapi import LightApi
 from lightapi.filters import ParameterFilter
+from lightapi.lightapi import LightApi
 from lightapi.pagination import Paginator
 from lightapi.rest import RestEndpoint, Validator
 
@@ -103,7 +103,7 @@ class CustomEndpoint(RestEndpoint):
 
 def create_app():
     app = LightApi()
-    app.register({'/company': Company})
+    app.register({"/company": Company})
     app.register(CustomEndpoint)
     # Use built-in middleware classes
     app.add_middleware([CORSMiddleware, AuthenticationMiddleware])

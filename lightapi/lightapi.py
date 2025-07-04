@@ -4,18 +4,21 @@ import datetime
 import inspect
 import logging
 import os
+from types import SimpleNamespace
 from typing import Any, Callable, Dict, Type, Union
 
+import uvicorn
 import yaml
 from aiohttp import web
 from sqlalchemy import MetaData, create_engine, event
 from sqlalchemy.exc import ArgumentError, InvalidRequestError, SQLAlchemyError
+from sqlalchemy.orm import declarative_base as dynamic_declarative_base
 from sqlalchemy.orm.session import sessionmaker
 from sqlalchemy.pool import NullPool
 from sqlalchemy.sql.sqltypes import LargeBinary
-from sqlalchemy.orm import declarative_base as dynamic_declarative_base
+from starlette.responses import JSONResponse, PlainTextResponse, Response
+from starlette.responses import Response as StarletteResponse
 from starlette.routing import Route as StarletteRoute
-from starlette.responses import JSONResponse, Response as StarletteResponse, PlainTextResponse
 
 from lightapi.database import Base, SessionLocal, engine
 from lightapi.handlers import (
@@ -28,6 +31,7 @@ from lightapi.handlers import (
     create_handler,
 )
 from lightapi.rest import RestEndpoint
+
 from .config import config
 
 logging.basicConfig(
@@ -83,7 +87,7 @@ class LightApi:
         Raises:
             SQLAlchemyError: If there is an error during the creation of tables.
         """
-        # Update config with any provided values that are not None
+
         update_values = {}
         if database_url is not None:
             update_values["database_url"] = database_url
@@ -101,7 +105,7 @@ class LightApi:
         self.enable_swagger = config.enable_swagger
         if self.enable_swagger:
             from lightapi.swagger import (
-                SwaggerGenerator,  # Lazy import to avoid circular dependency
+                SwaggerGenerator,
             )
 
             self.swagger_generator = SwaggerGenerator(
@@ -117,7 +121,6 @@ class LightApi:
         logging.info(f"Tables successfully created and connected to {engine.url}")
         self.middleware = []
 
-        # Ensure database engine is created if database_url is provided
         if database_url is not None:
             self.engine = create_engine(database_url)
             self.Session = sessionmaker(bind=self.engine)
@@ -137,25 +140,24 @@ class LightApi:
         if inspect.isclass(handler) and issubclass(handler, RestEndpoint):
             path = f"/{handler.__name__.lower()}"
             endpoint_instance = handler()
-            # Build aiohttp routes
+
             aiohttp_new_routes = self._create_rest_endpoint_routes(endpoint_instance, path)
             self.aiohttp_routes.extend(aiohttp_new_routes)
-            # Build Starlette routes in parallel
-            # Get allowed methods from endpoint_instance.Configuration or default
-            allowed_methods = getattr(getattr(endpoint_instance, 'Configuration', None), 'http_method_names', None)
+
+            allowed_methods = getattr(getattr(endpoint_instance, "Configuration", None), "http_method_names", None)
             if not allowed_methods:
-                allowed_methods = [m.upper() for m in ['get', 'post', 'put', 'patch', 'delete']]
+                allowed_methods = [m.upper() for m in ["get", "post", "put", "patch", "delete"]]
             else:
                 allowed_methods = [m.upper() for m in allowed_methods]
-            # For each method, register both /path and /path/ (fix route registration)
+
             all_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
             for method in all_methods:
                 if method in allowed_methods:
                     for p in [path, path + "/", path.rstrip("/")]:
                         if p and not any(r.path == p and method in r.methods for r in self.starlette_routes):
+
                             def make_starlette_handler(handler, method):
                                 async def starlette_handler(request):
-                                    # Adapt Starlette request to RequestAdapter
                                     class RequestAdapter:
                                         def __init__(self, aiohttp_request):
                                             self.aiohttp_request = aiohttp_request
@@ -165,11 +167,13 @@ class LightApi:
                                             else:
                                                 self.path_params = aiohttp_request.match_info
                                                 self.query_params = aiohttp_request.query
+
                                         @property
                                         def method(self):
                                             if hasattr(self.aiohttp_request, "method"):
                                                 return self.aiohttp_request.method
                                             return getattr(self.aiohttp_request, "_method", None)
+
                                         async def get_data(self):
                                             if hasattr(self, "_data"):
                                                 return self._data
@@ -178,6 +182,7 @@ class LightApi:
                                             except Exception:
                                                 self._data = {}
                                             return self._data
+
                                         @property
                                         def data(self):
                                             try:
@@ -188,29 +193,32 @@ class LightApi:
                                                     )
                                                 return loop.run_until_complete(self.get_data())
                                             except RuntimeError as e:
-                                                if 'no current event loop' in str(e):
+                                                if "no current event loop" in str(e):
                                                     return asyncio.run(self.get_data())
                                                 raise
+
                                         @property
                                         def headers(self):
                                             if hasattr(self.aiohttp_request, "headers"):
                                                 return self.aiohttp_request.headers
                                             return {}
+
                                         @property
                                         def state(self):
                                             if hasattr(self.aiohttp_request, "state"):
                                                 return self.aiohttp_request.state
                                             if not hasattr(self, "_state"):
-                                                from types import SimpleNamespace
                                                 self._state = SimpleNamespace()
                                             return self._state
+
                                     adapted_request = RequestAdapter(request)
-                                    # Compose handler: middleware wraps handler, then caching wraps that
+
                                     composed_handler = handler
-                                    # Apply middleware wrapping first
-                                    if hasattr(endpoint_instance, 'middleware') and endpoint_instance.middleware:
+
+                                    if hasattr(endpoint_instance, "middleware") and endpoint_instance.middleware:
+
                                         async def wrapped_with_middleware(req):
-                                            pre_middleware = getattr(endpoint_instance, 'middleware', [])
+                                            pre_middleware = getattr(endpoint_instance, "middleware", [])
                                             called_middleware = []
                                             for mw_class in pre_middleware:
                                                 mw = mw_class()
@@ -224,15 +232,15 @@ class LightApi:
                                             if hasattr(response, "__table__"):
                                                 response = {c.name: getattr(response, c.name) for c in response.__table__.columns}
                                             if isinstance(response, tuple):
-                                                from starlette.responses import JSONResponse
                                                 data, status = response
                                                 response = JSONResponse(data, status_code=status)
                                             for mw in reversed(called_middleware):
                                                 response = mw.process(req, response)
                                             return response
+
                                         composed_handler = wrapped_with_middleware
-                                    # Then apply caching decorator if present
-                                    if hasattr(endpoint_instance, 'cache_decorator'):
+
+                                    if hasattr(endpoint_instance, "cache_decorator"):
                                         composed_handler = endpoint_instance.cache_decorator(composed_handler)
                                     result = composed_handler(adapted_request)
                                     if inspect.isawaitable(result):
@@ -240,28 +248,37 @@ class LightApi:
                                     if hasattr(result, "__table__"):
                                         result = {c.name: getattr(result, c.name) for c in result.__table__.columns}
                                     if isinstance(result, tuple):
-                                        from starlette.responses import JSONResponse
                                         data, status = result
                                         result = JSONResponse(data, status_code=status)
                                     if isinstance(result, web.Response):
                                         body = None
-                                        if hasattr(result, 'text') and isinstance(result.text, str):
+                                        if hasattr(result, "text") and isinstance(result.text, str):
                                             body = result.text
                                             return PlainTextResponse(body, status_code=result.status)
-                                        if hasattr(result, 'json') and callable(result.json):
+                                        if hasattr(result, "json") and callable(result.json):
                                             body = result.json()
                                             return JSONResponse(body, status_code=result.status)
-                                        if hasattr(result, 'body'):
+                                        if hasattr(result, "body"):
                                             body = result.body
                                             return PlainTextResponse(body, status_code=result.status)
                                         return PlainTextResponse("Internal error: could not adapt aiohttp response", status_code=500)
                                     return result
+
                                 return starlette_handler
-                            self.starlette_routes.append(StarletteRoute(p, make_starlette_handler(getattr(endpoint_instance, method.lower(), lambda req: web.Response(status=405)), method), methods=[method, "OPTIONS"]))
+
+                            self.starlette_routes.append(
+                                StarletteRoute(
+                                    p,
+                                    make_starlette_handler(
+                                        getattr(endpoint_instance, method.lower(), lambda req: web.Response(status=405)), method
+                                    ),
+                                    methods=[method, "OPTIONS"],
+                                )
+                            )
         elif inspect.isclass(handler) and hasattr(handler, "__tablename__") and getattr(handler, "__tablename__") is not None:
             aiohttp_new_routes = create_handler(handler)
             self.aiohttp_routes.extend(aiohttp_new_routes)
-            # Not adding Starlette routes for non-RestEndpoint handlers
+
         else:
             handler_name = f"class {handler.__name__}" if inspect.isclass(handler) else type(handler).__name__
             raise TypeError(f"Handler must be a SQLAlchemy model class or RestEndpoint class. Got: {handler_name}")
@@ -282,6 +299,7 @@ class LightApi:
 
         async def endpoint_handler(request):
             session = SessionLocal()
+
             class RequestAdapter:
                 def __init__(self, aiohttp_request):
                     self.aiohttp_request = aiohttp_request
@@ -291,11 +309,13 @@ class LightApi:
                     else:
                         self.path_params = aiohttp_request.match_info
                         self.query_params = aiohttp_request.query
+
                 @property
                 def method(self):
                     if hasattr(self.aiohttp_request, "method"):
                         return self.aiohttp_request.method
                     return getattr(self.aiohttp_request, "_method", None)
+
                 async def get_data(self):
                     if hasattr(self, "_data"):
                         return self._data
@@ -304,32 +324,33 @@ class LightApi:
                     except Exception:
                         self._data = {}
                     return self._data
+
                 @property
                 def data(self):
                     try:
                         loop = asyncio.get_event_loop()
                         if loop.is_running():
-                            raise RuntimeError(
-                                "RequestAdapter.data cannot be used in an async context. Use 'await get_data()' instead."
-                            )
+                            raise RuntimeError("RequestAdapter.data cannot be used in an async context. Use 'await get_data()' instead.")
                         return loop.run_until_complete(self.get_data())
                     except RuntimeError as e:
-                        if 'no current event loop' in str(e):
+                        if "no current event loop" in str(e):
                             return asyncio.run(self.get_data())
                         raise
+
                 @property
                 def headers(self):
                     if hasattr(self.aiohttp_request, "headers"):
                         return self.aiohttp_request.headers
                     return {}
+
                 @property
                 def state(self):
                     if hasattr(self.aiohttp_request, "state"):
                         return self.aiohttp_request.state
                     if not hasattr(self, "_state"):
-                        from types import SimpleNamespace
                         self._state = SimpleNamespace()
                     return self._state
+
             adapted_request = RequestAdapter(request)
             setup_result = endpoint_instance._setup(adapted_request, session)
             if setup_result:
@@ -340,11 +361,10 @@ class LightApi:
                 handler_result = getattr(endpoint_instance, method)(adapted_request)
                 if inspect.isawaitable(handler_result):
                     handler_result = await handler_result
-                from starlette.responses import Response as StarletteResponse
-                if isinstance(handler_result, (web.Response, StarletteResponse)):
+                if isinstance(handler_result, (web.Response, Response)):
                     session.close()
                     return handler_result
-                # If handler_result is a SQLAlchemy model, convert to dict
+
                 if hasattr(handler_result, "__table__"):
                     handler_result = {c.name: getattr(handler_result, c.name) for c in handler_result.__table__.columns}
                     session.close()
@@ -355,10 +375,10 @@ class LightApi:
                         result_data = {c.name: getattr(result_data, c.name) for c in result_data.__table__.columns}
                     session.close()
                     return web.json_response(result_data, status=status_code)
-                # Patch: If result is a SQLAlchemy model, convert to dict (aiohttp context)
+
                 if hasattr(handler_result, "__table__"):
                     handler_result = {c.name: getattr(handler_result, c.name) for c in handler_result.__table__.columns}
-                # If handler_result is a list of models, convert each to dict
+
                 if isinstance(handler_result, list) and handler_result and hasattr(handler_result[0], "__table__"):
                     handler_result = [{c.name: getattr(item, c.name) for c in item.__table__.columns} for item in handler_result]
                 session.close()
@@ -381,10 +401,11 @@ class LightApi:
         """
         Wrap a handler with the middleware chain (pre and post processing).
         """
+
         async def wrapped(request):
-            pre_middleware = getattr(self, 'middleware', [])
+            pre_middleware = getattr(self, "middleware", [])
             called_middleware = []
-            # Pre-processing: call each middleware in order, only once
+
             for mw_class in pre_middleware:
                 mw = mw_class()
                 if mw in called_middleware:
@@ -393,55 +414,57 @@ class LightApi:
                 if result is not None:
                     return result
                 called_middleware.append(mw)
-            # Call the actual handler
+
             response = await handler(request)
-            # If response is a tuple, convert to Response (Starlette or aiohttp)
+
             if isinstance(response, tuple):
                 try:
-                    from starlette.responses import JSONResponse
                     data, status = response
                     response = JSONResponse(data, status_code=status)
                 except ImportError:
                     response = web.json_response(response[0], status=response[1])
-            # Post-processing: call each middleware in reverse order for those actually called
+
             for mw in reversed(called_middleware):
                 response = mw.process(request, response)
             return response
+
         return wrapped
 
     def add_middleware(self, middleware_classes):
         self.middleware = middleware_classes
-        # Re-wrap all Starlette route handlers with the new middleware chain
+
         new_starlette_routes = []
         for route in self.starlette_routes:
+
             def make_starlette_handler(handler):
                 async def starlette_handler(request):
                     result = await handler(request)
-                    # Adapt aiohttp.web.Response to Starlette response
+
                     if isinstance(result, web.Response):
-                        # Try to extract JSON or text from aiohttp response
                         body = None
-                        # result.text is a property, not a coroutine
-                        if hasattr(result, 'text') and isinstance(result.text, str):
+
+                        if hasattr(result, "text") and isinstance(result.text, str):
                             body = result.text
                             return PlainTextResponse(body, status_code=result.status)
-                        # result.json() may be a method
-                        if hasattr(result, 'json') and callable(result.json):
+
+                        if hasattr(result, "json") and callable(result.json):
                             body = result.json()
                             return JSONResponse(body, status_code=result.status)
-                        # Fallback: use .body
-                        if hasattr(result, 'body'):
+
+                        if hasattr(result, "body"):
                             body = result.body
                             return PlainTextResponse(body, status_code=result.status)
                         return PlainTextResponse("Internal error: could not adapt aiohttp response", status_code=500)
-                    # If result is a SQLAlchemy model instance, convert to dict
+
                     try:
                         if hasattr(result, "__table__"):
                             result = {c.name: getattr(result, c.name) for c in result.__table__.columns}
                     except Exception:
                         pass
                     return result
+
                 return starlette_handler
+
             endpoint = self._wrap_with_middleware(route.endpoint)
             endpoint = make_starlette_handler(endpoint)
             new_starlette_routes.append(StarletteRoute(route.path, endpoint, methods=route.methods))
@@ -457,13 +480,11 @@ class LightApi:
             debug (bool): Whether to enable debug mode. Defaults to False.
             reload (bool): Whether to enable auto-reload. Defaults to False.
         """
-        import uvicorn
         uvicorn.run(
             "run_server:app",
             host=host,
             port=port,
             reload=reload,
-            debug=debug,
             log_level="debug" if debug else "info",
         )
 
@@ -504,7 +525,6 @@ class LightApi:
 
         session_factory = sessionmaker(bind=engine)
 
-        # Use a dynamic base with no default id column for reflected models
         DynamicBase = dynamic_declarative_base()
 
         HANDLER_MAP = {
@@ -646,7 +666,6 @@ class LightApi:
                     print(f"[DEBUG] Registering route: {method.upper()} {path}")
                     routes.append(getattr(web, method)(path, handler_cls(model, session_factory)))
 
-                    # Register single-record GET route for PK(s)
                     pk_cols = [col.name for col in table.primary_key.columns]
                     if len(pk_cols) == 1:
                         pk_path = f"/{{{pk_cols[0]}}}"
@@ -655,7 +674,7 @@ class LightApi:
                     path = f"/{table_name}{pk_path}"
                     method = "get"
                     print(f"[DEBUG] Registering route: {method.upper()} {path}")
-                    # Only pass pk_cols to single-record handler (ReadHandler)
+
                     handler_cls, _ = HANDLER_MAP["get_id"]
                     routes.append(getattr(web, method)(path, handler_cls(model, session_factory, pk_cols=pk_cols)))
                 elif verb == "post":
@@ -673,7 +692,7 @@ class LightApi:
                     path = f"/{table_name}{pk_path}"
                     method = verb
                     print(f"[DEBUG] Registering route: {method.upper()} {path}")
-                    # Only pass pk_cols to single-record handlers (put, patch, delete)
+
                     if verb in ("put", "patch", "delete"):
                         routes.append(getattr(web, method)(path, handler_cls(model, session_factory, pk_cols=pk_cols)))
                     else:
