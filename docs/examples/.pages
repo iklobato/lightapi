@@ -6,7 +6,6 @@ nav:
   - Caching: caching.md
   - Filtering and Pagination: filtering-pagination.md
   - Middleware: middleware.md
-  - Relationships: relationships.md
-  - Swagger Documentation: swagger.md
   - Validation: validation.md
-  - Custom Snippets: custom-snippets.md
+  - Custom Application: custom-application.md
+  - Basic CRUD: basic-crud.md
