@@ -1,4 +1,6 @@
+import asyncio
 import base64
+import datetime
 import inspect
 import logging
 import os
@@ -8,10 +10,11 @@ import yaml
 from aiohttp import web
 from sqlalchemy import MetaData, create_engine, event
 from sqlalchemy.exc import ArgumentError, InvalidRequestError, SQLAlchemyError
+from sqlalchemy.orm.session import sessionmaker
 from sqlalchemy.pool import NullPool
 from sqlalchemy.sql.sqltypes import LargeBinary
 
-from lightapi.database import Base, engine
+from lightapi.database import Base, SessionLocal, engine
 from lightapi.handlers import (
     CreateHandler,
     DeleteHandler,
@@ -75,7 +78,9 @@ class LightApi:
         """
         self.enable_swagger = enable_swagger
         if self.enable_swagger:
-            from lightapi.swagger import SwaggerGenerator
+            from lightapi.swagger import (
+                SwaggerGenerator,  # Lazy import to avoid circular dependency
+            )
 
             self.swagger_generator = SwaggerGenerator(
                 title=swagger_title,
@@ -85,11 +90,8 @@ class LightApi:
         self.initialize(callback=initialize_callback, callback_arguments=initialize_arguments)
         self.app = web.Application()
         self.routes = []
-        try:
-            Base.metadata.create_all(bind=engine)
-            logging.info(f"Tables successfully created and connected to {engine.url}")
-        except SQLAlchemyError as e:
-            logging.error(f"Error creating tables: {e}")
+        Base.metadata.create_all(bind=engine)
+        logging.info(f"Tables successfully created and connected to {engine.url}")
 
     def initialize(self, callback: Callable = None, callback_arguments: Dict = ()) -> None:
         """
@@ -106,8 +108,6 @@ class LightApi:
         """
         Register a model or endpoint class/instance. For RestEndpoint classes, use __tablename__ if present, otherwise the class name as the endpoint path.
         """
-        import inspect
-
         initial_route_count = len(self.routes)
 
         if inspect.isclass(handler) and issubclass(handler, RestEndpoint):
@@ -143,7 +143,6 @@ class LightApi:
 
     def _create_rest_endpoint_routes(self, endpoint_instance, base_path=None):
         """Create aiohttp route handlers for a RestEndpoint instance at a given base path."""
-        from aiohttp import web
 
         if base_path is None:
             if hasattr(endpoint_instance, "__tablename__") and endpoint_instance.__tablename__:
@@ -157,45 +156,40 @@ class LightApi:
         base_path = base_path.rstrip("/")
 
         async def endpoint_handler(request):
-            from lightapi.database import SessionLocal
-
             session = SessionLocal()
-            try:
 
-                class RequestAdapter:
-                    def __init__(self, aiohttp_request):
-                        self.aiohttp_request = aiohttp_request
-                        self.path_params = aiohttp_request.match_info
-                        self.query_params = aiohttp_request.query
+            class RequestAdapter:
+                def __init__(self, aiohttp_request):
+                    self.aiohttp_request = aiohttp_request
+                    self.path_params = aiohttp_request.match_info
+                    self.query_params = aiohttp_request.query
 
-                    async def get_data(self):
-                        if hasattr(self, "_data"):
-                            return self._data
-                        try:
-                            self._data = await self.aiohttp_request.json()
-                        except:
-                            self._data = {}
+                async def get_data(self):
+                    if hasattr(self, "_data"):
                         return self._data
+                    try:
+                        self._data = await self.aiohttp_request.json()
+                    except Exception:
+                        self._data = {}
+                    return self._data
 
-                    @property
-                    def data(self):
-                        import asyncio
+                @property
+                def data(self):
+                    loop = asyncio.get_event_loop()
+                    return loop.run_until_complete(self.get_data())
 
-                        loop = asyncio.get_event_loop()
-                        return loop.run_until_complete(self.get_data())
-
-                adapted_request = RequestAdapter(request)
-                setup_result = endpoint_instance._setup(adapted_request, session)
-                if setup_result:
-                    return setup_result
-                method = request.method.lower()
-                if hasattr(endpoint_instance, method):
-                    result_data, status_code = getattr(endpoint_instance, method)(adapted_request)
-                    return web.json_response(result_data, status=status_code)
-                else:
-                    return web.json_response({"error": "Method not allowed"}, status=405)
-            finally:
+            adapted_request = RequestAdapter(request)
+            setup_result = endpoint_instance._setup(adapted_request, session)
+            if setup_result:
                 session.close()
+                return setup_result
+            method = request.method.lower()
+            if hasattr(endpoint_instance, method):
+                result_data, status_code = getattr(endpoint_instance, method)(adapted_request)
+                session.close()
+                return web.json_response(result_data, status=status_code)
+            session.close()
+            return web.json_response({"error": "Method not allowed"}, status=405)
 
         return [
             web.get(base_path, endpoint_handler),
@@ -250,12 +244,7 @@ class LightApi:
                     cursor.close()
 
         metadata = MetaData()
-        try:
-            metadata.reflect(bind=engine, only=table_names)
-        except (InvalidRequestError, ArgumentError) as e:
-            raise ValueError(str(e))
-
-        from sqlalchemy.orm import sessionmaker
+        metadata.reflect(bind=engine, only=table_names)
 
         session_factory = sessionmaker(bind=engine)
 
@@ -280,18 +269,12 @@ class LightApi:
             table = metadata.tables[table_name]
 
             def serialize(self):
-                import base64
-                import datetime
-
                 result = {}
                 for col in self.__table__.columns:
                     val = getattr(self, col.name)
 
                     if hasattr(col.type, "python_type") and col.type.python_type is datetime.date and isinstance(val, str):
-                        try:
-                            val = datetime.date.fromisoformat(val)
-                        except Exception:
-                            pass
+                        val = datetime.date.fromisoformat(val)
                     if isinstance(val, bytes):
                         result[col.name] = base64.b64encode(val).decode()
                     elif isinstance(val, (datetime.datetime, datetime.date)):
@@ -328,15 +311,13 @@ class LightApi:
 
                 class CustomCreateHandler(CreateHandler):
                     async def handle(self, db, request):
-                        import datetime
-
                         data = await request.json()
                         for col in table.columns:
                             if isinstance(col.type, LargeBinary) and col.name in data and isinstance(data[col.name], str):
                                 try:
                                     data[col.name] = base64.b64decode(data[col.name])
-                                except Exception:
-                                    pass
+                                except (base64.binascii.Error, ValueError):
+                                    return web.json_response({"error": f"Invalid base64 encoding for field '{col.name}'"}, status=400)
 
                             if col.name in data:
                                 val = data[col.name]
@@ -345,16 +326,10 @@ class LightApi:
                                         if isinstance(val, datetime.datetime):
                                             val = val.isoformat()
                                         if isinstance(val, str):
-                                            try:
-                                                data[col.name] = datetime.datetime.fromisoformat(val)
-                                            except Exception:
-                                                pass
+                                            data[col.name] = datetime.datetime.fromisoformat(val)
                                     elif col.type.python_type is datetime.date:
                                         if isinstance(val, str):
-                                            try:
-                                                data[col.name] = datetime.date.fromisoformat(val)
-                                            except Exception:
-                                                pass
+                                            data[col.name] = datetime.date.fromisoformat(val)
 
                             if col.name in data:
                                 val = data[col.name]
@@ -363,18 +338,12 @@ class LightApi:
                                         if isinstance(val, datetime.datetime):
                                             val = val.isoformat()
                                         if isinstance(val, str):
-                                            try:
-                                                data[col.name] = datetime.datetime.fromisoformat(val)
-                                            except Exception:
-                                                pass
+                                            data[col.name] = datetime.datetime.fromisoformat(val)
                                     elif col.type.python_type is datetime.date:
                                         if isinstance(val, datetime.date):
                                             val = val.isoformat()
                                         if isinstance(val, str):
-                                            try:
-                                                data[col.name] = datetime.date.fromisoformat(val)
-                                            except Exception:
-                                                pass
+                                            data[col.name] = datetime.date.fromisoformat(val)
 
                         for col in table.columns:
                             if hasattr(col.type, "python_type") and col.type.python_type is datetime.date:

@@ -5,7 +5,6 @@ from sqlalchemy.orm import relationship
 
 from lightapi import LightApi, RestEndpoint
 from lightapi.database import Base
-from lightapi.models import Post
 
 
 class BlogPost(Base):
@@ -48,7 +47,7 @@ if __name__ == "__main__":
         swagger_version="1.0.0",
         swagger_description="API documentation for the Blog Post application",
     )
-    app.register(Post)
+    app.register(BlogPost)
     app.register(Comment)
     app.register(Endpoint)
 

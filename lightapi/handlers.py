@@ -123,13 +123,17 @@ class AbstractHandler(ABC):
                 if getattr(item, col.name) is None and col.default is not None and col.default.is_scalar:
                     setattr(item, col.name, col.default.arg)
 
-                if hasattr(col.type, "python_type") and col.type.python_type is datetime.date:
-                    val = getattr(item, col.name)
-                    if isinstance(val, str):
+                if hasattr(col.type, "python_type"):
+                    if col.type.python_type is datetime.datetime and isinstance(getattr(item, col.name), str):
                         try:
-                            setattr(item, col.name, datetime.date.fromisoformat(val))
-                        except Exception:
+                            setattr(item, col.name, datetime.datetime.fromisoformat(getattr(item, col.name)))
+                        except ValueError:
                             pass
+                    elif col.type.python_type is datetime.date and isinstance(getattr(item, col.name), str):
+                        try:
+                            setattr(item, col.name, datetime.date.fromisoformat(getattr(item, col.name)))
+                        except ValueError:
+                            return self.json_error_response(f"Invalid date format for field '{col.name}'", status=400)
             return item
         except (IntegrityError, StatementError) as e:
             db.rollback()
@@ -220,13 +224,13 @@ class CreateHandler(AbstractHandler):
                     if col.type.python_type is datetime.datetime and isinstance(val, str):
                         try:
                             data[col.name] = datetime.datetime.fromisoformat(val)
-                        except Exception:
-                            pass
+                        except ValueError:
+                            return web.json_response({"error": f"Invalid datetime format for field '{col.name}'"}, status=400)
                     elif col.type.python_type is datetime.date and isinstance(val, str):
                         try:
                             data[col.name] = datetime.date.fromisoformat(val)
-                        except Exception:
-                            pass
+                        except ValueError:
+                            return web.json_response({"error": f"Invalid date format for field '{col.name}'"}, status=400)
         item = self.model(**data)
         item = self.add_and_commit_item(db, item)
         if isinstance(item, web.Response):
@@ -346,13 +350,13 @@ class PatchHandler(AbstractHandler):
                     if col.type.python_type is datetime.datetime and isinstance(val, str):
                         try:
                             data[col.name] = datetime.datetime.fromisoformat(val)
-                        except Exception:
-                            pass
+                        except ValueError:
+                            return web.json_response({"error": f"Invalid datetime format for field '{col.name}'"}, status=400)
                     elif col.type.python_type is datetime.date and isinstance(val, str):
                         try:
                             data[col.name] = datetime.date.fromisoformat(val)
-                        except Exception:
-                            pass
+                        except ValueError:
+                            return web.json_response({"error": f"Invalid date format for field '{col.name}'"}, status=400)
         for key, value in data.items():
             setattr(item, key, value)
 
