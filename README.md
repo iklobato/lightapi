@@ -1,26 +1,49 @@
-# LightAPI: Instant Python REST APIs from SQL Databases
+# LightAPI: Fast Python REST API Framework with Async, CRUD, OpenAPI, JWT, and YAML
 
 [![PyPI version](https://badge.fury.io/py/lightapi.svg)](https://pypi.org/project/lightapi/)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**LightAPI** is a modern Python framework for building high-performance REST APIs directly from your SQL database—no boilerplate, no manual endpoint wiring. Instantly expose CRUD endpoints from SQLAlchemy models or a YAML config, with full support for authentication, caching, validation, filtering, and OpenAPI documentation.
+**LightAPI** is a fast, async-ready Python REST API framework that lets you instantly generate CRUD endpoints from SQLAlchemy models or your existing database schema. With built-in OpenAPI documentation, JWT authentication, Redis caching, and YAML-driven configuration, LightAPI is the best choice for building scalable, production-ready APIs in Python.
+
+---
+
+## Table of Contents
+- [Why LightAPI?](#why-lightapi)
+- [Who is LightAPI for?](#who-is-lightapi-for)
+- [Features: Python REST API, Async, CRUD, OpenAPI, JWT, Caching](#features-python-rest-api-async-crud-openapi-jwt-caching)
+- [Feature Details & Usage](#feature-details--usage)
+  - [Automatic CRUD Endpoints with SQLAlchemy](#automatic-crud-endpoints-with-sqlalchemy)
+  - [YAML-Driven API Generation (Database Reflection)](#yaml-driven-api-generation-database-reflection)
+  - [OpenAPI/Swagger Documentation](#openapiswapper-documentation)
+  - [Works with All Major Databases](#works-with-all-major-databases)
+  - [Environment-based Configuration](#environment-based-configuration)
+  - [JWT Authentication and Security](#jwt-authentication-and-security)
+  - [CORS Support for Python APIs](#cors-support-for-python-apis)
+  - [Custom Middleware for Python APIs](#custom-middleware-for-python-apis)
+  - [Async/Await Support for High-Performance Python APIs](#asyncawait-support-for-high-performance-python-apis)
+  - [Redis Caching for Python APIs](#redis-caching-for-python-apis)
+  - [Filtering, Pagination, and Sorting](#filtering-pagination-and-sorting)
+  - [Request Validation](#request-validation)
+  - [Type Hints & Modern Python](#type-hints--modern-python)
+  - [Comprehensive Error Handling](#comprehensive-error-handling)
+- [Quick Start: Build a Python REST API in Minutes](#quick-start-build-a-python-rest-api-in-minutes)
+- [Example Endpoints](#example-endpoints)
+- [Documentation](#documentation)
+- [FAQ](#faq)
+- [Comparison](#comparison)
+- [License](#license)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Why LightAPI?
 
-- **Zero-boilerplate Python REST API**: Instantly generate CRUD endpoints from your database schema.
-- **YAML-driven API generator**: Reflect your database and expose only the tables and operations you want.
-- **Async and Fast**: Built on aiohttp for high concurrency and low latency.
-- **Production-ready**: JWT authentication, Redis caching, request validation, and robust error handling.
-- **Automatic OpenAPI docs**: Swagger UI and OpenAPI JSON out of the box.
-- **Flexible**: Use with SQLite, PostgreSQL, MySQL, or any SQLAlchemy-supported database.
-- **Modern Python**: Type hints, async/await, and best practices throughout.
+LightAPI is a modern, async-ready Python REST API framework designed for rapid development and production use. Instantly generate CRUD endpoints from your SQLAlchemy models or YAML config, with full support for OpenAPI docs, JWT authentication, Redis caching, request validation, and more. LightAPI is ideal for anyone who wants to build scalable, maintainable, and high-performance APIs in Python.
 
 ---
 
-## Who is this for?
+## Who is LightAPI for?
 
 - **Backend developers** who want to ship APIs fast, with minimal code.
 - **Data engineers** needing to expose existing databases as RESTful services.
@@ -29,32 +52,28 @@
 
 ---
 
-# Features Overview
+# Features: Python REST API, Async, CRUD, OpenAPI, JWT, Caching
 
 LightAPI is designed to cover all the essentials for modern API development. Features are grouped for clarity:
 
 ## Core Features
-
-- **Automatic CRUD Endpoints**
-- **Database Reflection (YAML-driven API)**
+- **Automatic CRUD Endpoints with SQLAlchemy**
+- **YAML-Driven API Generation (Database Reflection)**
 - **OpenAPI/Swagger Documentation**
 - **Works with All Major Databases**
 - **Environment-based Configuration**
 
 ## Security & Access Control
-
-- **JWT Authentication**
-- **CORS Support**
-- **Custom Middleware**
+- **JWT Authentication and Security**
+- **CORS Support for Python APIs**
+- **Custom Middleware for Python APIs**
 
 ## Performance & Scalability
-
-- **Async/Await Support**
-- **Redis Caching**
+- **Async/Await Support for High-Performance Python APIs**
+- **Redis Caching for Python APIs**
 - **Filtering, Pagination, and Sorting**
 
 ## Developer Experience
-
 - **Request Validation**
 - **Type Hints & Modern Python**
 - **Comprehensive Error Handling**
@@ -63,9 +82,7 @@ LightAPI is designed to cover all the essentials for modern API development. Fea
 
 # Feature Details & Usage
 
-## Core Features
-
-### Automatic CRUD Endpoints
+## Automatic CRUD Endpoints with SQLAlchemy
 Instantly generate RESTful endpoints for your models or tables, so you can create, read, update, and delete records with no manual wiring.
 ```python
 from lightapi import LightApi
@@ -80,8 +97,8 @@ app.register(User)
 *How to use:* Define your SQLAlchemy model, register it with `app.register()`, and LightAPI will expose full CRUD endpoints automatically. 
 *Use cases:* Quickly build admin panels, internal tools, or MVPs where you need instant API access to your data.
 
-### Database Reflection (YAML-driven API)
-Point LightAPI at your existing database and expose tables as REST endpoints without writing model code.
+## YAML-Driven API Generation (Database Reflection)
+Point LightAPI at your existing database and expose tables as REST endpoints without writing model code. [Learn more about SQLAlchemy](https://www.sqlalchemy.org/).
 ```yaml
 # config.yaml
 database_url: sqlite:///mydata.db
@@ -97,8 +114,8 @@ api.run()
 *How to use:* Create a YAML config describing your database and tables, then use `LightApi.from_config()` to generate endpoints instantly.
 *Use cases:* Expose legacy or third-party databases as REST APIs for integration, analytics, or migration.
 
-### OpenAPI/Swagger Documentation
-Get interactive API docs and OpenAPI JSON automatically, always in sync with your endpoints.
+## OpenAPI/Swagger Documentation
+Get interactive API docs and OpenAPI JSON automatically, always in sync with your endpoints. [Learn more about OpenAPI](https://swagger.io/specification/).
 ```python
 app = LightApi(swagger_title="My API", swagger_version="1.0.0")
 # Visit http://localhost:8000/docs
@@ -106,8 +123,8 @@ app = LightApi(swagger_title="My API", swagger_version="1.0.0")
 *How to use:* Set Swagger options when creating your app. Docs are auto-generated and always up to date.
 *Use cases:* Share your API with frontend teams, generate client SDKs, or provide public API documentation.
 
-### Works with All Major Databases
-Use SQLite, PostgreSQL, MySQL, or any SQLAlchemy-supported backend.
+## Works with All Major Databases
+Use SQLite, PostgreSQL, MySQL, or any SQLAlchemy-supported backend. [SQLAlchemy Docs](https://docs.sqlalchemy.org/)
 ```python
 app = LightApi(database_url="postgresql://user:pass@localhost/db")
 # or
@@ -116,7 +133,7 @@ app = LightApi(database_url="mysql://user:pass@localhost/db")
 *How to use:* Set the `database_url` parameter to match your database backend.
 *Use cases:* Migrate between databases, support multiple environments, or connect to cloud-hosted DBs.
 
-### Environment-based Configuration
+## Environment-based Configuration
 Configure your app for development, testing, or production using environment variables or YAML.
 ```yaml
 # config.yaml
@@ -129,12 +146,8 @@ api = LightApi.from_config('config.yaml')
 *How to use:* Store your settings in a YAML file or environment variables, then load them with `from_config()` or `os.environ`.
 *Use cases:* Seamlessly switch between dev, staging, and production setups, or deploy with Docker and CI/CD.
 
----
-
-## Security & Access Control
-
-### JWT Authentication
-Secure your API with industry-standard JSON Web Tokens, including login endpoints and protected resources.
+## JWT Authentication and Security
+Secure your API with industry-standard JSON Web Tokens, including login endpoints and protected resources. [Learn more about JWT](https://jwt.io/)
 ```python
 from lightapi.auth import JWTAuthentication
 class UserEndpoint(RestEndpoint):
@@ -146,8 +159,8 @@ export LIGHTAPI_JWT_SECRET="supersecret"
 *How to use:* Add `authentication_class = JWTAuthentication` to your endpoint's Configuration. Set the secret key as an environment variable. 
 *Use cases:* Protect sensitive endpoints, implement login/logout, and control access for different user roles.
 
-### CORS Support
-Easily enable Cross-Origin Resource Sharing for frontend/backend integration.
+## CORS Support for Python APIs
+Easily enable Cross-Origin Resource Sharing for frontend/backend integration. [Learn more about CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS)
 ```python
 from lightapi.core import CORSMiddleware
 app.add_middleware([CORSMiddleware])
@@ -155,7 +168,7 @@ app.add_middleware([CORSMiddleware])
 *How to use:* Add `CORSMiddleware` to your app's middleware list to allow cross-origin requests from browsers.
 *Use cases:* Enable frontend apps (React, Vue, etc.) to call your API from a different domain during development or production.
 
-### Custom Middleware
+## Custom Middleware for Python APIs
 Add logging, rate limiting, authentication, or any cross-cutting logic with a simple middleware interface.
 ```python
 from lightapi.core import Middleware
@@ -168,12 +181,8 @@ app.add_middleware([LoggingMiddleware])
 *How to use:* Subclass `Middleware` and implement the `process` method. Add your middleware to the app.
 *Use cases:* Add request logging, enforce rate limits, or inject custom headers for all responses.
 
----
-
-## Performance & Scalability
-
-### Async/Await Support
-Built on aiohttp for high concurrency and fast response times. All endpoints are async-ready; just use `async def` in your handlers.
+## Async/Await Support for High-Performance Python APIs
+Built on aiohttp for high concurrency and fast response times. All endpoints are async-ready; just use `async def` in your handlers. [Learn more about aiohttp](https://docs.aiohttp.org/)
 ```python
 class MyEndpoint(RestEndpoint):
     async def get(self, request):
@@ -182,8 +191,8 @@ class MyEndpoint(RestEndpoint):
 *How to use:* Write your endpoint methods as `async def` to take full advantage of Python's async capabilities.
 *Use cases:* Handle thousands of concurrent API requests, real-time dashboards, or chat/messaging backends.
 
-### Redis Caching
-Speed up your API with automatic or custom caching of responses, including cache invalidation.
+## Redis Caching for Python APIs
+Speed up your API with automatic or custom caching of responses, including cache invalidation. [Learn more about Redis](https://redis.io/)
 ```python
 from lightapi.cache import RedisCache
 class Product(RestEndpoint):
@@ -194,7 +203,7 @@ class Product(RestEndpoint):
 *How to use:* Set `caching_class = RedisCache` and specify which HTTP methods to cache. LightAPI will cache responses transparently.
 *Use cases:* Reduce database load for expensive queries, speed up product catalogs, or cache public data.
 
-### Filtering, Pagination, and Sorting
+## Filtering, Pagination, and Sorting
 Query your data efficiently with flexible filters, paginated results, and sort options.
 ```python
 from lightapi.filters import ParameterFilter
@@ -209,11 +218,7 @@ class Product(RestEndpoint):
 *How to use:* Implement custom filter and paginator classes, then assign them in your endpoint's Configuration.
 *Use cases:* Build APIs for large datasets, searchable product listings, or analytics dashboards.
 
----
-
-## Developer Experience
-
-### Request Validation
+## Request Validation
 Validate incoming data with custom or automatic validators, returning clear error messages.
 ```python
 from lightapi.rest import Validator
@@ -229,15 +234,15 @@ class User(RestEndpoint):
 *How to use:* Create a Validator class and assign it in your endpoint's Configuration. Validation errors are returned as 400 responses.
 *Use cases:* Enforce business rules, prevent bad data, and provide user-friendly error messages in your API.
 
-### Type Hints & Modern Python
+## Type Hints & Modern Python
 All code is type-annotated and follows modern Python best practices for maintainability and IDE support.
 
-### Comprehensive Error Handling
+## Comprehensive Error Handling
 Detailed error messages and robust error handling are built in, making debugging and production support easier.
 
 ---
 
-# Quick Start
+# Quick Start: Build a Python REST API in Minutes
 
 ## 1. Install LightAPI
 
@@ -285,7 +290,7 @@ api.run(host="0.0.0.0", port=8081)
 
 ---
 
-# Example Endpoints (from YAML above)
+# Example Endpoints
 
 - `GET    /users/`         - List users
 - `POST   /users/`         - Create user
@@ -305,6 +310,11 @@ api.run(host="0.0.0.0", port=8081)
 - [Getting Started](https://iklobato.github.io/lightapi/getting-started/installation/)
 - [API Reference](https://iklobato.github.io/lightapi/api-reference/core/)
 - [Examples](https://iklobato.github.io/lightapi/examples/basic-rest/)
+- [SQLAlchemy](https://www.sqlalchemy.org/)
+- [aiohttp](https://docs.aiohttp.org/)
+- [OpenAPI](https://swagger.io/specification/)
+- [JWT](https://jwt.io/)
+- [Redis](https://redis.io/)
 
 ---
 
@@ -329,14 +339,22 @@ A: Yes. LightAPI is designed for both rapid prototyping and production deploymen
 
 # Comparison
 
-| Feature                | LightAPI | FastAPI | Flask | Django REST |
-|------------------------|----------|--------|-------|-------------|
-| Zero-boilerplate CRUD  | ✅       | ❌     | ❌    | ❌          |
-| YAML-driven API        | ✅       | ❌     | ❌    | ❌          |
-| Async support          | ✅       | ✅     | ❌    | ❌          |
-| OpenAPI docs           | ✅       | ✅     | ❌    | ✅          |
-| Built-in Auth/Caching  | ✅       | ❌     | ❌    | ✅          |
-| DB Reflection          | ✅       | ❌     | ❌    | ❌          |
+| Feature                                 | LightAPI | FastAPI | Flask | Django REST |
+|------------------------------------------|----------|---------|-------|-------------|
+| Zero-boilerplate CRUD generation         | ✅       | ❌      | ❌    | ❌          |
+| YAML-driven API/config                   | ✅       | ❌      | ❌    | ❌          |
+| Async/await support                      | ✅       | ✅      | ❌    | ❌          |
+| Automatic OpenAPI/Swagger docs           | ✅       | ✅      | ❌    | ✅          |
+| JWT authentication (built-in)            | ✅       | ❌      | ❌    | ✅          |
+| CORS support (built-in)                  | ✅       | ✅      | ❌    | ✅          |
+| Redis caching (built-in)                 | ✅       | ❌      | ❌    | ✅          |
+| Request validation (customizable)        | ✅       | ✅      | ❌    | ✅          |
+| Filtering, pagination, sorting           | ✅       | ✅      | ❌    | ✅          |
+| Database reflection                      | ✅       | ❌      | ❌    | ❌          |
+| Type hints & modern Python               | ✅       | ✅      | ❌    | ✅          |
+| Custom middleware                        | ✅       | ✅      | ✅    | ✅          |
+| Environment-based configuration          | ✅       | ✅      | ❌    | ✅          |
+| Production-ready out of the box          | ✅       | ✅      | ❌    | ✅          |
 
 ---
 
@@ -351,7 +369,7 @@ MIT License. See [LICENSE](LICENSE).
 
 ---
 
-**LightAPI** - *The fastest way to build Python REST APIs from your database.*
+**LightAPI** - The fastest way to build Python REST APIs from your database.
 
 ---
 
