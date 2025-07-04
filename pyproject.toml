@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lightapi"
-version = "0.1.6"
+version = "0.1.7"
 description = "A lightweight framework for building API endpoints using Python's native libraries."
 readme = "README.md"
 requires-python = ">=3.8.1"
