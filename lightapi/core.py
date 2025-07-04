@@ -577,7 +577,9 @@ class AuthenticationMiddleware(Middleware):
         if response is None and self.authenticator:
             # Pre-processing: check authentication
             if not self.authenticator.authenticate(request):
-                return self.authenticator.get_auth_error_response(request)
+                # Return 403 Forbidden instead of 401 Unauthorized
+                from starlette.responses import JSONResponse
+                return JSONResponse({"error": "Forbidden"}, status_code=403)
             return None
 
         # Post-processing: just return the response

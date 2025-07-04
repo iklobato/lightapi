@@ -5,7 +5,8 @@ from sqlalchemy import Column, Integer, String
 
 from lightapi.auth import JWTAuthentication
 from lightapi.cache import RedisCache
-from lightapi.core import LightApi, Middleware, Response
+from lightapi.lightapi import LightApi
+from lightapi.core import Middleware, Response
 from lightapi.filters import ParameterFilter
 from lightapi.pagination import Paginator
 from lightapi.rest import RestEndpoint, Validator
@@ -67,11 +68,13 @@ class TestIntegration:
             swagger_version="1.0.0",
             swagger_description="Test API Description",
         )
+        if not hasattr(app, 'starlette_routes'):
+            app.starlette_routes = []
         app.add_middleware([TestMiddleware])
-        app.register({"/users": User})
+        app.register(User)
 
         # Check app configuration
-        assert len(app.routes) >= 3  # Endpoint route + swagger routes
+        assert len(app.starlette_routes) >= 3  # Endpoint route + swagger routes
         assert app.middleware == [TestMiddleware]
         assert app.enable_swagger is True
         assert app.swagger_generator.title == "Test API"
@@ -94,7 +97,7 @@ class TestIntegration:
 
         # Create app and register endpoint
         app = LightApi(database_url="sqlite:///:memory:")
-        app.register({"/users": User})
+        app.register(User)
 
         # Run the app
         app.run(host="localhost", port=8000, debug=True, reload=True)

@@ -78,7 +78,7 @@ class Person(Base):
     Person model representing a user or individual.
 
     Attributes:
-        pk: Primary key.
+        id: Primary key.
         name: Person's name.
         email: Person's email address (unique).
         email_verified: Whether the email has been verified.
@@ -86,7 +86,7 @@ class Person(Base):
 
     __tablename__ = "person"
 
-    pk = Column(Integer, primary_key=True, autoincrement=True, unique=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String)
     email = Column(String, unique=True)
     email_verified = Column(Boolean, default=False)
@@ -99,7 +99,7 @@ class Person(Base):
             dict: Dictionary representation of the person.
         """
         return {
-            "pk": self.pk,
+            "id": self.id,
             "name": self.name,
             "email": self.email,
             "email_verified": self.email_verified,
@@ -123,7 +123,7 @@ class Company(Base):
     Company model representing a business organization.
 
     Attributes:
-        pk: Primary key.
+        id: Primary key.
         name: Company name.
         email: Company email address (unique).
         website: Company website URL.
@@ -131,7 +131,7 @@ class Company(Base):
 
     __tablename__ = "company"
 
-    pk = Column(Integer, primary_key=True, autoincrement=True, unique=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String)
     email = Column(String, unique=True)
     website = Column(String)
@@ -144,7 +144,7 @@ class Company(Base):
             dict: Dictionary representation of the company.
         """
         return {
-            "pk": self.pk,
+            "id": self.id,
             "name": self.name,
             "email": self.email,
             "website": self.website,

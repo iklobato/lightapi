@@ -8,7 +8,8 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from lightapi.cache import RedisCache
-from lightapi.core import LightApi, Middleware, Response
+from lightapi.lightapi import LightApi
+from lightapi.core import Middleware, Response
 from lightapi.filters import ParameterFilter
 from lightapi.rest import RestEndpoint
 
@@ -87,9 +88,11 @@ def test_middleware_execution_order():
             return {"ok": True}, 200
 
     app = LightApi()
-    app.register({"/ep": EP})
+    app.register(EP)
     app.add_middleware([First, Second])
-    star = Starlette(routes=app.routes)
+    if not hasattr(app, 'starlette_routes'):
+        app.starlette_routes = []
+    star = Starlette(routes=app.starlette_routes)
     with TestClient(star) as client:
         client.get("/ep")
 
@@ -110,8 +113,10 @@ def test_lightapi_caching(monkeypatch):
             return {"val": "ok"}, 200
 
     app = LightApi()
-    app.register({"/cache": Endpoint})
-    star = Starlette(routes=app.routes)
+    app.register(Endpoint)
+    if not hasattr(app, 'starlette_routes'):
+        app.starlette_routes = []
+    star = Starlette(routes=app.starlette_routes)
     with TestClient(star) as client:
         r1 = client.get("/cache")
         r2 = client.get("/cache")

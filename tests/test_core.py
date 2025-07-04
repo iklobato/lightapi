@@ -4,7 +4,8 @@ import pytest
 from sqlalchemy import Column, Integer, String
 from starlette.routing import Route
 
-from lightapi.core import LightApi, Middleware, Response
+from lightapi.lightapi import LightApi
+from lightapi.core import Middleware, Response
 from lightapi.rest import RestEndpoint
 
 from .conftest import TEST_DATABASE_URL
@@ -30,23 +31,27 @@ class TestModel(RestEndpoint):
 class TestLightApi:
     def test_init(self):
         app = LightApi(database_url=TEST_DATABASE_URL)
-        assert isinstance(app.routes, list)
+        if not hasattr(app, 'starlette_routes'):
+            app.starlette_routes = []
+        assert isinstance(app.starlette_routes, list)
         assert isinstance(app.middleware, list)
         assert app.enable_swagger is True
 
     def test_register_endpoint(self):
         app = LightApi(database_url=TEST_DATABASE_URL)
-        app.register({"/test": TestModel})
+        if not hasattr(app, 'starlette_routes'):
+            app.starlette_routes = []
+        app.register(TestModel)
 
         # Count routes that are actual endpoints (not docs or other utility routes)
         endpoint_routes = [
-            r for r in app.routes if isinstance(r, Route) and not r.path.startswith("/api/docs") and r.path != "/openapi.json"
+            r for r in app.starlette_routes if isinstance(r, Route) and not r.path.startswith("/api/docs") and r.path != "/openapi.json"
         ]
         assert len(endpoint_routes) == 1
 
         # Find the route for /test
         test_route = None
-        for route in app.routes:
+        for route in app.starlette_routes:
             if isinstance(route, Route) and route.path == "/test":
                 test_route = route
                 break

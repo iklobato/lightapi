@@ -6,7 +6,7 @@ from starlette.testclient import TestClient
 
 from examples.custom_snippet import Company, CustomEndpoint, create_app
 from lightapi.config import config
-from lightapi.core import LightApi
+from lightapi.lightapi import LightApi
 
 
 class DummyRedis:
@@ -41,7 +41,9 @@ def test_custom_snippet_workflow(monkeypatch):
     # Create starlette application manually
     from starlette.applications import Starlette
 
-    starlette_app = Starlette(routes=app.routes)
+    if not hasattr(app, 'starlette_routes'):
+        app.starlette_routes = []
+    starlette_app = Starlette(routes=app.starlette_routes)
 
     with TestClient(starlette_app) as client:
         # Missing auth should return 403 via middleware
@@ -75,7 +77,9 @@ def test_cors_middleware(monkeypatch):
     app = create_app()
     from starlette.applications import Starlette
 
-    starlette_app = Starlette(routes=app.routes)
+    if not hasattr(app, 'starlette_routes'):
+        app.starlette_routes = []
+    starlette_app = Starlette(routes=app.starlette_routes)
 
     with TestClient(starlette_app) as client:
         token = get_token()
@@ -97,11 +101,13 @@ def test_cors_middleware(monkeypatch):
 def test_company_endpoint_functionality():
     """Test Company endpoint with validation and filtering"""
     app = LightApi()
-    app.register({"/company": Company})
+    app.register(Company)
 
     from starlette.applications import Starlette
 
-    starlette_app = Starlette(routes=app.routes)
+    if not hasattr(app, 'starlette_routes'):
+        app.starlette_routes = []
+    starlette_app = Starlette(routes=app.starlette_routes)
 
     with TestClient(starlette_app) as client:
         # Test GET request
@@ -129,7 +135,9 @@ def test_authentication_edge_cases(monkeypatch):
     app = create_app()
     from starlette.applications import Starlette
 
-    starlette_app = Starlette(routes=app.routes)
+    if not hasattr(app, 'starlette_routes'):
+        app.starlette_routes = []
+    starlette_app = Starlette(routes=app.starlette_routes)
 
     with TestClient(starlette_app) as client:
         # Test with invalid token - first hit middleware
@@ -185,7 +193,9 @@ def test_caching_behavior(monkeypatch):
     app = create_app()
     from starlette.applications import Starlette
 
-    starlette_app = Starlette(routes=app.routes)
+    if not hasattr(app, 'starlette_routes'):
+        app.starlette_routes = []
+    starlette_app = Starlette(routes=app.starlette_routes)
 
     with TestClient(starlette_app) as client:
         token = get_token()
@@ -229,7 +239,9 @@ def test_middleware_interaction(monkeypatch):
     app = create_app()
     from starlette.applications import Starlette
 
-    starlette_app = Starlette(routes=app.routes)
+    if not hasattr(app, 'starlette_routes'):
+        app.starlette_routes = []
+    starlette_app = Starlette(routes=app.starlette_routes)
 
     with TestClient(starlette_app) as client:
         token = get_token()
@@ -255,7 +267,9 @@ def test_request_data_handling(monkeypatch):
     app = create_app()
     from starlette.applications import Starlette
 
-    starlette_app = Starlette(routes=app.routes)
+    if not hasattr(app, 'starlette_routes'):
+        app.starlette_routes = []
+    starlette_app = Starlette(routes=app.starlette_routes)
 
     with TestClient(starlette_app) as client:
         token = get_token()
@@ -278,11 +292,13 @@ def test_request_data_handling(monkeypatch):
 def test_http_methods_configuration():
     """Test that only configured HTTP methods are allowed"""
     app = LightApi()
-    app.register({"/company": Company})
+    app.register(Company)
 
     from starlette.applications import Starlette
 
-    starlette_app = Starlette(routes=app.routes)
+    if not hasattr(app, 'starlette_routes'):
+        app.starlette_routes = []
+    starlette_app = Starlette(routes=app.starlette_routes)
 
     with TestClient(starlette_app) as client:
         # Company endpoint should support GET and POST
@@ -309,7 +325,9 @@ def test_pagination_configuration(monkeypatch):
     app = create_app()
     from starlette.applications import Starlette
 
-    starlette_app = Starlette(routes=app.routes)
+    if not hasattr(app, 'starlette_routes'):
+        app.starlette_routes = []
+    starlette_app = Starlette(routes=app.starlette_routes)
 
     with TestClient(starlette_app) as client:
         token = get_token()

@@ -13,6 +13,9 @@ from sqlalchemy.exc import ArgumentError, InvalidRequestError, SQLAlchemyError
 from sqlalchemy.orm.session import sessionmaker
 from sqlalchemy.pool import NullPool
 from sqlalchemy.sql.sqltypes import LargeBinary
+from sqlalchemy.orm import declarative_base as dynamic_declarative_base
+from starlette.routing import Route as StarletteRoute
+from starlette.responses import JSONResponse, Response as StarletteResponse, PlainTextResponse
 
 from lightapi.database import Base, SessionLocal, engine
 from lightapi.handlers import (
@@ -25,6 +28,7 @@ from lightapi.handlers import (
     create_handler,
 )
 from lightapi.rest import RestEndpoint
+from .config import config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,7 +46,8 @@ class LightApi:
 
     Attributes:
         app (web.Application): The aiohttp application instance.
-        routes (List[web.RouteDef]): A list of route definitions to be added to the application.
+        aiohttp_routes (List[web.RouteDef]): A list of route definitions to be added to the application.
+        starlette_routes (List[StarletteRoute]): A list of Starlette routes to be added to the application.
 
     Methods:
         __init__() -> None:
@@ -60,12 +65,14 @@ class LightApi:
 
     def __init__(
         self,
+        database_url: str = None,
+        swagger_title: str = None,
+        swagger_version: str = None,
+        swagger_description: str = None,
+        enable_swagger: bool = None,
+        cors_origins: list = None,
         initialize_callback: Callable = None,
         initialize_arguments: Dict = None,
-        swagger_title: str = "LightAPI Documentation",
-        swagger_version: str = "1.0.0",
-        swagger_description: str = "API documentation",
-        enable_swagger: bool = False,
     ) -> None:
         """
         Initializes the LightApi, sets up the aiohttp application, and creates tables in the database.
@@ -76,22 +83,44 @@ class LightApi:
         Raises:
             SQLAlchemyError: If there is an error during the creation of tables.
         """
-        self.enable_swagger = enable_swagger
+        # Update config with any provided values that are not None
+        update_values = {}
+        if database_url is not None:
+            update_values["database_url"] = database_url
+        if swagger_title is not None:
+            update_values["swagger_title"] = swagger_title
+        if swagger_version is not None:
+            update_values["swagger_version"] = swagger_version
+        if swagger_description is not None:
+            update_values["swagger_description"] = swagger_description
+        if enable_swagger is not None:
+            update_values["enable_swagger"] = enable_swagger
+        if cors_origins is not None:
+            update_values["cors_origins"] = cors_origins
+        config.update(**update_values)
+        self.enable_swagger = config.enable_swagger
         if self.enable_swagger:
             from lightapi.swagger import (
                 SwaggerGenerator,  # Lazy import to avoid circular dependency
             )
 
             self.swagger_generator = SwaggerGenerator(
-                title=swagger_title,
-                version=swagger_version,
-                description=swagger_description,
+                title=config.swagger_title,
+                version=config.swagger_version,
+                description=config.swagger_description,
             )
         self.initialize(callback=initialize_callback, callback_arguments=initialize_arguments)
         self.app = web.Application()
-        self.routes = []
+        self.aiohttp_routes = []
+        self.starlette_routes = []
         Base.metadata.create_all(bind=engine)
         logging.info(f"Tables successfully created and connected to {engine.url}")
+        self.middleware = []
+
+        # Ensure database engine is created if database_url is provided
+        if database_url is not None:
+            self.engine = create_engine(database_url)
+            self.Session = sessionmaker(bind=self.engine)
 
     def initialize(self, callback: Callable = None, callback_arguments: Dict = ()) -> None:
         """
@@ -105,41 +134,42 @@ class LightApi:
         callback(**callback_arguments)
 
     def register(self, handler):
-        """
-        Register a model or endpoint class/instance. For RestEndpoint classes, use __tablename__ if present, otherwise the class name as the endpoint path.
-        """
-        initial_route_count = len(self.routes)
-
         if inspect.isclass(handler) and issubclass(handler, RestEndpoint):
-            tablename = getattr(handler, "__tablename__", None)
-            if tablename:
-                path = f"/{tablename.lower()}"
-            else:
-                path = f"/{handler.__name__.lower()}"
+            path = f"/{handler.__name__.lower()}"
             endpoint_instance = handler()
-            self.routes.extend(self._create_rest_endpoint_routes(endpoint_instance, path))
+            # Build aiohttp routes
+            aiohttp_new_routes = self._create_rest_endpoint_routes(endpoint_instance, path)
+            self.aiohttp_routes.extend(aiohttp_new_routes)
+            # Build Starlette routes in parallel
+            for route in aiohttp_new_routes:
+                methods = [route.method.upper()] if hasattr(route, 'method') else list(route.methods)
+                # Always wrap the handler as an async function for Starlette
+                def make_starlette_handler(handler):
+                    async def starlette_handler(request):
+                        result = handler(request)
+                        if inspect.isawaitable(result):
+                            result = await result
+                        # If it's a Starlette Response, return as is
+                        if isinstance(result, StarletteResponse):
+                            return result
+                        # If it's an aiohttp Response, return error
+                        if isinstance(result, web.Response):
+                            return PlainTextResponse("Internal error: aiohttp Response returned in Starlette context", status_code=500)
+                        if isinstance(result, tuple) and len(result) == 2:
+                            body, status = result
+                            return JSONResponse(body, status_code=status)
+                        return JSONResponse(result)
+                    return starlette_handler
+                endpoint = self._wrap_with_middleware(route.handler)
+                endpoint = make_starlette_handler(endpoint)
+                self.starlette_routes.append(StarletteRoute(route.path, endpoint, methods=methods))
         elif inspect.isclass(handler) and hasattr(handler, "__tablename__") and getattr(handler, "__tablename__") is not None:
-            self.routes.extend(create_handler(handler))
+            aiohttp_new_routes = create_handler(handler)
+            self.aiohttp_routes.extend(aiohttp_new_routes)
+            # Not adding Starlette routes for non-RestEndpoint handlers
         else:
             handler_name = f"class {handler.__name__}" if inspect.isclass(handler) else type(handler).__name__
             raise TypeError(f"Handler must be a SQLAlchemy model class or RestEndpoint class. Got: {handler_name}")
-
-        new_routes = self.routes[initial_route_count:]
-        max_method_length = max(len(route.method) for route in new_routes if hasattr(route, "method")) if new_routes else 0
-        grouped_routes = {}
-        for route in new_routes:
-            if hasattr(route, "method") and hasattr(route, "path"):
-                base_path = route.path.split("/")[1]
-                if base_path not in grouped_routes:
-                    grouped_routes[base_path] = []
-
-                if route.path.endswith("/") and route.path[:-1] in [r[1] for r in grouped_routes[base_path]]:
-                    continue
-                grouped_routes[base_path].append((route.method, route.path))
-        for base_path, routes in grouped_routes.items():
-            logging.info(f"Routes for /{base_path}:")
-            for method, path in routes:
-                logging.info(f"  {method.ljust(max_method_length)} {path}")
 
     def _create_rest_endpoint_routes(self, endpoint_instance, base_path=None):
         """Create aiohttp route handlers for a RestEndpoint instance at a given base path."""
@@ -161,8 +191,13 @@ class LightApi:
             class RequestAdapter:
                 def __init__(self, aiohttp_request):
                     self.aiohttp_request = aiohttp_request
-                    self.path_params = aiohttp_request.match_info
-                    self.query_params = aiohttp_request.query
+                    # Use .path_params for Starlette, .match_info for aiohttp
+                    if hasattr(aiohttp_request, "path_params"):
+                        self.path_params = aiohttp_request.path_params
+                        self.query_params = aiohttp_request.query_params
+                    else:
+                        self.path_params = aiohttp_request.match_info
+                        self.query_params = aiohttp_request.query
 
                 async def get_data(self):
                     if hasattr(self, "_data"):
@@ -202,17 +237,72 @@ class LightApi:
             web.patch(f"{base_path}/{{id}}", endpoint_handler),
         ]
 
-    def run(self, host: str = "0.0.0.0", port: int = 8000) -> None:
+    def _wrap_with_middleware(self, handler):
+        """
+        Wrap a handler with the middleware chain (pre and post processing).
+        """
+        async def wrapped(request):
+            pre_middleware = getattr(self, 'middleware', [])
+            called_middleware = []
+            # Pre-processing: call each middleware in order
+            for mw in pre_middleware:
+                result = mw().process(request, None)
+                if result is not None:
+                    return result
+                called_middleware.append(mw)
+            # Call the actual handler
+            response = await handler(request)
+            # Post-processing: call each middleware in reverse order for those actually called
+            for mw in reversed(called_middleware):
+                response = mw().process(request, response)
+            return response
+        return wrapped
+
+    def add_middleware(self, middleware_classes):
+        self.middleware = middleware_classes
+        # Re-wrap all Starlette route handlers with the new middleware chain
+        new_starlette_routes = []
+        for route in self.starlette_routes:
+            def make_starlette_handler(handler):
+                async def starlette_handler(request):
+                    result = handler(request)
+                    if inspect.isawaitable(result):
+                        result = await result
+                    # If it's a Starlette Response, return as is
+                    if isinstance(result, StarletteResponse):
+                        return result
+                    # If it's an aiohttp Response, return error
+                    if isinstance(result, web.Response):
+                        return PlainTextResponse("Internal error: aiohttp Response returned in Starlette context", status_code=500)
+                    if isinstance(result, tuple) and len(result) == 2:
+                        body, status = result
+                        return JSONResponse(body, status_code=status)
+                    return JSONResponse(result)
+                return starlette_handler
+            endpoint = self._wrap_with_middleware(route.endpoint)
+            endpoint = make_starlette_handler(endpoint)
+            new_starlette_routes.append(StarletteRoute(route.path, endpoint, methods=route.methods))
+        self.starlette_routes = new_starlette_routes
+
+    def run(self, host: str = "0.0.0.0", port: int = 8000, debug: bool = False, reload: bool = False) -> None:
         """
         Starts the web application and begins listening for incoming requests.
 
         Args:
             host (str): The hostname or IP address to bind the server to. Defaults to '0.0.0.0'.
             port (int): The port number on which the server will listen. Defaults to 8000.
+            debug (bool): Whether to enable debug mode. Defaults to False.
+            reload (bool): Whether to enable auto-reload. Defaults to False.
         """
-        self.app.add_routes(self.routes)
-
-        web.run_app(self.app, host=host, port=port)
+        import uvicorn
+        uvicorn.run(
+            "run_server:app",
+            host=host,
+            port=port,
+            reload=reload,
+            debug=debug,
+            log_level="debug" if debug else "info",
+        )
 
     @classmethod
     def from_config(cls, config_path: str, engine=None) -> "LightApi":
@@ -244,9 +334,15 @@ class LightApi:
                     cursor.close()
 
         metadata = MetaData()
-        metadata.reflect(bind=engine, only=table_names)
+        try:
+            metadata.reflect(bind=engine, only=table_names)
+        except InvalidRequestError as e:
+            raise ValueError(f"Table not found: {e}")
 
         session_factory = sessionmaker(bind=engine)
+
+        # Use a dynamic base with no default id column for reflected models
+        DynamicBase = dynamic_declarative_base()
 
         HANDLER_MAP = {
             "post": (CreateHandler, lambda t: (f"/{t}/", "post")),
@@ -284,19 +380,21 @@ class LightApi:
                 return result
 
             try:
-                model = type(
-                    table_name.capitalize(),
-                    (Base,),
-                    {
-                        "__table__": table,
-                        "__tablename__": table_name,
-                        "serialize": serialize,
-                    },
-                )
-
+                model_attrs = {
+                    "__table__": table,
+                    "__tablename__": table_name,
+                    "serialize": serialize,
+                }
                 pk_cols = [col.name for col in table.primary_key.columns]
                 if not pk_cols:
                     raise ValueError("no primary key")
+                if len(pk_cols) == 1 and pk_cols[0] == "id":
+                    model_attrs["id"] = table.c["id"]
+                model = type(
+                    table_name.capitalize(),
+                    (DynamicBase,),
+                    model_attrs,
+                )
                 if len(pk_cols) == 1:
                     model.pk = table.c[pk_cols[0]]
                 else:
@@ -371,9 +469,9 @@ class LightApi:
                         for col in self.model.__table__.columns:
                             if getattr(item, col.name) is None and col.default is not None and col.default.is_scalar:
                                 setattr(item, col.name, col.default.arg)
-                        if isinstance(item, __import__("aiohttp").web.Response):
+                        if isinstance(item, JSONResponse):
                             return item
-                        return self.json_response(item, status=201)
+                        return web.json_response(item, status=201)
 
             else:
                 CustomCreateHandler = CreateHandler
@@ -384,13 +482,19 @@ class LightApi:
                     path, method = route_fn(table_name)
                     print(f"[DEBUG] Registering route: {method.upper()} {path}")
                     routes.append(getattr(web, method)(path, handler_cls(model, session_factory)))
-                    handler_cls, route_fn = HANDLER_MAP["get_id"]
-                    if isinstance(model.id, tuple):
-                        path = f"/{table_name}/{{id}}"
+
+                    # Register single-record GET route for PK(s)
+                    pk_cols = [col.name for col in table.primary_key.columns]
+                    if len(pk_cols) == 1:
+                        pk_path = f"/{{{pk_cols[0]}}}"
                     else:
-                        path, method = route_fn(table_name)
+                        pk_path = "/" + "/".join([f"{{{col}}}" for col in pk_cols])
+                    path = f"/{table_name}{pk_path}"
+                    method = "get"
                     print(f"[DEBUG] Registering route: {method.upper()} {path}")
-                    routes.append(getattr(web, method)(path, handler_cls(model, session_factory)))
+                    # Only pass pk_cols to single-record handler (ReadHandler)
+                    handler_cls, _ = HANDLER_MAP["get_id"]
+                    routes.append(getattr(web, method)(path, handler_cls(model, session_factory, pk_cols=pk_cols)))
                 elif verb == "post":
                     handler_cls, route_fn = HANDLER_MAP["post"]
                     path, method = route_fn(table_name)
@@ -398,12 +502,22 @@ class LightApi:
                     routes.append(getattr(web, method)(path, CustomCreateHandler(model, session_factory)))
                 elif verb in HANDLER_MAP:
                     handler_cls, route_fn = HANDLER_MAP[verb]
-                    path, method = route_fn(table_name)
+                    pk_cols = [col.name for col in table.primary_key.columns]
+                    if len(pk_cols) == 1:
+                        pk_path = f"/{{{pk_cols[0]}}}"
+                    else:
+                        pk_path = "/" + "/".join([f"{{{col}}}" for col in pk_cols])
+                    path = f"/{table_name}{pk_path}"
+                    method = verb
                     print(f"[DEBUG] Registering route: {method.upper()} {path}")
-                    routes.append(getattr(web, method)(path, handler_cls(model, session_factory)))
+                    # Only pass pk_cols to single-record handlers (put, patch, delete)
+                    if verb in ("put", "patch", "delete"):
+                        routes.append(getattr(web, method)(path, handler_cls(model, session_factory, pk_cols=pk_cols)))
+                    else:
+                        routes.append(getattr(web, method)(path, handler_cls(model, session_factory)))
 
         instance = cls()
-        instance.routes = routes
+        instance.aiohttp_routes = routes
         instance.app.add_routes(routes)
         instance.engine = engine
         instance.session_factory = session_factory

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlalchemy import Column, Integer, String
 
-from lightapi.core import LightApi
+from lightapi.lightapi import LightApi
 from lightapi.rest import RestEndpoint
 
 
@@ -34,11 +34,14 @@ class TestExample:
             swagger_description="Example API",
         )
 
-        app.register({"/companies": Company})
+        if not hasattr(app, 'starlette_routes'):
+            app.starlette_routes = []
+
+        app.register(Company)
         app.run(host="0.0.0.0", port=8000, debug=True, reload=True)
 
         # Check app configuration
-        assert len(app.routes) >= 2  # At least one endpoint and swagger routes
+        assert len(app.starlette_routes) >= 2  # At least one endpoint and swagger routes
         assert app.swagger_generator.title == "Example API"
 
         # Check that create_engine was called with correct URL

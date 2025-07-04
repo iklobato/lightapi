@@ -71,9 +71,16 @@ def temp_db_and_config():
     Table(
         "users",
         metadata,
-        Column("id", Integer, primary_key=True, autoincrement=True),
+        Column("id", Integer, primary_key=True),
         Column("name", String, nullable=False),
         Column("email", String, nullable=False, unique=True),
+    )
+    Table(
+        "posts",
+        metadata,
+        Column("post_id", Integer, primary_key=True),
+        Column("user_id", Integer),
+        Column("content", String),
     )
     metadata.create_all(engine)
     config = {
@@ -95,14 +102,14 @@ class TestFromConfigExtensive:
         Table(
             "users",
             metadata,
-            Column("id", Integer, primary_key=True, autoincrement=True),
+            Column("id", Integer, primary_key=True),
             Column("name", String, nullable=False),
             Column("email", String, nullable=False, unique=True),
         )
         Table(
             "posts",
             metadata,
-            Column("post_id", Integer, primary_key=True, autoincrement=True),
+            Column("post_id", Integer, primary_key=True),
             Column("user_id", Integer),
             Column("content", String),
         )

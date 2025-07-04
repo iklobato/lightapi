@@ -176,6 +176,14 @@ class AbstractHandler(ABC):
         """
         return web.json_response({"error": error_message}, status=status)
 
+    def _parse_pk_value(self, value, col):
+        try:
+            if hasattr(col.type, "python_type") and col.type.python_type is int:
+                return int(value)
+        except Exception:
+            pass
+        return value
+
 
 class DateTimeEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -243,8 +251,9 @@ class ReadHandler(AbstractHandler):
     Handles HTTP GET requests to retrieve one or all items.
     """
 
-    def __init__(self, model, session_factory=SessionLocal):
+    def __init__(self, model, session_factory=SessionLocal, pk_cols=None):
         super().__init__(model, session_factory)
+        self.pk_cols = pk_cols
 
     async def handle(self, db, request):
         """
@@ -258,29 +267,19 @@ class ReadHandler(AbstractHandler):
             web.Response: The JSON response containing the item(s) or an error message.
         """
 
-        if isinstance(self.model.id, tuple):
-            pk_values = request.match_info.get("id")
-            if pk_values is None:
-                return web.json_response({"error": "Missing composite key"}, status=400)
-            pk_values = pk_values.split(",")
-            if len(pk_values) != len(self.model.id):
-                return web.json_response({"error": "Composite key count mismatch"}, status=400)
-            filters = [col == self._parse_pk_value(val, col) for col, val in zip(self.model.id, pk_values)]
+        if self.pk_cols and len(self.pk_cols) > 1:
+            pk_values = [request.match_info.get(col) for col in self.pk_cols]
+            if None in pk_values:
+                return web.json_response({"error": "Missing composite key(s)"}, status=400)
+            filters = [getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)]
             item = db.query(self.model).filter(*filters).first()
         else:
-            pk_value = request.match_info.get("id")
-            item = db.query(self.model).filter(self.model.id == self._parse_pk_value(pk_value, self.model.id)).first()
+            pk_col = self.pk_cols[0] if self.pk_cols else "id"
+            pk_value = request.match_info.get(pk_col)
+            item = db.query(self.model).filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col))).first()
         if not item:
             return web.json_response({"error": "Not found"}, status=404)
         return self.json_response(item, status=200)
-
-    def _parse_pk_value(self, value, col):
-        try:
-            if hasattr(col.type, "python_type") and col.type.python_type is int:
-                return int(value)
-        except Exception:
-            pass
-        return value
 
 
 class UpdateHandler(AbstractHandler):
@@ -288,8 +287,9 @@ class UpdateHandler(AbstractHandler):
     Handles HTTP PUT requests to update an existing item.
     """
 
-    def __init__(self, model, session_factory=SessionLocal):
+    def __init__(self, model, session_factory=SessionLocal, pk_cols=None):
         super().__init__(model, session_factory)
+        self.pk_cols = pk_cols
 
     async def handle(self, db, request):
         """
@@ -302,8 +302,16 @@ class UpdateHandler(AbstractHandler):
         Returns:
             web.Response: The JSON response containing the updated item or an error message.
         """
-        item_id = int(request.match_info["id"])
-        item = self.get_item_by_id(db, item_id)
+        if self.pk_cols and len(self.pk_cols) > 1:
+            pk_values = [request.match_info.get(col) for col in self.pk_cols]
+            if None in pk_values:
+                return self.json_error_response("Missing composite key(s)", status=400)
+            filters = [getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)]
+            item = db.query(self.model).filter(*filters).first()
+        else:
+            pk_col = self.pk_cols[0] if self.pk_cols else "id"
+            pk_value = request.match_info.get(pk_col)
+            item = db.query(self.model).filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col))).first()
         if not item:
             return self.json_error_response("Item not found", status=404)
 
@@ -322,8 +330,9 @@ class PatchHandler(AbstractHandler):
     Handles HTTP PATCH requests to partially update an existing item.
     """
 
-    def __init__(self, model, session_factory=SessionLocal):
+    def __init__(self, model, session_factory=SessionLocal, pk_cols=None):
         super().__init__(model, session_factory)
+        self.pk_cols = pk_cols
 
     async def handle(self, db, request):
         """
@@ -336,8 +345,16 @@ class PatchHandler(AbstractHandler):
         Returns:
             web.Response: The JSON response containing the updated item or an error message.
         """
-        item_id = int(request.match_info["id"])
-        item = self.get_item_by_id(db, item_id)
+        if self.pk_cols and len(self.pk_cols) > 1:
+            pk_values = [request.match_info.get(col) for col in self.pk_cols]
+            if None in pk_values:
+                return self.json_error_response("Missing composite key(s)", status=400)
+            filters = [getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)]
+            item = db.query(self.model).filter(*filters).first()
+        else:
+            pk_col = self.pk_cols[0] if self.pk_cols else "id"
+            pk_value = request.match_info.get(pk_col)
+            item = db.query(self.model).filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col))).first()
         if not item:
             return self.json_error_response("Item not found", status=404)
 
@@ -371,8 +388,9 @@ class DeleteHandler(AbstractHandler):
     Handles HTTP DELETE requests to delete an existing item.
     """
 
-    def __init__(self, model, session_factory=SessionLocal):
+    def __init__(self, model, session_factory=SessionLocal, pk_cols=None):
         super().__init__(model, session_factory)
+        self.pk_cols = pk_cols
 
     async def handle(self, db, request):
         """
@@ -385,8 +403,16 @@ class DeleteHandler(AbstractHandler):
         Returns:
             web.Response: An empty response with status 204 if the item is deleted.
         """
-        item_id = int(request.match_info["id"])
-        item = self.get_item_by_id(db, item_id)
+        if self.pk_cols and len(self.pk_cols) > 1:
+            pk_values = [request.match_info.get(col) for col in self.pk_cols]
+            if None in pk_values:
+                return self.json_error_response("Missing composite key(s)", status=400)
+            filters = [getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)]
+            item = db.query(self.model).filter(*filters).first()
+        else:
+            pk_col = self.pk_cols[0] if self.pk_cols else "id"
+            pk_value = request.match_info.get(pk_col)
+            item = db.query(self.model).filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col))).first()
         if not item:
             return self.json_error_response("Item not found", status=404)
 

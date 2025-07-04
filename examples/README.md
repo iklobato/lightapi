@@ -2,9 +2,9 @@
 
 This directory contains example applications demonstrating various features of the LightAPI framework.
 
-## Basic Examples
+## Example Features
 
-- **user_goal_example.py**: Comprehensive demonstration of intended LightAPI usage patterns
+- **comprehensive_ideal_usage.py**: Comprehensive demonstration of intended LightAPI usage patterns
   - Shows the exact API design philosophy and usage as envisioned
   - Demonstrates custom validators with field-specific validation methods
   - Implements JWT authentication with proper configuration
@@ -13,17 +13,17 @@ This directory contains example applications demonstrating various features of t
   - Includes CORS support and proper environment variable usage
   - **Note**: Some advanced features (caching + pagination) are commented out due to current limitations
 
-- **basic_rest_api.py**: A simple REST API with default CRUD operations
+- **rest_crud_basic.py**: A simple REST API with default CRUD operations
   - Demonstrates minimal setup for a REST endpoint
   - Shows automatic handling of GET, POST, PUT, DELETE operations
   - Illustrates SQLAlchemy model integration with LightAPI
 
-- **validation_example.py**: Data validation with custom validators
+- **validation_custom_fields.py**: Data validation with custom validators
   - Shows field-specific validation rules using Validator class
   - Demonstrates error handling for validation failures
   - Illustrates data transformation (price conversion between dollars and cents)
 
-- **auth_example.py**: JWT authentication with protected resources
+- **authentication_jwt.py**: JWT authentication with protected resources
   - Implements JWT token generation and verification
   - Shows protected endpoints requiring authentication
   - Demonstrates user information extraction from token
@@ -31,45 +31,31 @@ This directory contains example applications demonstrating various features of t
 
 ## Advanced Features
 
-- **custom_snippet.py**: Built-in middleware demonstration
+- **middleware_cors_auth.py**: Built-in middleware demonstration
   - Shows new `CORSMiddleware` and `AuthenticationMiddleware` classes
   - Demonstrates automatic CORS preflight handling with JWT authentication
   - Illustrates seamless integration of authentication with CORS support
   - Uses built-in middleware for cleaner, more maintainable code
 
-- **middleware_example.py**: Custom middleware implementation for request/response processing
-  - Demonstrates request/response lifecycle hooks
-  - Includes logging middleware with request timing
-  - Shows custom CORS headers management for cross-origin requests
-  - Implements rate limiting with custom window controls
+- **filtering_pagination.py**: Filtering and pagination
+  - Demonstrates filtering, pagination, and sorting of results
+  - Shows how to use query parameters for advanced queries
 
-- **filtering_pagination_example.py**: Query filtering and result pagination
-  - Shows parameter-based filtering for REST endpoints
-  - Implements custom filter logic for search and range queries
-  - Demonstrates paginated results with metadata
-  - Illustrates dynamic sorting by different fields
+- **middleware_custom.py**: Custom middleware and order
+  - Demonstrates how to add custom middleware
+  - Shows the order of middleware execution
+  - Includes logging, CORS, and rate limiting examples
 
-- **caching_example.py**: Response caching for improved performance
-  - Shows Redis cache implementation with automatic JSON serialization
-  - Demonstrates cache key generation strategies
-  - Includes time-to-live (TTL) management
-  - Shows manual cache invalidation (DELETE operations)
-  - Implements cache hit/miss HTTP headers
-  - Fixed JSON serialization issues for proper caching
+- **relationships_sqlalchemy.py**: SQLAlchemy relationships
+  - Demonstrates one-to-many and many-to-many relationships
+  - Shows how to query related resources
 
-- **swagger_example.py**: Enhanced OpenAPI/Swagger documentation
-  - Demonstrates docstring-based API documentation
-  - Shows custom SwaggerGenerator implementation
-  - Illustrates request/response schema documentation
-  - Implements API grouping with tags
-  - Demonstrates security scheme definitions
+- **swagger_openapi_docs.py**: Swagger/OpenAPI documentation
+  - Shows how to generate and customize API documentation
+  - Demonstrates validator docstrings for better docs
 
-- **relationships_example.py**: Complex SQLAlchemy relationships (one-to-many, many-to-many)
-  - Shows many-to-many relationships with association tables
-  - Demonstrates one-to-many relationships with back references
-  - Illustrates cascade behaviors on related objects
-  - Shows nested data serialization across relationships
-  - Implements relationship handling in POST/PUT operations
+- **general_usage.py**: General usage
+  - Shows custom validator, custom headers, and CRUD
 
 ## New Built-in Features (Latest Updates)
 
@@ -95,17 +81,17 @@ All examples now demonstrate improved CORS handling:
 Each example is self-contained and can be run directly:
 
 ```bash
-# Basic example
-python examples/basic_rest_api.py
+# Basic REST/CRUD example
+python examples/rest_crud_basic.py
 
-# Built-in middleware example (demonstrates new features)
-LIGHTAPI_JWT_SECRET="your-secret-key" python examples/custom_snippet.py
+# Built-in middleware, CORS, Auth example
+LIGHTAPI_JWT_SECRET="your-secret-key" python examples/middleware_cors_auth.py
 
-# Authentication with CORS
-LIGHTAPI_JWT_SECRET="your-secret-key" python examples/auth_example.py
+# JWT Authentication example
+LIGHTAPI_JWT_SECRET="your-secret-key" python examples/authentication_jwt.py
 
 # Caching with Redis (requires Redis running)
-python examples/caching_example.py
+python examples/caching_redis_custom.py
 ```
 
 Most examples will:
@@ -119,11 +105,11 @@ Most examples will:
 The examples now include improved CORS and authentication. Test with:
 
 ```bash
-# Start the custom_snippet example
-LIGHTAPI_JWT_SECRET="test-secret-key-123" python examples/custom_snippet.py
+# Start the middleware_cors_auth example
+LIGHTAPI_JWT_SECRET="test-secret-key-123" python examples/middleware_cors_auth.py
 
-# Start the user goal example (comprehensive demonstration)
-LIGHTAPI_JWT_SECRET="test-secret-key-123" python examples/user_goal_example.py
+# Start the comprehensive_ideal_usage example (comprehensive demonstration)
+LIGHTAPI_JWT_SECRET="test-secret-key-123" python examples/comprehensive_ideal_usage.py
 
 # Test CORS preflight (should work without authentication)
 curl -X OPTIONS http://localhost:8000/custom -v
