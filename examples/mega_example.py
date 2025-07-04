@@ -550,6 +550,15 @@ class HelloWorldEndpoint(RestEndpoint):
         return {"message": f"Hello, {name}!", "timestamp": time.time()}, 201
 
 
+# --- Async Demo Endpoint ---
+class AsyncDemoEndpoint(RestEndpoint):
+    __abstract__ = True
+
+    async def get(self, request):
+        await asyncio.sleep(0.2)  # Simulate async work
+        return {"message": "This is an async endpoint!", "timestamp": time.time()}, 200
+
+
 # --- Main App ---
 def init_database():
     engine = create_engine("sqlite:///mega_example.db")
@@ -625,6 +634,9 @@ if __name__ == "__main__":
     class HelloWorldEndpointCustom(HelloWorldEndpoint):
         route_patterns = ["/hello"]
 
+    class AsyncDemoEndpointCustom(AsyncDemoEndpoint):
+        route_patterns = ["/async_demo"]
+
     app.register(AuthEndpointCustom)
     app.register(PublicResourceCustom)
     app.register(SecretResourceCustom)
@@ -632,6 +644,7 @@ if __name__ == "__main__":
     app.register(WeatherEndpointCustom)
     app.register(ConfigurableCacheEndpointCustom)
     app.register(HelloWorldEndpointCustom)
+    app.register(AsyncDemoEndpointCustom)
     # Add middleware
     app.add_middleware([LoggingMiddleware, CORSMiddleware, RateLimitMiddleware, AuthenticationMiddleware])
     print("Server running at http://localhost:8000")
@@ -657,4 +670,6 @@ if __name__ == "__main__":
     )
     print("9. Access protected resource:")
     print("   curl -X GET http://localhost:8000/secret -H 'Authorization: Bearer YOUR_TOKEN'")
+    print("10. Async demo endpoint:")
+    print("   curl http://localhost:8000/async_demo")
     app.run(host="localhost", port=8000, debug=True)
