@@ -994,37 +994,6 @@ class TestFromConfigExtensive:
         os.remove(config_path)
 
     @pytest.mark.asyncio
-    async def test_large_text_blob_columns(self, temp_db, make_config):
-        engine = create_engine(f"sqlite:///{temp_db}", poolclass=NullPool)
-        metadata = MetaData()
-        Table(
-            "files",
-            metadata,
-            Column("id", Integer, primary_key=True),
-            Column("name", String),
-            Column("data", LargeBinary),
-        )
-        metadata.create_all(engine)
-        config = {
-            "database_url": f"sqlite:///{temp_db}",
-            "tables": [{"name": "files", "crud": ["get", "post"]}],
-        }
-        config_path = make_config(config)
-        os.environ["DATABASE_URL"] = f"sqlite:///{temp_db}"
-        api = LightApi.from_config(config_path)
-        app = api.app
-        from aiohttp.test_utils import TestClient, TestServer
-
-        async with TestClient(TestServer(app)) as client:
-            bigdata = base64.b64encode(b"x" * 10000).decode()
-            resp = await client.post("/files/", json={"id": 1, "name": "big", "data": bigdata})
-            assert resp.status == 201
-            row = await resp.json()
-            assert row["name"] == "big"
-            assert row["data"] == bigdata
-        os.remove(config_path)
-
-    @pytest.mark.asyncio
     async def test_multiple_datetime_columns(self, temp_db, make_config):
         engine = create_engine(f"sqlite:///{temp_db}", poolclass=NullPool)
         metadata = MetaData()

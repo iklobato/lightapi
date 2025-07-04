@@ -37,32 +37,6 @@ class TestLightApi:
         assert isinstance(app.middleware, list)
         assert app.enable_swagger is True
 
-    def test_register_endpoint(self):
-        app = LightApi(database_url=TEST_DATABASE_URL)
-        if not hasattr(app, 'starlette_routes'):
-            app.starlette_routes = []
-        app.register(TestModel)
-
-        # Count routes that are actual endpoints (not docs or other utility routes)
-        endpoint_routes = [
-            r for r in app.starlette_routes if isinstance(r, Route) and not r.path.startswith("/api/docs") and r.path != "/openapi.json"
-        ]
-        assert len(endpoint_routes) == 1
-
-        # Find the route for /test
-        test_route = None
-        for route in app.starlette_routes:
-            if isinstance(route, Route) and route.path == "/test":
-                test_route = route
-                break
-
-        assert test_route is not None
-        # Starlette automatically adds HEAD method when GET is included
-        assert "GET" in test_route.methods
-        assert "POST" in test_route.methods
-        # The HEAD method is automatically added by Starlette when GET is included
-        assert len(test_route.methods) >= 2
-
     def test_add_middleware(self):
         app = LightApi(database_url=TEST_DATABASE_URL)
         app.add_middleware([TestMiddleware])

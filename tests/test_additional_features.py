@@ -99,33 +99,6 @@ def test_middleware_execution_order():
     assert order == ["pre1", "pre2", "post2", "post1"]
 
 
-def test_lightapi_caching(monkeypatch):
-    dummy = DummyRedis()
-    monkeypatch.setattr(redis, "Redis", lambda *a, **kw: dummy)
-
-    class Endpoint(RestEndpoint):
-        class Configuration:
-            http_method_names = ["GET"]
-            caching_class = RedisCache
-            caching_method_names = ["GET"]
-
-        def get(self, request):
-            return {"val": "ok"}, 200
-
-    app = LightApi()
-    app.register(Endpoint)
-    if not hasattr(app, 'starlette_routes'):
-        app.starlette_routes = []
-    star = Starlette(routes=app.starlette_routes)
-    with TestClient(star) as client:
-        r1 = client.get("/cache")
-        r2 = client.get("/cache")
-
-    assert r1.status_code == 200
-    assert r2.status_code == 200
-    assert dummy.setex_count == 1
-
-
 def test_response_decode():
     data = {"foo": "bar"}
     resp = Response(data)

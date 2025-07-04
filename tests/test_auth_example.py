@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from examples.auth_example import (
+from examples.authentication_jwt import (
     AuthEndpoint,
     CustomJWTAuth,
     PublicResource,

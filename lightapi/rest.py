@@ -204,7 +204,7 @@ class RestEndpoint:
         if config and hasattr(config, "authentication_class") and config.authentication_class:
             self.auth = config.authentication_class()
             if not self.auth.authenticate(self.request):
-                return Response({"error": "Authentication failed"}, status_code=401)
+                return Response({"error": "not allowed"}, status_code=403)
 
     def _setup_cache(self):
         config = getattr(self, "Configuration", None)

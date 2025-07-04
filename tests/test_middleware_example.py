@@ -2,8 +2,9 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
+import uuid
 
-from examples.middleware_example import (
+from examples.middleware_custom import (
     CORSMiddleware,
     HelloWorldEndpoint,
     LoggingMiddleware,
@@ -28,19 +29,15 @@ class TestLoggingMiddleware:
         """
         return LoggingMiddleware()
 
-    @patch("examples.middleware_example.print")
-    @patch("examples.middleware_example.uuid.uuid4")
-    def test_process_adds_request_id(self, mock_uuid, mock_print, middleware):
+    @patch("examples.middleware_custom.uuid.uuid4", lambda: uuid.UUID("12345678123456781234567812345678"))
+    @patch("examples.middleware_custom.print")
+    def test_process_adds_request_id(self, mock_print, middleware):
         """Test that process adds a request ID to the request.
 
         Args:
-            mock_uuid: Mock for uuid4 to control the generated ID.
             mock_print: Mock for print to capture logging.
             middleware: The middleware fixture.
         """
-        # Set up a predefined UUID
-        mock_uuid.return_value = "test-uuid-123"
-
         # Create a real object (not a MagicMock) for the request so that
         # attribute assignment will work correctly
         class MockRequest:
@@ -61,23 +58,23 @@ class TestLoggingMiddleware:
         result = middleware.process(mock_request, None)
 
         # Verify request ID was added
-        assert mock_request.id == "test-uuid-123"
+        assert mock_request.id == "12345678-1234-5678-1234-567812345678"
 
         # Verify the result is None (continue processing)
         assert result is None
 
         # Verify logging occurred
-        mock_print.assert_called_once_with("[test-uuid-123] Request: GET /test")
+        mock_print.assert_called_once_with("[12345678-1234-5678-1234-567812345678] Request: GET /test")
 
         # Reset mock for next assertion
         mock_print.reset_mock()
 
         # Process the response and verify
         middleware.process(mock_request, mock_response)
-        mock_print.assert_called_once_with("[test-uuid-123] Response: 200")
+        mock_print.assert_called_once_with("[12345678-1234-5678-1234-567812345678] Response: 200")
 
-    @patch("examples.middleware_example.time.time")
-    @patch("examples.middleware_example.print")
+    @patch("examples.middleware_custom.time.time", return_value=1000.0)
+    @patch("examples.middleware_custom.print")
     def test_process_tracks_processing_time(self, mock_print, mock_time, middleware):
         """Test that process tracks and logs processing time.
 
@@ -87,7 +84,7 @@ class TestLoggingMiddleware:
             middleware: The middleware fixture.
         """
         # Set up a mock UUID for the request ID
-        with patch("examples.middleware_example.uuid.uuid4", return_value="test-uuid-123"):
+        with patch("examples.middleware_custom.uuid.uuid4", return_value="12345678-1234-5678-1234-567812345678"):
             # Create a mock request
             mock_request = MagicMock()
             mock_request.method = "GET"
@@ -104,7 +101,7 @@ class TestLoggingMiddleware:
             middleware.process(mock_request, mock_response)
 
             # Verify response logging was called
-            mock_print.assert_any_call(f"[test-uuid-123] Response: 200")
+            mock_print.assert_any_call(f"[12345678-1234-5678-1234-567812345678] Response: 200")
 
 
 class TestCORSMiddleware:
@@ -212,7 +209,7 @@ class TestRateLimitMiddleware:
         mock_response.headers = {}
 
         # First request - should be allowed
-        with patch("examples.middleware_example.time.time", return_value=1000.0):
+        with patch("examples.middleware_custom.time.time", return_value=1000.0):
             result1 = middleware.process(mock_request, None)
 
         # Verify request is allowed
@@ -235,7 +232,7 @@ class TestRateLimitMiddleware:
         middleware.clients["127.0.0.1"] = [current_time - 10, current_time - 5]
 
         # Third request - should be blocked
-        with patch("examples.middleware_example.time.time", return_value=current_time):
+        with patch("examples.middleware_custom.time.time", return_value=current_time):
             response = middleware.process(mock_request, None)
 
         # Verify response is a rate limit error
@@ -261,7 +258,7 @@ class TestRateLimitMiddleware:
         middleware.clients["127.0.0.1"] = [old_time, recent_time]
 
         # Mock the time.time function to return our controlled time
-        with patch("examples.middleware_example.time.time", return_value=current_time):
+        with patch("examples.middleware_custom.time.time", return_value=current_time):
             # Use a real process method that actually cleans up old requests
             result = middleware.process(mock_request, None)
 

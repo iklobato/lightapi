@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from examples.validation_example import Product, ProductValidator
+from examples.validation_custom_fields import Product, ProductValidator
 
 
 class TestProductValidator:
