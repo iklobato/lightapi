@@ -1,302 +1,380 @@
 # Basic REST API Example
 
-This example demonstrates how to create a simple REST API with full CRUD operations using LightAPI.
+This example demonstrates how to create a simple REST API using LightAPI with full CRUD operations, automatic validation, and interactive documentation.
 
 ## Overview
 
-The basic REST API example shows how to:
-- Define a simple model with database fields
-- Create endpoints with automatic CRUD operations
-- Set up Swagger documentation
-- Run the development server
+We'll build a **Task Management API** that allows you to:
+- Create, read, update, and delete tasks
+- Automatic input validation
+- Interactive Swagger documentation
+- Both YAML and Python approaches
 
-## Complete Code
+## Quick Start (YAML Approach)
 
-```python
---8<-- "examples/basic_rest_api.py"
+### 1. Create Database Schema
+
+```sql
+-- tasks.sql
+CREATE TABLE tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    completed BOOLEAN DEFAULT 0,
+    priority VARCHAR(20) DEFAULT 'medium',
+    due_date DATE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert sample data
+INSERT INTO tasks (title, description, completed, priority, due_date) VALUES
+('Setup development environment', 'Install Python, LightAPI, and dependencies', 1, 'high', '2024-01-15'),
+('Write API documentation', 'Create comprehensive API documentation', 0, 'medium', '2024-01-20'),
+('Implement user authentication', 'Add JWT authentication to the API', 0, 'high', '2024-01-25'),
+('Add task filtering', 'Allow filtering tasks by status and priority', 0, 'low', '2024-01-30');
 ```
 
-## Step-by-Step Breakdown
-
-### 1. Model Definition
-
-```python
-@register_model_class
-class User(RestEndpoint):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100))
-    email = Column(String(100))
-    role = Column(String(50))
+Create the database:
+```bash
+sqlite3 tasks.db < tasks.sql
 ```
 
-**Key Points:**
-- `@register_model_class` decorator registers the model with SQLAlchemy
-- `__tablename__` defines the database table name
-- Inheriting from `RestEndpoint` provides automatic CRUD operations
-- Standard SQLAlchemy column definitions
+### 2. Create YAML Configuration
 
-### 2. Application Setup
+```yaml
+# tasks_api.yaml
+database_url: "sqlite:///tasks.db"
+swagger_title: "Task Management API"
+swagger_version: "1.0.0"
+swagger_description: |
+  Simple task management API with full CRUD operations
+  
+  ## Features
+  - Create, read, update, and delete tasks
+  - Automatic input validation
+  - Interactive Swagger documentation
+  - Filtering and pagination support
+  
+  ## Usage
+  - GET /tasks/ - List all tasks
+  - POST /tasks/ - Create a new task
+  - GET /tasks/{id} - Get specific task
+  - PUT /tasks/{id} - Update entire task
+  - PATCH /tasks/{id} - Partially update task
+  - DELETE /tasks/{id} - Delete task
+enable_swagger: true
 
-```python
-app = LightApi(
-    database_url="sqlite:///basic_example.db",
-    swagger_title="Basic REST API Example",
-    swagger_version="1.0.0",
-    swagger_description="Simple REST API demonstrating basic CRUD operations",
-)
+tables:
+  - name: tasks
+    crud: [get, post, put, patch, delete]
 ```
 
-**Configuration Options:**
-- `database_url`: SQLite database for this example
-- `swagger_title`: Title shown in API documentation
-- `swagger_version`: API version
-- `swagger_description`: Description for documentation
-
-### 3. Endpoint Registration
+### 3. Create and Run the API
 
 ```python
-app.register({'/users': User})
+# app.py
+from lightapi import LightApi
+
+# Create API from YAML configuration
+app = LightApi.from_config('tasks_api.yaml')
+
+if __name__ == '__main__':
+    print("🚀 Starting Task Management API...")
+    print("📋 API Documentation: http://localhost:8000/docs")
+    print("🔍 API Endpoints: http://localhost:8000/")
+    app.run(host='0.0.0.0', port=8000)
 ```
 
-This single line creates endpoints for:
-- `GET /users` - List all users
-- `GET /users?id=123` - Get specific user
-- `POST /users` - Create new user
-- `PUT /users` - Update existing user
-- `DELETE /users` - Delete user
-- `OPTIONS /users` - Get allowed methods
-
-### 4. Running the Server
-
-```python
-app.run(host="localhost", port=8000, debug=True)
-```
-
-**Parameters:**
-- `host`: Server host address
-- `port`: Server port number
-- `debug`: Enable debug mode with detailed error messages
-
-## Usage Examples
-
-### Create a User
+### 4. Run Your API
 
 ```bash
-curl -X POST http://localhost:8000/users \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "John Doe",
-    "email": "john@example.com",
-    "role": "admin"
-  }'
+python app.py
 ```
 
-**Response:**
-```json
-{
-  "id": 1,
-  "name": "John Doe",
-  "email": "john@example.com",
-  "role": "admin"
+**That's it!** Your REST API is now running with:
+- Full CRUD operations for tasks
+- Automatic input validation
+- Interactive Swagger documentation at http://localhost:8000/docs
+- Proper HTTP status codes and error handling
+
+## API Endpoints
+
+Your API automatically generates these endpoints:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/tasks/` | List all tasks with pagination |
+| GET | `/tasks/{id}` | Get specific task by ID |
+| POST | `/tasks/` | Create new task |
+| PUT | `/tasks/{id}` | Update entire task record |
+| PATCH | `/tasks/{id}` | Partially update task |
+| DELETE | `/tasks/{id}` | Delete task |
+
+## Testing Your API
+
+### Using curl
+
+```bash
+# Get all tasks
+curl http://localhost:8000/tasks/
+
+# Get a specific task
+curl http://localhost:8000/tasks/1
+
+# Create a new task
+curl -X POST http://localhost:8000/tasks/ \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "title": "Learn LightAPI",
+    "description": "Go through the documentation and examples",
+    "priority": "high",
+    "due_date": "2024-02-01"
+  }'
+
+# Update a task
+curl -X PATCH http://localhost:8000/tasks/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"completed": true}'
+
+# Delete a task
+curl -X DELETE http://localhost:8000/tasks/1
+```
+
+### Using Python requests
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8000"
+
+# Get all tasks
+response = requests.get(f"{BASE_URL}/tasks/")
+print("All tasks:", response.json())
+
+# Create a new task
+new_task = {
+    "title": "Test API with Python",
+    "description": "Use requests library to test the API",
+    "priority": "medium",
+    "due_date": "2024-02-05"
 }
+
+response = requests.post(f"{BASE_URL}/tasks/", json=new_task)
+print("Created task:", response.json())
+task_id = response.json()["id"]
+
+# Update the task
+update_data = {"completed": True}
+response = requests.patch(f"{BASE_URL}/tasks/{task_id}", json=update_data)
+print("Updated task:", response.json())
+
+# Get the updated task
+response = requests.get(f"{BASE_URL}/tasks/{task_id}")
+print("Task details:", response.json())
 ```
 
-### Get All Users
+## Advanced Features
+
+### Filtering and Pagination
 
 ```bash
-curl http://localhost:8000/users
+# Pagination
+curl "http://localhost:8000/tasks/?page=1&page_size=5"
+
+# Filter by completion status
+curl "http://localhost:8000/tasks/?completed=false"
+
+# Filter by priority
+curl "http://localhost:8000/tasks/?priority=high"
+
+# Combine filters
+curl "http://localhost:8000/tasks/?completed=false&priority=high&page=1&page_size=10"
+
+# Sort results
+curl "http://localhost:8000/tasks/?sort=due_date"
+curl "http://localhost:8000/tasks/?sort=-created_at"  # Descending
 ```
 
-**Response:**
-```json
-[
-  {
-    "id": 1,
-    "name": "John Doe",
-    "email": "john@example.com",
-    "role": "admin"
-  },
-  {
-    "id": 2,
-    "name": "Jane Smith",
-    "email": "jane@example.com",
-    "role": "user"
-  }
-]
-```
+### Validation Examples
 
-### Get Specific User
+LightAPI automatically validates requests based on your database schema:
 
 ```bash
-curl http://localhost:8000/users?id=1
-```
+# This will fail - missing required field
+curl -X POST http://localhost:8000/tasks/ \
+  -H 'Content-Type: application/json' \
+  -d '{"description": "Task without title"}'
+# Response: 400 Bad Request - "title is required"
 
-**Response:**
-```json
-[
-  {
-    "id": 1,
-    "name": "John Doe",
-    "email": "john@example.com",
-    "role": "admin"
-  }
-]
-```
-
-### Update a User
-
-```bash
-curl -X PUT http://localhost:8000/users \
-  -H "Content-Type: application/json" \
+# This will fail - invalid date format
+curl -X POST http://localhost:8000/tasks/ \
+  -H 'Content-Type: application/json' \
   -d '{
-    "id": 1,
-    "name": "John Updated",
-    "email": "john.updated@example.com",
-    "role": "super_admin"
+    "title": "Invalid Date Task",
+    "due_date": "not-a-date"
   }'
-```
-
-### Delete a User
-
-```bash
-curl -X DELETE http://localhost:8000/users \
-  -H "Content-Type: application/json" \
-  -d '{"id": 1}'
+# Response: 400 Bad Request - invalid date format
 ```
 
 ## Interactive Documentation
 
-Once the server is running, visit:
+Visit http://localhost:8000/docs to access the interactive Swagger UI where you can:
 
-- **API Documentation**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **OpenAPI JSON**: [http://localhost:8000/openapi.json](http://localhost:8000/openapi.json)
+- **Browse all endpoints**: See all available API operations
+- **Test API calls**: Execute requests directly from the browser
+- **View schemas**: See request/response data structures
+- **Download OpenAPI spec**: Get the API specification file
+- **See examples**: View sample requests and responses
 
-The Swagger UI provides an interactive interface to:
-- Explore all available endpoints
-- Test API calls directly from the browser
-- View request/response schemas
-- Download OpenAPI specification
+## Python Code Approach (Alternative)
 
-## Database Schema
-
-The example automatically creates this table structure:
-
-```sql
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(100),
-    email VARCHAR(100),
-    role VARCHAR(50)
-);
-```
-
-## Extending the Example
-
-### Add Validation
+If you prefer more control, you can use the Python code approach:
 
 ```python
-from lightapi.rest import Validator
+# models.py
+from sqlalchemy import Column, Integer, String, Text, Boolean, Date, DateTime
+from sqlalchemy.sql import func
+from lightapi import RestEndpoint
 
-class UserValidator(Validator):
-    def validate(self, data):
-        errors = {}
-        
-        if not data.get('name'):
-            errors['name'] = 'Name is required'
-        
-        if not data.get('email'):
-            errors['email'] = 'Email is required'
-        elif '@' not in data['email']:
-            errors['email'] = 'Invalid email format'
-            
-        return {
-            'valid': len(errors) == 0,
-            'errors': errors
-        }
-
-class User(RestEndpoint):
-    __tablename__ = 'users'
+class Task(RestEndpoint):
+    __tablename__ = 'tasks'
     
     id = Column(Integer, primary_key=True)
-    name = Column(String(100))
-    email = Column(String(100))
-    role = Column(String(50))
-    
-    class Configuration:
-        validator_class = UserValidator
+    title = Column(String(200), nullable=False)
+    description = Column(Text)
+    completed = Column(Boolean, default=False)
+    priority = Column(String(20), default='medium')
+    due_date = Column(Date)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 ```
 
-### Add More Fields
-
 ```python
-from sqlalchemy import Boolean, DateTime
-from datetime import datetime
+# app.py
+from lightapi import LightApi
+from models import Task
 
-class User(RestEndpoint):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False)
-    email = Column(String(100), unique=True, nullable=False)
-    role = Column(String(50), default='user')
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+# Create the application
+app = LightApi(
+    database_url="sqlite:///tasks.db",
+    swagger_title="Task Management API",
+    swagger_version="1.0.0",
+    enable_swagger=True,
+    cors_origins=["http://localhost:3000"],  # For frontend apps
+    debug=True
+)
+
+# Register the Task model
+app.register({'/tasks': Task})
+
+# Add custom endpoints
+@app.get("/tasks/stats")
+def get_task_stats():
+    """Get task statistics"""
+    return {
+        "total_tasks": 25,
+        "completed_tasks": 12,
+        "pending_tasks": 13,
+        "high_priority": 5,
+        "overdue_tasks": 2
+    }
+
+if __name__ == '__main__':
+    print("🚀 Starting Task Management API...")
+    print("📋 API Documentation: http://localhost:8000/docs")
+    app.run(host='0.0.0.0', port=8000)
 ```
 
-### Add Authentication
+## Response Examples
 
-```python
-from lightapi.auth import JWTAuthentication
+### Successful Responses
 
-class User(RestEndpoint):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100))
-    email = Column(String(100))
-    role = Column(String(50))
-    
-    class Configuration:
-        authentication_class = JWTAuthentication
-        http_method_names = ['GET', 'POST', 'PUT', 'DELETE']
+```json
+// GET /tasks/
+{
+  "data": [
+    {
+      "id": 1,
+      "title": "Setup development environment",
+      "description": "Install Python, LightAPI, and dependencies",
+      "completed": true,
+      "priority": "high",
+      "due_date": "2024-01-15",
+      "created_at": "2024-01-10T10:00:00",
+      "updated_at": "2024-01-15T14:30:00"
+    }
+  ],
+  "total": 4,
+  "page": 1,
+  "page_size": 10
+}
+
+// POST /tasks/
+{
+  "id": 5,
+  "title": "Learn LightAPI",
+  "description": "Go through the documentation and examples",
+  "completed": false,
+  "priority": "high",
+  "due_date": "2024-02-01",
+  "created_at": "2024-01-16T09:15:00",
+  "updated_at": "2024-01-16T09:15:00"
+}
+```
+
+### Error Responses
+
+```json
+// 400 Bad Request - Validation Error
+{
+  "error": "Validation failed",
+  "details": {
+    "title": ["This field is required"],
+    "priority": ["Must be one of: low, medium, high"]
+  }
+}
+
+// 404 Not Found
+{
+  "error": "Task not found",
+  "message": "Task with id 999 does not exist"
+}
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Database Connection Error**
-   ```
-   Solution: Ensure the database URL is correct and the directory is writable
-   ```
+**Database connection errors:**
+- Ensure your database file exists and is accessible
+- Check file permissions
+- Verify the database URL format
 
-2. **Port Already in Use**
-   ```bash
-   # Use a different port
-   app.run(host="localhost", port=8001, debug=True)
-   ```
+**Validation errors:**
+- Check that required fields are provided
+- Ensure data types match the database schema
+- Verify foreign key relationships exist
 
-3. **Import Errors**
-   ```bash
-   # Ensure LightAPI is installed
-   pip install lightapi
-   ```
+**Import errors:**
+- Make sure LightAPI is installed: `pip install lightapi`
+- Check Python version compatibility (3.8+)
 
-### Debug Mode
+### Getting Help
 
-When `debug=True` is enabled:
-- Detailed error messages are shown
-- Stack traces are included in responses
-- Server automatically reloads on code changes
-
-**⚠️ Warning**: Never use `debug=True` in production!
+- **Documentation**: Check our comprehensive guides
+- **GitHub Issues**: [Report bugs or ask questions](https://github.com/iklobato/lightapi/issues)
+- **Examples**: Browse more examples in the repository
 
 ## Next Steps
 
-- **[Authentication Example](auth.md)** - Add JWT authentication
-- **[Validation Example](validation.md)** - Add request validation
-- **[Caching Example](caching.md)** - Add Redis caching
-- **[Filtering Example](filtering-pagination.md)** - Add query filtering and pagination 
+Now that you have a basic REST API running:
+
+1. **[Advanced Examples](../examples/)** - Explore more complex use cases
+2. **[Authentication Guide](../advanced/authentication.md)** - Secure your API
+3. **[Deployment Guide](../deployment/production.md)** - Deploy to production
+4. **[Configuration Guide](../getting-started/configuration.md)** - Advanced configuration options
+
+---
+
+**Congratulations!** 🎉 You've successfully created your first REST API with LightAPI. The combination of simplicity and power makes LightAPI perfect for rapid development while maintaining production-ready quality. 
