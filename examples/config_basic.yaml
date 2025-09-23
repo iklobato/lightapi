@@ -1,0 +1,30 @@
+database_url: sqlite:////tmp/tmp1mupdusd.db
+enable_swagger: true
+swagger_description: Simple store API with basic CRUD operations
+swagger_title: Basic Store API
+swagger_version: 1.0.0
+tables:
+- crud:
+  - get
+  - post
+  - put
+  - delete
+  name: users
+- crud:
+  - get
+  - post
+  - put
+  - delete
+  name: products
+- crud:
+  - get
+  - post
+  - put
+  - delete
+  name: categories
+- crud:
+  - get
+  - post
+  - put
+  - delete
+  name: orders

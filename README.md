@@ -830,147 +830,154 @@ class ValidatedUser(RestEndpoint):
 
 ### 📄 YAML Configuration
 
-Define APIs without writing Python code:
+**Create REST APIs without writing Python code!** LightAPI can automatically generate full CRUD APIs from existing database tables using simple YAML configuration files.
+
+#### Basic YAML Configuration
 
 ```yaml
-# api_config.yaml
-api:
-  title: "YAML-Configured API"
-  version: "1.0.0"
-  description: "API generated from YAML configuration"
+# config.yaml
+database_url: "sqlite:///my_app.db"
+swagger_title: "My API"
+swagger_version: "1.0.0"
+swagger_description: "API generated from YAML configuration"
+enable_swagger: true
 
-database:
-  url: "sqlite:///./yaml_api.db"
-
-server:
-  host: "localhost"
-  port: 8000
-  debug: true
-
-cors:
-  origins:
-    - "http://localhost:3000"
-    - "https://myapp.com"
-
-models:
-  User:
-    table_name: "users"
-    fields:
-      id:
-        type: "Integer"
-        primary_key: true
-        auto_increment: true
-      username:
-        type: "String"
-        length: 50
-        nullable: false
-        unique: true
-        validation:
-          min_length: 3
-          max_length: 50
-          pattern: "^[a-zA-Z0-9_]+$"
-      email:
-        type: "String"
-        length: 100
-        nullable: false
-        unique: true
-        validation:
-          format: "email"
-      age:
-        type: "Integer"
-        nullable: true
-        validation:
-          min: 0
-          max: 150
-    endpoints:
-      - method: "GET"
-        path: "/users"
-        description: "List all users"
-        pagination: true
-        filtering:
-          - "username"
-          - "email"
-        sorting:
-          - "username"
-          - "created_at"
-      - method: "POST"
-        path: "/users"
-        description: "Create new user"
-        validation: true
-
-  Product:
-    table_name: "products"
-    fields:
-      id:
-        type: "Integer"
-        primary_key: true
-      name:
-        type: "String"
-        length: 200
-        nullable: false
-      price:
-        type: "Float"
-        nullable: false
-        validation:
-          min: 0
-      category:
-        type: "String"
-        length: 50
-        validation:
-          choices:
-            - "electronics"
-            - "clothing"
-            - "books"
-    endpoints:
-      - method: "GET"
-        path: "/products"
-        pagination: true
-        filtering:
-          - "category"
-          - "price"
-        search:
-          fields:
-            - "name"
-            - "description"
-
-authentication:
-  enabled: true
-  type: "jwt"
-  secret_key: "your-secret-key"
-  token_expiry: 3600
-
-caching:
-  enabled: true
-  backend: "redis"
-  default_ttl: 300
+tables:
+  - name: users
+    crud: [get, post, put, delete]
+  - name: posts
+    crud: [get, post, put]
+  - name: comments
+    crud: [get]  # Read-only
 ```
 
-**Load YAML Configuration:**
+#### Advanced YAML Configuration
+
+```yaml
+# advanced_config.yaml
+database_url: "${DATABASE_URL}"  # Environment variable
+swagger_title: "E-commerce API"
+swagger_version: "2.0.0"
+swagger_description: |
+  E-commerce API with role-based permissions
+  
+  ## Permission Levels
+  - Admin: Full user management
+  - Manager: Product and inventory management
+  - Customer: Order creation and viewing
+enable_swagger: true
+
+tables:
+  # ADMIN LEVEL - Full access
+  - name: users
+    crud: [get, post, put, patch, delete]
+  
+  # MANAGER LEVEL - Product management
+  - name: products
+    crud: [get, post, put, patch, delete]
+  
+  # CUSTOMER LEVEL - Limited operations
+  - name: orders
+    crud: [get, post, patch]  # Create orders, update status only
+  
+  # READ-ONLY - Audit trail
+  - name: audit_log
+    crud: [get]
+```
+
+#### Database Support
+
+```yaml
+# SQLite
+database_url: "sqlite:///app.db"
+
+# PostgreSQL
+database_url: "postgresql://user:pass@localhost:5432/db"
+
+# MySQL
+database_url: "mysql+pymysql://user:pass@localhost:3306/db"
+
+# Environment variables
+database_url: "${DATABASE_URL}"
+```
+
+#### Run YAML-Configured API
+
 ```python
-import yaml
 from lightapi import LightApi
 
-def load_config(config_file):
-    with open(config_file, 'r') as f:
-        return yaml.safe_load(f)
-
-def create_app_from_yaml(config_file):
-    config = load_config(config_file)
-    
-    app = LightApi(
-        database_url=config['database']['url'],
-        swagger_title=config['api']['title'],
-        swagger_version=config['api']['version'],
-        cors_origins=config['cors']['origins']
-    )
-    
-    # Generate models and endpoints from YAML
-    # (Implementation would dynamically create SQLAlchemy models)
-    
-    return app
-
-app = create_app_from_yaml('api_config.yaml')
+# Create API from YAML configuration
+app = LightApi.from_config('config.yaml')
+app.run()
 ```
+
+**That's it!** Your API is now running with:
+- Full CRUD operations based on your configuration
+- Automatic input validation from database schema
+- Interactive Swagger documentation at `/docs`
+- Proper HTTP status codes and error handling
+
+#### CRUD Operations
+
+Each CRUD operation maps to HTTP methods:
+
+| CRUD | HTTP Method | Endpoint | Description |
+|------|-------------|----------|-------------|
+| `get` | GET | `/table/` | List all records |
+| `get` | GET | `/table/{id}` | Get specific record |
+| `post` | POST | `/table/` | Create new record |
+| `put` | PUT | `/table/{id}` | Update entire record |
+| `patch` | PATCH | `/table/{id}` | Partially update record |
+| `delete` | DELETE | `/table/{id}` | Delete record |
+
+#### Configuration Patterns
+
+```yaml
+# Full CRUD
+- name: users
+  crud: [get, post, put, patch, delete]
+
+# Read-only (analytics, reports)
+- name: analytics
+  crud: [get]
+
+# Create + Read (blog posts)
+- name: posts
+  crud: [get, post]
+
+# No delete (data integrity)
+- name: categories
+  crud: [get, post, put, patch]
+
+# Status updates only
+- name: orders
+  crud: [get, patch]
+```
+
+#### Environment-Based Deployment
+
+```yaml
+# development.yaml
+database_url: "${DEV_DATABASE_URL}"
+enable_swagger: true
+tables:
+  - name: users
+    crud: [get, post, put, patch, delete]  # Full access in dev
+
+# production.yaml  
+database_url: "${PROD_DATABASE_URL}"
+enable_swagger: false  # Disabled in production
+tables:
+  - name: users
+    crud: [get, patch]  # Limited access in production
+```
+
+**Key Benefits:**
+- **Zero Python Code**: Define APIs using only YAML
+- **Database Reflection**: Automatically discovers existing tables and schemas
+- **Environment Variables**: Flexible deployment across dev/staging/production
+- **Role-Based Permissions**: Different CRUD operations per table
+- **Production Ready**: Proper error handling and validation
 
 ### 🔧 Custom Middleware
 

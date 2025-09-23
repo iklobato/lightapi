@@ -1,0 +1,27 @@
+database_url: sqlite:////tmp/tmp1mupdusd.db
+enable_swagger: true
+swagger_description: Read-only API for viewing store data
+swagger_title: Store Data Viewer API
+swagger_version: 1.0.0
+tables:
+- crud:
+  - get
+  name: users
+- crud:
+  - get
+  name: products
+- crud:
+  - get
+  name: categories
+- crud:
+  - get
+  name: orders
+- crud:
+  - get
+  name: order_items
+- crud:
+  - get
+  name: reviews
+- crud:
+  - get
+  name: settings

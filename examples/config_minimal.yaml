@@ -1,0 +1,15 @@
+database_url: sqlite:////tmp/tmp1mupdusd.db
+enable_swagger: true
+swagger_title: Minimal Store API
+swagger_version: 1.0.0
+tables:
+- crud:
+  - get
+  - post
+  name: products
+- crud:
+  - get
+  name: categories
+- crud:
+  - post
+  name: orders

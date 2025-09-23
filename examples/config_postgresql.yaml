@@ -1,0 +1,24 @@
+database_url: postgresql://username:password@localhost:5432/store_db
+enable_swagger: true
+swagger_description: Store API using PostgreSQL database
+swagger_title: PostgreSQL Store API
+swagger_version: 1.0.0
+tables:
+- crud:
+  - get
+  - post
+  - put
+  - delete
+  name: users
+- crud:
+  - get
+  - post
+  - put
+  - delete
+  name: products
+- crud:
+  - get
+  - post
+  - put
+  - delete
+  name: categories
