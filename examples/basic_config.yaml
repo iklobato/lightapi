@@ -1,0 +1,29 @@
+# Basic YAML Configuration Example
+# This is the simplest way to create a REST API with LightAPI
+
+# Database connection - point to your existing database
+database_url: "sqlite:////tmp/tmpo3c89w5x.db"
+
+# API documentation settings
+swagger_title: "My First API"
+swagger_version: "1.0.0"
+swagger_description: "A simple REST API created with YAML configuration"
+enable_swagger: true
+
+# Tables to expose as API endpoints
+tables:
+  # Users table with full CRUD operations
+  - name: users
+    crud:
+      - get     # GET /users/ and GET /users/{id}
+      - post    # POST /users/
+      - put     # PUT /users/{id}
+      - delete  # DELETE /users/{id}
+  
+  # Posts table with full CRUD operations
+  - name: posts
+    crud:
+      - get
+      - post
+      - put
+      - delete

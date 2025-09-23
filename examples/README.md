@@ -1,195 +1,386 @@
 # LightAPI Examples
 
-This directory contains example applications demonstrating various features of the LightAPI framework.
+This directory contains comprehensive examples demonstrating all features of LightAPI. Each example is thoroughly tested and includes detailed documentation.
 
-## Example Features
+## 🚀 Quick Start
 
-- **comprehensive_ideal_usage.py**: Comprehensive demonstration of intended LightAPI usage patterns
-  - Shows the exact API design philosophy and usage as envisioned
-  - Demonstrates custom validators with field-specific validation methods
-  - Implements JWT authentication with proper configuration
-  - Shows multiple endpoints with different authentication requirements
-  - Illustrates custom middleware integration (commented for clarity)
-  - Includes CORS support and proper environment variable usage
-  - **Note**: Some advanced features (caching + pagination) are commented out due to current limitations
-
-- **rest_crud_basic.py**: A simple REST API with default CRUD operations
-  - Demonstrates minimal setup for a REST endpoint
-  - Shows automatic handling of GET, POST, PUT, DELETE operations
-  - Illustrates SQLAlchemy model integration with LightAPI
-
-- **validation_custom_fields.py**: Data validation with custom validators
-  - Shows field-specific validation rules using Validator class
-  - Demonstrates error handling for validation failures
-  - Illustrates data transformation (price conversion between dollars and cents)
-
-- **authentication_jwt.py**: JWT authentication with protected resources
-  - Implements JWT token generation and verification
-  - Shows protected endpoints requiring authentication
-  - Demonstrates user information extraction from token
-  - Includes public and private resource examples
-
-## Advanced Features
-
-- **middleware_cors_auth.py**: Built-in middleware demonstration
-  - Shows new `CORSMiddleware` and `AuthenticationMiddleware` classes
-  - Demonstrates automatic CORS preflight handling with JWT authentication
-  - Illustrates seamless integration of authentication with CORS support
-  - Uses built-in middleware for cleaner, more maintainable code
-
-- **filtering_pagination.py**: Filtering and pagination
-  - Demonstrates filtering, pagination, and sorting of results
-  - Shows how to use query parameters for advanced queries
-
-- **middleware_custom.py**: Custom middleware and order
-  - Demonstrates how to add custom middleware
-  - Shows the order of middleware execution
-  - Includes logging, CORS, and rate limiting examples
-
-- **relationships_sqlalchemy.py**: SQLAlchemy relationships
-  - Demonstrates one-to-many and many-to-many relationships
-  - Shows how to query related resources
-
-- **swagger_openapi_docs.py**: Swagger/OpenAPI documentation
-  - Shows how to generate and customize API documentation
-  - Demonstrates validator docstrings for better docs
-
-- **general_usage.py**: General usage
-  - Shows custom validator, custom headers, and CRUD
-
-## New Built-in Features (Latest Updates)
-
-### CORS Support
-All examples now demonstrate improved CORS handling:
-- **Automatic OPTIONS request handling**: JWT authentication automatically allows CORS preflight requests
-- **Built-in CORSMiddleware**: Simplified CORS configuration with built-in middleware
-- **Seamless integration**: CORS and authentication work together without conflicts
-
-### Enhanced Authentication
-- **CORS-aware JWT authentication**: Automatically skips OPTIONS requests
-- **Global authentication middleware**: Apply authentication to all endpoints with `AuthenticationMiddleware`
-- **Consistent error responses**: Standardized error format across all authentication failures
-- **Environment variable configuration**: Set JWT secrets via `LIGHTAPI_JWT_SECRET`
-
-### Improved Caching
-- **Fixed JSON serialization**: Caching now works properly with complex Python objects
-- **Redis integration**: Built-in Redis support with automatic configuration
-- **Cache key optimization**: Better cache key generation for improved performance
-
-## Running the Examples
-
-Each example is self-contained and can be run directly:
+Each example is a standalone Python script that you can run directly:
 
 ```bash
-# Basic REST/CRUD example
+python example_name.py
+```
+
+Then visit `http://localhost:8000/docs` to see the auto-generated API documentation.
+
+## 📚 Examples Overview
+
+### 🔧 Basic Examples
+- **`rest_crud_basic.py`** - Basic CRUD operations with SQLAlchemy models
+- **`example.py`** - Simple getting started example
+- **`general_usage.py`** - General usage patterns and best practices
+
+### ⚡ Performance & Async
+- **`async_performance.py`** - Async/await support for high-performance APIs
+- **`caching_redis_custom.py`** - Redis caching strategies and performance optimization
+- **`advanced_caching_redis.py`** - Advanced caching with TTL, invalidation, and statistics
+
+### 🔐 Security & Authentication
+- **`authentication_jwt.py`** - JWT authentication with login/logout
+- **`middleware_cors_auth.py`** - CORS and authentication middleware
+- **`middleware_custom.py`** - Custom middleware development
+
+### 🔍 Data Management
+- **`filtering_pagination.py`** - Basic filtering and pagination
+- **`advanced_filtering_pagination.py`** - Complex queries, search, and advanced filtering
+- **`validation_custom_fields.py`** - Basic request validation
+- **`advanced_validation.py`** - Comprehensive validation with edge cases
+
+### 📖 Documentation & Configuration
+- **`swagger_openapi_docs.py`** - OpenAPI/Swagger documentation customization
+- **`yaml_configuration.py`** - YAML-driven API generation and configuration
+
+### 🏗️ Complex Applications
+- **`blog_post.py`** - Blog post management system
+- **`relationships_sqlalchemy.py`** - SQLAlchemy relationships and foreign keys
+- **`comprehensive_ideal_usage.py`** - Comprehensive feature showcase
+- **`mega_example.py`** - Large-scale application example
+- **`user_goal_example.py`** - User management with goals and relationships
+
+## 🛠️ Prerequisites
+
+### Basic Requirements
+```bash
+pip install lightapi
+```
+
+### Optional Dependencies
+```bash
+# For Redis caching examples
+pip install redis
+redis-server  # Start Redis server
+
+# For PostgreSQL examples
+pip install psycopg2-binary
+
+# For MySQL examples
+pip install pymysql
+
+# For all features
+pip install lightapi[all]
+```
+
+## 🚀 Running Examples
+
+### 1. Basic CRUD Example
+```bash
 python examples/rest_crud_basic.py
-
-# Built-in middleware, CORS, Auth example
-LIGHTAPI_JWT_SECRET="your-secret-key" python examples/middleware_cors_auth.py
-
-# JWT Authentication example
-LIGHTAPI_JWT_SECRET="your-secret-key" python examples/authentication_jwt.py
-
-# Caching with Redis (requires Redis running)
-python examples/caching_redis_custom.py
 ```
+- Visit: `http://localhost:8000/docs`
+- Test endpoints: `/products`, `/products/{id}`
+- Try: Create, read, update, delete operations
 
-Most examples will:
-1. Create a SQLite database in the current directory
-2. Initialize tables and sample data
-3. Start a web server on localhost:8000
-4. Generate Swagger documentation at http://localhost:8000/docs
-
-## Testing CORS and Authentication
-
-The examples now include improved CORS and authentication. Test with:
-
+### 2. Async Performance Example
 ```bash
-# Start the middleware_cors_auth example
-LIGHTAPI_JWT_SECRET="test-secret-key-123" python examples/middleware_cors_auth.py
+python examples/async_performance.py
+```
+- Compare sync vs async performance
+- Test concurrent request handling
+- Monitor response times
 
-# Start the comprehensive_ideal_usage example (comprehensive demonstration)
-LIGHTAPI_JWT_SECRET="test-secret-key-123" python examples/comprehensive_ideal_usage.py
+### 3. JWT Authentication Example
+```bash
+LIGHTAPI_JWT_SECRET="your-secret-key" python examples/authentication_jwt.py
+```
+- Login: `POST /authendpoint`
+- Access protected: `GET /secretresource`
+- Use token in Authorization header
 
-# Test CORS preflight (should work without authentication)
-curl -X OPTIONS http://localhost:8000/custom -v
+### 4. Redis Caching Example
+```bash
+# Start Redis server first
+redis-server
 
-# Test without authentication (should get 403)
-curl -X GET http://localhost:8000/custom -v
+# Run example
+python examples/advanced_caching_redis.py
+```
+- Test cache hits/misses
+- Monitor cache statistics
+- Try cache invalidation
 
-# Generate a JWT token
-python3 -c "
-import jwt
-from datetime import datetime, timedelta
-secret = 'test-secret-key-123'
-payload = {'user_id': 1, 'exp': datetime.utcnow() + timedelta(hours=1)}
-token = jwt.encode(payload, secret, algorithm='HS256')
-print(token)
-"
+### 5. Advanced Filtering Example
+```bash
+python examples/advanced_filtering_pagination.py
+```
+- Test complex queries
+- Try pagination and sorting
+- Use search functionality
 
-# Test with authentication (should work)
-curl -X GET http://localhost:8000/custom \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -v
+### 6. Validation Example
+```bash
+python examples/advanced_validation.py
+```
+- Test field validation
+- Try invalid data
+- See error responses
+
+## 🧪 Testing Examples
+
+Each example includes test scenarios. You can test them using curl or the Swagger UI:
+
+### Basic CRUD Testing
+```bash
+# Create a product
+curl -X POST http://localhost:8000/products \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Laptop", "price": 999.99, "category": "electronics"}'
+
+# Get all products
+curl http://localhost:8000/products
+
+# Get specific product
+curl http://localhost:8000/products/1
 ```
 
-## Known Limitations & Troubleshooting
+### Authentication Testing
+```bash
+# Login
+curl -X POST http://localhost:8000/authendpoint \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "secret"}'
 
-### Current Limitations
+# Use token
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  http://localhost:8000/secretresource
+```
 
-1. **Caching + Pagination Compatibility**: Currently, using both `caching_class` and `pagination_class` together in the same endpoint configuration can cause serialization issues. If you need both features, implement them at different layers or use manual caching.
+### Filtering Testing
+```bash
+# Filter by category
+curl "http://localhost:8000/products?category=electronics"
 
-2. **Custom Response Serialization**: When using custom Response objects with complex middleware stacks, ensure proper JSON serialization to avoid `TypeError: memoryview: a bytes-like object is required, not 'dict'` errors.
+# Price range filter
+curl "http://localhost:8000/products?min_price=100&max_price=500"
+
+# Complex query
+curl "http://localhost:8000/products?category=electronics&sort_by=price&sort_order=desc&page=1&page_size=10"
+```
+
+## 📊 Performance Testing
+
+### Load Testing with Apache Bench
+```bash
+# Install Apache Bench
+sudo apt-get install apache2-utils  # Ubuntu/Debian
+brew install httpie  # macOS
+
+# Test basic endpoint
+ab -n 1000 -c 10 http://localhost:8000/products
+
+# Test with caching
+ab -n 1000 -c 10 http://localhost:8000/cached_products/1
+```
+
+### Async Performance Testing
+```bash
+# Run async example
+python examples/async_performance.py
+
+# In another terminal, test concurrent requests
+for i in {1..10}; do
+  curl http://localhost:8000/async_items/$i &
+done
+wait
+```
+
+## 🔧 Feature Categories
+
+### 🔧 Basic CRUD Operations
+**Files**: `rest_crud_basic.py`, `example.py`
+
+Learn the fundamentals of creating REST APIs with automatic CRUD operations:
+- Model definition with SQLAlchemy
+- Automatic endpoint generation
+- Database integration
+- Basic error handling
+
+**Key Features Demonstrated**:
+- `@register_model_class` decorator
+- RestEndpoint inheritance
+- Automatic CRUD endpoints
+- SQLAlchemy model integration
+
+### ⚡ Performance & Async
+**Files**: `async_performance.py`, `caching_redis_custom.py`, `advanced_caching_redis.py`
+
+Discover async/await patterns and caching strategies for high-performance APIs:
+- Async endpoint methods
+- Concurrent request handling
+- Redis caching strategies
+- Performance monitoring
+
+**Key Features Demonstrated**:
+- `async def` endpoint methods
+- `cache_manager` usage
+- TTL and cache invalidation
+- Performance comparisons
+
+### 🔐 Security & Authentication
+**Files**: `authentication_jwt.py`, `middleware_cors_auth.py`, `middleware_custom.py`
+
+Implement JWT authentication, CORS, and custom security middleware:
+- JWT token generation and validation
+- Protected endpoints
+- CORS configuration
+- Custom authentication middleware
+
+**Key Features Demonstrated**:
+- `AuthEndpoint` class
+- JWT secret configuration
+- Token-based authentication
+- CORS origins setup
+
+### 🔍 Data Management
+**Files**: `filtering_pagination.py`, `advanced_filtering_pagination.py`, `validation_custom_fields.py`, `advanced_validation.py`
+
+Master filtering, pagination, sorting, and complex queries:
+- Query parameter handling
+- Advanced filtering logic
+- Pagination with metadata
+- Comprehensive validation
+
+**Key Features Demonstrated**:
+- Query parameter parsing
+- Filter application
+- Pagination calculations
+- Validation error handling
+
+## 🐛 Troubleshooting
 
 ### Common Issues
 
-**Port Already in Use Error**
-```bash
-ERROR: [Errno 48] error while attempting to bind on address ('127.0.0.1', 8000): address already in use
-```
-Solution: Kill existing processes or use a different port:
-```bash
-# Kill processes using port 8000
-lsof -ti:8000 | xargs kill -9
+1. **Redis Connection Error**
+   ```bash
+   # Start Redis server
+   redis-server
+   
+   # Or use Docker
+   docker run -d -p 6379:6379 redis:alpine
+   ```
 
-# Or use a different port
-export LIGHTAPI_PORT="8001"
-```
+2. **Database Connection Error**
+   ```python
+   # Check database URL
+   app = LightApi(database_url="sqlite:///./test.db")  # SQLite
+   app = LightApi(database_url="postgresql://user:pass@localhost/db")  # PostgreSQL
+   ```
 
-**JWT Authentication Issues**
-- Ensure `LIGHTAPI_JWT_SECRET` environment variable is set
-- Verify JWT token format and expiration
-- Check that OPTIONS requests are handled properly for CORS
+3. **Import Errors**
+   ```bash
+   # Install missing dependencies
+   pip install lightapi[all]
+   ```
 
-**Content-Length Errors**
-If you encounter "Response content longer than Content-Length" errors:
-- Avoid mixing complex middleware with custom response handling
-- Use built-in Response classes when possible
-- Check for proper JSON serialization in custom middleware
+4. **Port Already in Use**
+   ```bash
+   # Kill processes using port 8000
+   lsof -ti:8000 | xargs kill -9
+   
+   # Or use a different port
+   python example.py --port 8001
+   ```
 
-### Response Format Options
+5. **JWT Authentication Issues**
+   ```bash
+   # Set JWT secret
+   export LIGHTAPI_JWT_SECRET="your-secret-key"
+   
+   # Or set in code
+   app = LightApi(jwt_secret="your-secret-key")
+   ```
 
-LightAPI supports multiple response formats for flexibility:
-
+### Debug Mode
 ```python
-# Tuple format (status code, data)
-def get(self, request):
-    return {'data': 'ok'}, 200
-
-# Response object (more control)
-def post(self, request):
-    return Response(
-        {'data': 'created'},
-        status_code=201,
-        content_type='application/json'
-    )
-
-# Simple dictionary (assumes 200 status)
-def get(self, request):
-    return {'data': 'ok'}
+# Enable debug mode for detailed error messages
+app = LightApi(debug=True)
+app.run(debug=True)
 ```
 
-## Notes
-- All required fields must be defined as NOT NULL in your database schema for correct enforcement.
-- The API will return 409 Conflict if you attempt to create or update a record missing a NOT NULL field, or violating a UNIQUE or FOREIGN KEY constraint.
-- Only GET, POST, PUT, PATCH, DELETE HTTP verbs are supported. OPTIONS and HEAD are not available.
+## 📚 Learning Path
+
+### Beginner (Start Here)
+1. **`rest_crud_basic.py`** - Learn basic CRUD operations
+2. **`example.py`** - Understand core concepts
+3. **`swagger_openapi_docs.py`** - Explore auto-documentation
+
+### Intermediate
+1. **`async_performance.py`** - Learn async programming
+2. **`authentication_jwt.py`** - Add security
+3. **`caching_redis_custom.py`** - Implement caching
+
+### Advanced
+1. **`advanced_filtering_pagination.py`** - Master complex queries
+2. **`advanced_validation.py`** - Implement comprehensive validation
+3. **`comprehensive_ideal_usage.py`** - Build production-ready APIs
+
+## 🤝 Contributing Examples
+
+Want to contribute an example? Follow these guidelines:
+
+1. **Clear Purpose**: Each example should demonstrate specific features
+2. **Documentation**: Include detailed comments and docstrings
+3. **Testing**: Provide test scenarios and expected outputs
+4. **Dependencies**: List any additional requirements
+5. **Error Handling**: Show proper error handling patterns
+
+### Example Template
+```python
+#!/usr/bin/env python3
+"""
+LightAPI [Feature Name] Example
+
+This example demonstrates [specific features].
+
+Features demonstrated:
+- Feature 1
+- Feature 2
+- Feature 3
+
+Prerequisites:
+- pip install [dependencies]
+- [any setup required]
+"""
+
+# Your example code here...
+
+if __name__ == "__main__":
+    print("🚀 [Feature Name] Example")
+    print("=" * 50)
+    print("Server running at http://localhost:8000")
+    print("API documentation at http://localhost:8000/docs")
+    print()
+    print("Test with:")
+    print("  curl http://localhost:8000/endpoint")
+    
+    app.run()
+```
+
+## 🆘 Getting Help
+
+- **Documentation**: Check the main README.md
+- **Issues**: Open an issue on GitHub
+- **Discussions**: Join GitHub Discussions
+- **Examples**: All examples include detailed comments
+
+## 📈 Next Steps
+
+After exploring the examples:
+
+1. **Build Your Own API**: Start with your own models and requirements
+2. **Deploy to Production**: Use Docker, Heroku, or cloud platforms
+3. **Add Monitoring**: Implement logging and metrics
+4. **Scale Up**: Add load balancing and database optimization
+5. **Contribute**: Share your improvements with the community
+
+---
+
+**Happy coding with LightAPI!** 🚀

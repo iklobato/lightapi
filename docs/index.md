@@ -1,20 +1,20 @@
 ---
 title: LightAPI Documentation
-description: Enterprise-grade REST API framework for Python
+description: Enterprise-grade REST API framework for Python with YAML configuration support
 ---
 
 # LightAPI Documentation
 
-**LightAPI** is a lightweight, powerful API framework built on top of Starlette and SQLAlchemy, designed for rapid development of RESTful APIs in Python. It provides a simple yet flexible way to build production-ready APIs with minimal boilerplate code.
+**LightAPI** is a powerful yet lightweight Python framework for building REST APIs with minimal code. Built on aiohttp and SQLAlchemy, it automatically generates REST APIs from your existing database tables using either Python code or simple YAML configuration files.
 
 ## Key Features
 
 ### 🚀 **Rapid Development**
-- **Zero-boilerplate REST endpoints** - Create full CRUD APIs with just a few lines of code
+- **Zero-Code APIs** - Create REST APIs from YAML configuration files without writing Python code
+- **Database Reflection** - Automatically discovers and exposes existing database tables as REST endpoints
+- **Full CRUD Operations** - GET, POST, PUT, PATCH, DELETE operations generated automatically
 - **Automatic OpenAPI/Swagger documentation** - Interactive API docs generated automatically
-- **Built-in validation** - Request/response validation with customizable validators
-- **Database integration** - Seamless SQLAlchemy integration with automatic table creation
-- **Dynamic API from YAML** - Instantly generate REST APIs from a YAML config file using SQLAlchemy reflection
+- **Built-in validation** - Request/response validation based on database schema constraints
 
 ### 🔒 **Security & Authentication**
 - **JWT Authentication** - Built-in JSON Web Token support
@@ -23,16 +23,18 @@ description: Enterprise-grade REST API framework for Python
 - **Request/response middleware** - Custom middleware for security, logging, and more
 
 ### ⚡ **Performance & Scalability**
-- **Redis caching** - Built-in caching system with Redis support
-- **Query optimization** - Automatic query filtering and pagination
-- **Asynchronous support** - Full async/await support for high performance
-- **Middleware system** - Efficient request/response processing pipeline
+- **Async/Await Support** - Built on aiohttp for high-performance async operations
+- **Redis caching** - Built-in caching system with Redis support and TTL management
+- **Query optimization** - Automatic query filtering, pagination, and sorting
+- **Multiple Databases** - SQLite, PostgreSQL, MySQL support via SQLAlchemy
+- **Connection Pooling** - Efficient database connection management
 
 ### 🛠 **Developer Experience**
-- **Type hints** - Full type annotation support for better IDE experience
-- **Comprehensive testing** - Built-in testing utilities and examples
-- **Hot reload** - Development server with automatic code reloading
+- **YAML Configuration** - Define APIs using simple YAML files with environment variable support
+- **Environment-Based Deployment** - Different configurations for development, staging, and production
+- **Comprehensive Examples** - Real-world examples for all features and use cases
 - **Rich error handling** - Detailed error messages and debugging support
+- **Production Ready** - Docker, Kubernetes, and cloud deployment support
 
 ## Quick Start
 
@@ -42,9 +44,35 @@ description: Enterprise-grade REST API framework for Python
 pip install lightapi
 ```
 
-### Basic Example
+### Option 1: YAML Configuration (Zero Code)
 
-Create a simple REST API in just a few lines:
+Create a YAML configuration file:
+
+```yaml
+# config.yaml
+database_url: "sqlite:///my_app.db"
+swagger_title: "My API"
+swagger_version: "1.0.0"
+enable_swagger: true
+
+tables:
+  - name: users
+    crud: [get, post, put, delete]
+  - name: posts
+    crud: [get, post, put]
+```
+
+Run your API:
+
+```python
+from lightapi import LightApi
+
+# Create API from YAML configuration
+app = LightApi.from_config('config.yaml')
+app.run()
+```
+
+### Option 2: Python Code (Traditional)
 
 ```python
 from sqlalchemy import Column, Integer, String
@@ -64,12 +92,12 @@ app.register({'/users': User})
 app.run()
 ```
 
-This creates a full REST API with:
-- `GET /users` - List all users
-- `POST /users` - Create a new user  
-- `PUT /users` - Update a user
-- `DELETE /users` - Delete a user
-- Automatic Swagger documentation at `/docs`
+**Both approaches create a full REST API with:**
+- Full CRUD operations (GET, POST, PUT, PATCH, DELETE)
+- Automatic input validation based on database schema
+- Interactive Swagger documentation at `/docs`
+- JSON responses with proper HTTP status codes
+- Error handling and constraint validation
 
 ## Architecture Overview
 
@@ -132,13 +160,25 @@ Environment-based configuration with sensible defaults:
 
 ## Getting Started
 
-Ready to build your first API? Check out our guides:
+Ready to build your first API? Choose your path:
 
-1. **[Getting Started](getting-started/)** - Basic setup and your first API
-2. **[Dynamic API from YAML Config](getting-started/quickstart.md#dynamic-api-from-yaml-config-sqlalchemy-reflection)** - Instantly expose your database as an API from a config file
-3. **[Tutorial](tutorial/)** - Step-by-step walkthrough
-4. **[Examples](examples/)** - Real-world examples and patterns
-5. **[API Reference](api-reference/)** - Complete API documentation
+### 🚀 For Beginners
+1. **[Introduction](getting-started/introduction.md)** - Framework overview and concepts
+2. **[Installation](getting-started/installation.md)** - Setup and requirements  
+3. **[Quickstart](getting-started/quickstart.md)** - Your first API in 5 minutes
+4. **[Configuration](getting-started/configuration.md)** - YAML and Python configuration
+
+### 📚 Learning Path
+1. **[Basic API Tutorial](tutorial/basic-api.md)** - Step-by-step API creation
+2. **[Database Setup](tutorial/database.md)** - Working with different databases
+3. **[YAML Configuration](examples/yaml-configuration.md)** - Zero-code API creation
+4. **[Authentication](examples/auth.md)** - Securing your APIs
+
+### 💡 Real-World Examples
+- **[Basic CRUD](examples/basic-crud.md)** - Simple CRUD operations
+- **[E-commerce API](examples/advanced-permissions.md)** - Role-based permissions
+- **[Analytics API](examples/readonly-apis.md)** - Read-only data access
+- **[Multi-Environment](examples/environment-variables.md)** - Dev/staging/production setup
 
 See the [README](../README.md) for a full feature overview and advanced usage.
 

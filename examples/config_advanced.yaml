@@ -1,0 +1,42 @@
+database_url: sqlite:////tmp/tmp1mupdusd.db
+enable_swagger: true
+swagger_description: Advanced store API with role-based CRUD operations
+swagger_title: Advanced Store API
+swagger_version: 2.0.0
+tables:
+- crud:
+  - get
+  - post
+  - put
+  - patch
+  - delete
+  name: users
+- crud:
+  - get
+  - post
+  - put
+  - patch
+  - delete
+  name: products
+- crud:
+  - get
+  - post
+  - put
+  name: categories
+- crud:
+  - get
+  - post
+  - patch
+  name: orders
+- crud:
+  - get
+  name: order_items
+- crud:
+  - get
+  - post
+  - put
+  - delete
+  name: reviews
+- crud:
+  - get
+  name: settings

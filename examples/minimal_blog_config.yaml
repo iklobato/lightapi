@@ -1,0 +1,37 @@
+# Minimal YAML Configuration
+# Perfect for simple applications with essential operations only
+
+# Database connection
+database_url: "sqlite:////tmp/tmpoamp68bn.db"
+
+# Basic API information
+swagger_title: "Simple Blog API"
+swagger_version: "1.0.0"
+swagger_description: |
+  Minimal blog API with essential operations only
+  
+  ## Features
+  - Browse and create blog posts
+  - View comments (read-only)
+  
+  ## Use Cases
+  - Simple blog websites
+  - Content management systems
+  - Prototype applications
+  - MVP (Minimum Viable Product) development
+enable_swagger: true
+
+# Minimal table configuration
+tables:
+  # Posts - browse and create only
+  - name: posts
+    crud:
+      - get     # Browse posts: GET /posts/ and GET /posts/{id}
+      - post    # Create posts: POST /posts/
+      # Note: No update or delete - keeps it simple
+  
+  # Comments - read-only
+  - name: comments
+    crud:
+      - get     # View comments only: GET /comments/ and GET /comments/{id}
+      # Note: Comments are read-only to prevent spam/abuse
