@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Type
 import uvicorn
 from starlette.applications import Starlette
 
-# from starlette.middleware.cors import CORSMiddleware  # Not needed - we have our own
+from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
@@ -313,7 +313,7 @@ class LightApi:
         # Add CORS middleware if origins are configured
         if config.cors_origins:
             app.add_middleware(
-                CORSMiddleware,
+                StarletteCORSMiddleware,
                 allow_origins=config.cors_origins,
                 allow_credentials=True,
                 allow_methods=["*"],
