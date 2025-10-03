@@ -50,3 +50,14 @@ class UserEndpoint(RestEndpoint):
 
 - You can also override the `validate(self, data: dict)` method directly for full-body validation.
 - Combine with filtering and pagination for robust endpoint logic.
+
+## 5. Automatic Datetime Parsing
+
+LightAPI automatically parses string values for columns of type `DateTime` and `Date`. It uses the `python-dateutil` library to flexibly parse a wide range of formats, including:
+
+- `YYYY-MM-DDTHH:MM:SS`
+- `YYYY-MM-DDTHH:MM:SS.ffffff`
+- `YYYY-MM-DDTHH:MM:SS+HH:MM` (with timezone)
+- `YYYY-MM-DD`
+
+If a string cannot be parsed as a valid datetime, a `400 Bad Request` error is returned with a descriptive message.

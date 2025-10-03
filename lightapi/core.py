@@ -1,37 +1,27 @@
-import hashlib
 import json
-from inspect import iscoroutinefunction
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Type
+from typing import Any, Callable, Dict, List, Type
 
 import uvicorn
 from starlette.applications import Starlette
-
 from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from .config import config
-from .models import setup_database
-
-if TYPE_CHECKING:
-    from .rest import RestEndpoint
+from .database import Base, setup_database
 
 
 class LightApi:
-    """
-    Main application class for building REST APIs.
-
-    LightApi provides functionality for setting up and running a
-    REST API application. It includes features for registering endpoints,
-    applying middleware, generating API documentation, and running the server.
+    """Main application class for building REST APIs.
 
     Attributes:
-        routes: List of Starlette routes.
-        middleware: List of middleware classes.
-        engine: SQLAlchemy engine.
-        Session: SQLAlchemy session factory.
-        enable_swagger: Whether Swagger documentation is enabled.
-        swagger_generator: SwaggerGenerator instance (if enabled).
+        routes: A list of Starlette routes.
+        middleware: A list of middleware classes.
+        engine: A SQLAlchemy engine instance.
+        Session: A SQLAlchemy session factory.
+        enable_swagger: A boolean indicating if Swagger is enabled.
+        swagger_generator: An instance of SwaggerGenerator.
+        debug: A boolean indicating if debug mode is enabled.
     """
 
     def __init__(
@@ -42,17 +32,18 @@ class LightApi:
         swagger_description: str = None,
         enable_swagger: bool = None,
         cors_origins: List[str] = None,
+        debug: bool = False,
     ):
-        """
-        Initialize a new LightApi application.
+        """Initializes the LightApi application.
 
         Args:
-            database_url: URL for the database connection.
-            swagger_title: Title for the Swagger documentation.
-            swagger_version: Version for the Swagger documentation.
-            swagger_description: Description for the Swagger documentation.
+            database_url: The URL for the database connection.
+            swagger_title: The title for the Swagger documentation.
+            swagger_version: The version for the Swagger documentation.
+            swagger_description: The description for the Swagger documentation.
             enable_swagger: Whether to enable Swagger documentation.
-            cors_origins: List of allowed CORS origins.
+            cors_origins: A list of allowed CORS origins.
+            debug: Whether to enable debug mode.
         """
         # Update config with any provided values that are not None
         update_values = {}
@@ -75,149 +66,54 @@ class LightApi:
         self.middleware = []
         self.engine, self.Session = setup_database(config.database_url)
         self.enable_swagger = config.enable_swagger
+        self.debug = debug
 
         if self.enable_swagger:
-            from .swagger import SwaggerGenerator
+            from .swagger import SwaggerGenerator, openapi_json_route, redoc_ui_route, swagger_ui_route
 
             self.swagger_generator = SwaggerGenerator(
                 title=config.swagger_title,
                 version=config.swagger_version,
                 description=config.swagger_description,
             )
+            self.routes.append(Route("/docs", swagger_ui_route, include_in_schema=False))
+            self.routes.append(Route("/redoc", redoc_ui_route, include_in_schema=False))
+            self.routes.append(Route("/openapi.json", openapi_json_route, include_in_schema=False))
 
-    def register(self, handler):
-        """
-        Register a model or endpoint class with the application.
-        Accepts a single SQLAlchemy model or RestEndpoint subclass per call.
-        """
-        from .swagger import openapi_json_route, swagger_ui_route
-
-        # If handler has route_patterns (custom endpoints)
-        route_patterns = getattr(handler, "route_patterns", None)
-        if route_patterns:
-            methods = (
-                handler.Configuration.http_method_names
-                if hasattr(handler, "Configuration") and hasattr(handler.Configuration, "http_method_names")
-                else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
-            )
-            endpoint_handler = self._create_handler(handler, methods)
-            for pattern in route_patterns:
-                self.routes.append(Route(pattern, endpoint_handler, methods=methods))
-                if self.enable_swagger:
-                    self.swagger_generator.register_endpoint(pattern, handler)
-            return
-
-        # If it's a SQLAlchemy model (RESTful resource)
-        if hasattr(handler, "__tablename__") and handler.__tablename__:
-            tablename = handler.__tablename__
-            methods = (
-                handler.Configuration.http_method_names
-                if hasattr(handler, "Configuration") and hasattr(handler.Configuration, "http_method_names")
-                else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
-            )
-            endpoint_handler = self._create_handler(handler, methods)
-            # Register /tablename and /tablename/{id}
-            base_path = f"/{tablename}"
-            id_path = f"/{tablename}/{{id}}"
-            self.routes.append(Route(base_path, endpoint_handler, methods=methods))
-            self.routes.append(Route(id_path, endpoint_handler, methods=methods))
-            if self.enable_swagger:
-                self.swagger_generator.register_endpoint(base_path, handler)
-                self.swagger_generator.register_endpoint(id_path, handler)
-            return
-
-        # If it's a RestEndpoint subclass without route_patterns or __tablename__
-        if hasattr(handler, "Configuration") or hasattr(handler, "get") or hasattr(handler, "post"):
-            path = f"/{handler.__name__.lower()}"
-            methods = (
-                handler.Configuration.http_method_names
-                if hasattr(handler, "Configuration") and hasattr(handler.Configuration, "http_method_names")
-                else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
-            )
-            endpoint_handler = self._create_handler(handler, methods)
-            self.routes.append(Route(path, endpoint_handler, methods=methods))
-            if self.enable_swagger:
-                self.swagger_generator.register_endpoint(path, handler)
-            return
-
-        raise TypeError(f"Handler must be a SQLAlchemy model class or RestEndpoint class. Got: {handler}")
-
-    def _create_handler(self, endpoint_class: Type["RestEndpoint"], methods: List[str]) -> Callable:
-        """
-        Create a request handler for an endpoint class.
+    def register(self, model_class: Type[Base]):
+        """Registers a SQLAlchemy model to generate CRUD endpoints.
 
         Args:
-            endpoint_class: The endpoint class to create a handler for.
-            methods: List of HTTP methods the endpoint supports.
-
-        Returns:
-            An async function that handles requests to the endpoint.
+            model_class: The SQLAlchemy model class to register.
         """
+        from . import handlers
 
-        async def handler(request):
-            try:
-                endpoint = endpoint_class()
+        base_path = f"/{model_class.__tablename__}"
+        id_path = f"/{model_class.__tablename__}/{{id}}"
 
-                if request.method in ["POST", "PUT", "PATCH"]:
-                    try:
-                        body = await request.body()
-                        if body:
-                            request.data = json.loads(body)
-                        else:
-                            request.data = {}
-                    except json.JSONDecodeError:
-                        request.data = {}
-                else:
-                    request.data = {}
+        self.routes.extend([
+            Route(base_path, handlers.CreateHandler(model_class, self.Session), methods=["POST"]),
+            Route(base_path, handlers.RetrieveAllHandler(model_class, self.Session), methods=["GET"]),
+            Route(id_path, handlers.ReadHandler(model_class, self.Session), methods=["GET"]),
+            Route(id_path, handlers.UpdateHandler(model_class, self.Session), methods=["PUT"]),
+            Route(id_path, handlers.PatchHandler(model_class, self.Session), methods=["PATCH"]),
+            Route(id_path, handlers.DeleteHandler(model_class, self.Session), methods=["DELETE"]),
+        ])
 
-                # Setup the endpoint and check for authentication errors
-                setup_result = endpoint._setup(request, self.Session())
-                if setup_result:
-                    return setup_result
-
-                method = request.method.lower()
-                if method.upper() not in [m.upper() for m in methods]:
-                    return JSONResponse({"error": f"Method {method} not allowed"}, status_code=405)
-
-                func = getattr(endpoint, method)
-                if iscoroutinefunction(func):
-                    result = await func(request)
-                else:
-                    result = func(request)
-
-                # Convert returned value to a Response instance
-                if isinstance(result, (Response, JSONResponse)):
-                    response = result
-                else:
-                    if isinstance(result, tuple) and len(result) == 2:
-                        body, status = result
-                    else:
-                        body, status = result, 200
-                    response = JSONResponse(body, status_code=status)
-
-                return response
-
-            except Exception as e:
-                return JSONResponse({"error": str(e)}, status_code=500)
-
-        return handler
+        if self.enable_swagger:
+            self.swagger_generator.register_endpoint(base_path, model_class)
+            self.swagger_generator.register_endpoint(id_path, model_class)
 
     def add_middleware(self, middleware_classes: List[Type["Middleware"]]):
-        """
-        Add middleware classes to the application.
+        """Adds middleware classes to the application.
 
         Args:
-            middleware_classes: List of middleware classes to add.
+            middleware_classes: A list of middleware classes to add.
         """
         self.middleware = middleware_classes
 
     def _print_endpoints(self):
-        """
-        Print all registered endpoints to the console.
-
-        This method displays a formatted table of all available endpoints,
-        including their paths, HTTP methods, and additional information.
-        """
+        """Prints all registered endpoints to the console."""
         if not self.routes:
             print("\n📡 No endpoints registered")
             return
@@ -226,54 +122,59 @@ class LightApi:
         print("🚀 LightAPI - Available Endpoints")
         print("=" * 60)
 
-        # Group routes by path for better display
         endpoint_info = []
-
         for route in self.routes:
             if hasattr(route, "path") and hasattr(route, "methods"):
                 path = route.path
                 methods = list(route.methods) if route.methods else ["*"]
-
-                # Skip special routes (docs, openapi)
-                if path in ["/api/docs", "/openapi.json"]:
+                if path in ["/docs", "/redoc", "/openapi.json"]:
                     continue
-
-                # Format methods string
                 methods_str = ", ".join(sorted(methods))
-
-                # Try to get endpoint class name if available
-                endpoint_name = "Unknown"
-                if hasattr(route, "endpoint"):
-                    if hasattr(route.endpoint, "__name__"):
-                        endpoint_name = route.endpoint.__name__
-                    elif hasattr(route.endpoint, "__class__"):
-                        endpoint_name = route.endpoint.__class__.__name__
-
+                endpoint_name = route.endpoint.__class__.__name__
                 endpoint_info.append({"path": path, "methods": methods_str, "name": endpoint_name})
 
         if not endpoint_info:
             print("📡 No API endpoints found (only system routes)")
             return
 
-        # Calculate column widths for formatting
         max_path_len = max(len(info["path"]) for info in endpoint_info)
         max_methods_len = max(len(info["methods"]) for info in endpoint_info)
 
-        # Print header
         print(f"{'Path':<{max_path_len + 2}} {'Methods':<{max_methods_len + 2}} Endpoint")
         print("-" * (max_path_len + max_methods_len + 20))
 
-        # Print each endpoint
         for info in sorted(endpoint_info, key=lambda x: x["path"]):
             print(f"{info['path']:<{max_path_len + 2}} {info['methods']:<{max_methods_len + 2}} {info['name']}")
 
-        # Print additional info
         if self.enable_swagger:
             base_url = f"http://{config.host}:{config.port}"
-            print(f"\n📚 API Documentation: {base_url}/api/docs")
+            print(f"\n📚 API Documentation: {base_url}/docs")
+            print(f"              ReDoc: {base_url}/redoc")
 
         print(f"\n🌐 Server will start on http://{config.host}:{config.port}")
         print("=" * 60)
+
+    def get_app(self) -> Starlette:
+        """Creates and returns a Starlette application instance.
+
+        Returns:
+            A Starlette application instance.
+        """
+        app = Starlette(debug=self.debug, routes=self.routes)
+
+        if config.cors_origins:
+            app.add_middleware(
+                StarletteCORSMiddleware,
+                allow_origins=config.cors_origins,
+                allow_credentials=True,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
+
+        if self.enable_swagger:
+            app.state.swagger_generator = self.swagger_generator
+        
+        return app
 
     def run(
         self,
@@ -282,16 +183,14 @@ class LightApi:
         debug: bool = None,
         reload: bool = None,
     ):
-        """
-        Run the application server.
+        """Runs the application server.
 
         Args:
-            host: Host address to bind to.
-            port: Port to bind to.
+            host: The host address to bind to.
+            port: The port to bind to.
             debug: Whether to enable debug mode.
             reload: Whether to enable auto-reload on code changes.
         """
-        # Update config with any provided values (only if not None)
         update_params = {}
         if host is not None:
             update_params["host"] = host
@@ -305,37 +204,23 @@ class LightApi:
         if update_params:
             config.update(**update_params)
 
-        # Print available endpoints before starting the server
         self._print_endpoints()
 
-        app = Starlette(debug=config.debug, routes=self.routes)
+        Base.metadata.create_all(self.engine)
 
-        # Add CORS middleware if origins are configured
-        if config.cors_origins:
-            app.add_middleware(
-                StarletteCORSMiddleware,
-                allow_origins=config.cors_origins,
-                allow_credentials=True,
-                allow_methods=["*"],
-                allow_headers=["*"],
-            )
-
-        # Always set up swagger generator if enabled
-        if self.enable_swagger:
-            app.state.swagger_generator = self.swagger_generator
+        app = self.get_app()
 
         uvicorn.run(
             app,
             host=config.host,
             port=config.port,
-            log_level="debug" if config.debug else "info",
+            log_level="debug" if self.debug else "info",
             reload=config.reload,
         )
 
 
 class Response(JSONResponse):
-    """
-    Custom JSON response class.
+    """Custom JSON response class.
 
     Extends Starlette's JSONResponse with a simplified constructor
     and default application/json media type.
@@ -349,15 +234,14 @@ class Response(JSONResponse):
         media_type: str = None,
         content_type: str = None,
     ):
-        """
-        Initialize a new Response.
+        """Initializes a new Response.
 
         Args:
             content: The response content.
-            status_code: HTTP status code.
-            headers: HTTP headers.
-            media_type: HTTP media type.
-            content_type: HTTP content type (alias for media_type).
+            status_code: The HTTP status code.
+            headers: The HTTP headers.
+            media_type: The HTTP media type.
+            content_type: The HTTP content type (alias for media_type).
         """
         # Store the original content for tests to access
         self._test_content = content
@@ -374,7 +258,7 @@ class Response(JSONResponse):
         )
 
     def __getattribute__(self, name):
-        """Override attribute access to provide test compatibility for body."""
+        """Overrides attribute access to provide test compatibility for body."""
         if name == "body":
             # Check if we're in a test context (looking for TestClient or similar)
             import inspect
@@ -432,8 +316,8 @@ class Response(JSONResponse):
         return super().__getattribute__(name)
 
     def decode(self):
-        """
-        Decode the body content for tests that expect this method.
+        """Decodes the body content for tests that expect this method.
+
         This method maintains compatibility with tests that expect
         the body to be bytes with a decode method.
         """
@@ -454,16 +338,14 @@ class Response(JSONResponse):
 
 
 class Middleware:
-    """
-    Base class for middleware components.
+    """Base class for middleware components.
 
     Middleware can process requests before they reach the endpoint
     and responses before they are returned to the client.
     """
 
     def process(self, request, response):
-        """
-        Process a request or response.
+        """Processes a request or response.
 
         This method is called twice during request handling:
         1. Before the request reaches the endpoint (response is None)
@@ -480,21 +362,19 @@ class Middleware:
 
 
 class CORSMiddleware(Middleware):
-    """
-    CORS (Cross-Origin Resource Sharing) middleware.
+    """CORS (Cross-Origin Resource Sharing) middleware.
 
     Handles CORS preflight requests and adds appropriate headers to responses.
     This provides a more flexible alternative to Starlette's built-in CORS middleware.
     """
 
     def __init__(self, allow_origins=None, allow_methods=None, allow_headers=None):
-        """
-        Initialize CORS middleware.
+        """Initializes CORS middleware.
 
         Args:
-            allow_origins: List of allowed origins, defaults to ['*']
-            allow_methods: List of allowed HTTP methods
-            allow_headers: List of allowed headers
+            allow_origins: A list of allowed origins, defaults to ['*'].
+            allow_methods: A list of allowed HTTP methods.
+            allow_headers: A list of allowed headers.
         """
         if allow_origins is None:
             allow_origins = ["*"]
@@ -508,15 +388,14 @@ class CORSMiddleware(Middleware):
         self.allow_headers = allow_headers
 
     def process(self, request, response):
-        """
-        Process CORS requests and add appropriate headers.
+        """Processes CORS requests and add appropriate headers.
 
         Args:
-            request: The HTTP request
-            response: The HTTP response (None for pre-processing)
+            request: The HTTP request.
+            response: The HTTP response (None for pre-processing).
 
         Returns:
-            Response with CORS headers or preflight response
+            A response with CORS headers or a preflight response.
         """
         if response is None:
             # Handle preflight OPTIONS requests
@@ -568,19 +447,17 @@ class CORSMiddleware(Middleware):
 
 
 class AuthenticationMiddleware(Middleware):
-    """
-    Authentication middleware that integrates with authentication classes.
+    """Authentication middleware that integrates with authentication classes.
 
     Automatically handles authentication and returns appropriate error responses
     when authentication fails. Supports skipping authentication for OPTIONS requests.
     """
 
     def __init__(self, authentication_class=None):
-        """
-        Initialize authentication middleware.
+        """Initializes authentication middleware.
 
         Args:
-            authentication_class: The authentication class to use
+            authentication_class: The authentication class to use.
         """
         self.authentication_class = authentication_class
         if authentication_class:
@@ -589,15 +466,14 @@ class AuthenticationMiddleware(Middleware):
             self.authenticator = None
 
     def process(self, request, response):
-        """
-        Process authentication for requests.
+        """Processes authentication for requests.
 
         Args:
-            request: The HTTP request
-            response: The HTTP response (None for pre-processing)
+            request: The HTTP request.
+            response: The HTTP response (None for pre-processing).
 
         Returns:
-            Error response if authentication fails, otherwise None/response
+            An error response if authentication fails, otherwise None/response.
         """
         if response is None and self.authenticator:
             # Pre-processing: check authentication

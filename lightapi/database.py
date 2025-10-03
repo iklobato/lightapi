@@ -6,14 +6,28 @@ from sqlalchemy.orm import as_declarative, declared_attr, sessionmaker
 
 from .config import config
 
+
+def setup_database(database_url: str = "sqlite:///app.db"):
+    """Sets up the database connection and returns the engine and session factory.
+
+    Args:
+        database_url: The SQLAlchemy database URL.
+
+    Returns:
+        A tuple containing the SQLAlchemy engine and session factory.
+    """
+    import sqlalchemy
+    engine = sqlalchemy.create_engine(database_url)
+    Session = sqlalchemy.orm.sessionmaker(bind=engine)
+    return engine, Session
+
 engine = create_engine(config.database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 @as_declarative()
 class Base:
-    """
-    Custom SQLAlchemy base class for all models.
+    """Custom SQLAlchemy base class for all models.
 
     Provides automatic __tablename__ generation and utility methods
     for model instances to make working with SQLAlchemy models easier.
@@ -30,8 +44,7 @@ class Base:
 
     @property
     def table(self):
-        """
-        Get the table metadata for this model.
+        """Gets the table metadata for this model.
 
         Returns:
             The SQLAlchemy Table object for this model.
@@ -40,29 +53,28 @@ class Base:
 
     @declared_attr
     def __tablename__(cls):
-        """
-        Generate the table name based on the class name.
+        """Generates the table name based on the class name.
 
         The table name is derived by converting the class name to lowercase.
 
         Returns:
-            str: The generated table name.
+            The generated table name.
         """
         return cls.__name__.lower()
 
     @property
     def pk(self):
+        """Returns the primary key of the model instance."""
         return self.id
 
     def serialize(self) -> dict:
-        """
-        Convert the model instance into a dictionary representation.
+        """Converts the model instance into a dictionary representation.
 
         Each key in the dictionary corresponds to a column name, and the value
         is the data stored in that column. Datetime objects are converted to strings.
 
         Returns:
-            dict: A dictionary representation of the model instance.
+            A dictionary representation of the model instance.
         """
         return {
             column.name: (

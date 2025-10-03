@@ -9,6 +9,44 @@ This guide covers common issues you might encounter when using LightAPI and thei
 
 ## Runtime Errors
 
+### Understanding Error Responses
+
+LightAPI now provides detailed error responses in debug mode to help with troubleshooting.
+
+#### Validation Errors (4xx)
+
+When a request fails due to invalid data (e.g., missing required fields, incorrect data types), you will receive a `4xx` status code with a JSON body describing the error.
+
+**Example: Unique Constraint Violation (`409 Conflict`)**
+```json
+{
+  "error": "Unique constraint violated for users.email."
+}
+```
+
+**Example: Invalid Datetime Format (`400 Bad Request`)**
+```json
+{
+  "error": "Invalid datetime format for field 'published_date'"
+}
+```
+
+#### Server Errors (500)
+
+When an unexpected server error occurs, LightAPI will return a `500 Internal Server Error` with a detailed JSON body in debug mode.
+
+**Example: 500 Error Response (in debug mode)**
+```json
+{
+  "error": "Internal Server Error",
+  "message": "...",
+  "traceback": "..."
+}
+```
+
+In production mode (`debug=False`), the `message` and `traceback` fields are omitted to avoid leaking sensitive information.
+
+
 ### Content-Length Errors
 
 **Error**: `RuntimeError: Response content longer than Content-Length`

@@ -119,10 +119,8 @@ from lightapi import LightApi
 from models import User, Post
 
 app = LightApi(database_url="sqlite:///blog.db")
-app.register({
-    '/users': User,
-    '/posts': Post
-})
+app.register(User)
+app.register(Post)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
@@ -132,9 +130,14 @@ if __name__ == '__main__':
 
 Once your API is running, you can test it in several ways:
 
-### 1. Interactive Swagger Documentation
+### 1. Interactive API Documentation
 
-Visit **http://localhost:8000/docs** in your browser for an interactive API documentation interface where you can:
+LightAPI provides two interactive documentation interfaces out of the box:
+
+- **Swagger UI**: Visit **http://localhost:8000/docs** in your browser.
+- **ReDoc**: Visit **http://localhost:8000/redoc** for an alternative documentation layout.
+
+Both interfaces allow you to:
 - Browse all available endpoints
 - Test API calls directly from the browser
 - View request/response schemas

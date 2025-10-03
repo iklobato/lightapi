@@ -51,9 +51,7 @@ from lightapi import LightApi
 from app.models import User
 
 app = LightApi()
-app.register({
-    '/users': User
-})
+app.register(User)
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8000)
