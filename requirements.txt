@@ -7,3 +7,4 @@ psycopg2-binary==2.9.9
 PyJWT==2.9.0
 pytest==8.2.2
 PyYAML>=5.1
+python-dateutil==2.9.0.post0

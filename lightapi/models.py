@@ -8,31 +8,6 @@ from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from lightapi.database import Base
 
 
-def setup_database(database_url: str = "sqlite:///app.db"):
-    """
-    Set up the database connection and create tables.
-
-    Initializes SQLAlchemy with the provided database URL,
-    creates the database tables, and returns the engine
-    and session factory.
-
-    Args:
-        database_url: The SQLAlchemy database URL.
-
-    Returns:
-        tuple: A tuple containing (engine, Session).
-    """
-    engine = sqlalchemy.create_engine(database_url)
-
-    try:
-        Base.metadata.create_all(engine)
-    except Exception:
-        pass
-
-    Session = sqlalchemy.orm.sessionmaker(bind=engine)
-    return engine, Session
-
-
 def register_model_class(cls):
     """
     Register a RestEndpoint class as a SQLAlchemy model.
