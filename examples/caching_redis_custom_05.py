@@ -5,6 +5,7 @@ from sqlalchemy import Column, Integer, String
 
 from lightapi.cache import RedisCache
 from lightapi.core import LightApi, Response
+from lightapi.models import Base
 from lightapi.rest import RestEndpoint
 
 
@@ -57,7 +58,7 @@ class CustomCache(RedisCache):
 
 
 # Endpoint with slow operation that benefits from caching
-class WeatherEndpoint(RestEndpoint):
+class WeatherEndpoint(Base, RestEndpoint):
     __abstract__ = True  # Not a database model
 
     class Configuration:
@@ -121,7 +122,7 @@ class WeatherEndpoint(RestEndpoint):
 
 
 # Configurable endpoint with different cache behaviors
-class ConfigurableCacheEndpoint(RestEndpoint):
+class ConfigurableCacheEndpoint(Base, RestEndpoint):
     __abstract__ = True  # Not a database model
 
     class Configuration:

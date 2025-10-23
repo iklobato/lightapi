@@ -110,8 +110,8 @@ class ProductPaginator(Paginator):
         return Page(items, page, limit, total)
 
 # Product model with integrated filtering and pagination
-@register_model_class
-class Product(RestEndpoint):
+
+class Product(Base, RestEndpoint):
     __tablename__ = 'pagination_products'
     
     id = Column(Integer, primary_key=True)

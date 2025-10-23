@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from examples.filtering_pagination import (
+from examples.filtering_pagination_04 import (
     Product,
     ProductFilter,
     ProductPaginator,
@@ -457,7 +457,7 @@ class TestProductModel:
         # Call the init_database function with a custom engine
         from unittest.mock import patch
 
-        with patch("examples.filtering_pagination.create_engine", return_value=engine):
+        with patch("examples.filtering_pagination_04.create_engine", return_value=engine):
             init_database()
 
         # Create a session to verify the data

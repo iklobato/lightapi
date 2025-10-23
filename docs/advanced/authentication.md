@@ -30,7 +30,7 @@ from lightapi.core import LightApi
 from lightapi.auth import JWTAuthentication
 import os
 
-class SecureEndpoint(RestEndpoint):
+class SecureEndpoint(Base, RestEndpoint):
     """Endpoint protected by JWT authentication"""
     __tablename__ = 'secure_data'
     
@@ -114,7 +114,7 @@ from lightapi.core import LightApi, CORSMiddleware
 from lightapi.auth import JWTAuthentication
 from lightapi.rest import RestEndpoint
 
-class CORSAwareEndpoint(RestEndpoint):
+class CORSAwareEndpoint(Base, RestEndpoint):
     """Endpoint with automatic CORS preflight support"""
     
     class Configuration:
@@ -333,7 +333,7 @@ class MFARequiredError(Exception):
     pass
 
 # Usage in endpoint
-class SecureAdminEndpoint(RestEndpoint):
+class SecureAdminEndpoint(Base, RestEndpoint):
     class Configuration:
         authentication_class = MFAJWTAuthentication
         http_method_names = ['GET', 'POST', 'PUT', 'DELETE']
@@ -404,7 +404,7 @@ def require_roles(*roles):
         return wrapper
     return decorator
 
-class AdminEndpoint(RestEndpoint):
+class AdminEndpoint(Base, RestEndpoint):
     """Admin-only endpoint with granular permissions"""
     __tablename__ = 'admin_data'
     
@@ -548,7 +548,7 @@ class APIKeyAuthentication(BaseAuthentication):
         )
 
 # Usage
-class APIEndpoint(RestEndpoint):
+class APIEndpoint(Base, RestEndpoint):
     class Configuration:
         authentication_class = APIKeyAuthentication
         http_method_names = ['GET', 'POST']

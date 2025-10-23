@@ -19,12 +19,11 @@ import time
 from datetime import datetime, timedelta
 from lightapi import LightApi
 from lightapi.rest import RestEndpoint
-from lightapi.models import register_model_class
+from lightapi.models import Base
 from lightapi.cache import cache_manager
 from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Boolean
 
-@register_model_class
-class CachedProduct(RestEndpoint):
+class CachedProduct(Base, RestEndpoint):
     """Product model with advanced caching strategies"""
     __tablename__ = "cached_products"
     
@@ -245,8 +244,7 @@ class CachedProduct(RestEndpoint):
         deleted_count = cache_manager.delete_pattern(pattern)
         return deleted_count
 
-@register_model_class
-class CacheStats(RestEndpoint):
+class CacheStats(Base, RestEndpoint):
     """Endpoint for cache statistics and management"""
     __tablename__ = "cache_stats"
     
@@ -322,8 +320,7 @@ class CacheStats(RestEndpoint):
         except Exception as e:
             return {"error": f"Pattern delete error: {str(e)}"}, 500
 
-@register_model_class
-class CacheDemo(RestEndpoint):
+class CacheDemo(Base, RestEndpoint):
     """Demo endpoint for cache performance testing"""
     __tablename__ = "cache_demo"
     

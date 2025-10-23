@@ -16,12 +16,11 @@ import asyncio
 import time
 from lightapi import LightApi
 from lightapi.rest import RestEndpoint
-from lightapi.models import register_model_class
+from lightapi.models import Base
 from sqlalchemy import Column, Integer, String, Float, DateTime
 from datetime import datetime
 
-@register_model_class
-class AsyncItem(RestEndpoint):
+class AsyncItem(Base, RestEndpoint):
     """Example model with async-optimized endpoints"""
     __tablename__ = "async_items"
     
@@ -92,8 +91,7 @@ class AsyncItem(RestEndpoint):
         except Exception as e:
             return {"error": f"Async processing error: {str(e)}"}, 500
 
-@register_model_class
-class FastItem(RestEndpoint):
+class FastItem(Base, RestEndpoint):
     """Example model for comparison - synchronous processing"""
     __tablename__ = "fast_items"
     

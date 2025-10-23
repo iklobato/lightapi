@@ -2,6 +2,7 @@ from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from lightapi.core import LightApi
+from lightapi.models import Base
 from lightapi.rest import RestEndpoint, Validator
 from lightapi.swagger import SwaggerGenerator
 
@@ -43,7 +44,7 @@ class TaskValidator(Validator):
 
 
 # Models with docstrings for better Swagger documentation
-class Project(RestEndpoint):
+class Project(Base, RestEndpoint):
     """
     Project model for task organization.
 
@@ -89,7 +90,7 @@ class Project(RestEndpoint):
         return super().post(request)
 
 
-class Task(RestEndpoint):
+class Task(Base, RestEndpoint):
     """
     Task model for tracking work items.
 

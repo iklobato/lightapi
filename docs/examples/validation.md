@@ -45,8 +45,8 @@ class ProductValidator(Validator):
         return value.upper()
 
 # Define a model that uses the validator
-@register_model_class
-class Product(RestEndpoint):
+
+class Product(Base, RestEndpoint):
     __tablename__ = 'products'
     
     id = Column(Integer, primary_key=True)

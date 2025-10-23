@@ -28,7 +28,7 @@ from lightapi.core import (
     Response,
 )
 from lightapi.filters import ParameterFilter
-from lightapi.models import Base, register_model_class
+from lightapi.models import Base
 from lightapi.pagination import Paginator
 from lightapi.rest import RestEndpoint, Validator
 from lightapi.swagger import SwaggerGenerator
@@ -78,8 +78,7 @@ class CustomEndpointValidator(Validator):
 
 
 # --- Models & Endpoints ---
-@register_model_class
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
     name = Column(String(100))
@@ -308,7 +307,7 @@ class CustomJWTAuth(JWTAuthentication):
         return super().authenticate(request)
 
 
-class AuthEndpoint(RestEndpoint):
+class AuthEndpoint(Base, RestEndpoint):
     __abstract__ = True
 
     def post(self, request):
@@ -332,7 +331,7 @@ class AuthEndpoint(RestEndpoint):
             return Response({"error": "Invalid credentials"}, status_code=401)
 
 
-class SecretResource(RestEndpoint):
+class SecretResource(Base, RestEndpoint):
     __abstract__ = True
 
     class Configuration:
@@ -344,15 +343,14 @@ class SecretResource(RestEndpoint):
         return {"message": f"Hello, {username}! You have {role} access.", "secret_data": "This is protected information"}, 200
 
 
-class PublicResource(RestEndpoint):
+class PublicResource(Base, RestEndpoint):
     __abstract__ = True
 
     def get(self, request):
         return {"message": "This is public information"}, 200
 
 
-@register_model_class
-class UserProfile(RestEndpoint):
+class UserProfile(Base, RestEndpoint):
     __tablename__ = "user_profiles"
     id = Column(Integer, primary_key=True)
     user_id = Column(String(50))
@@ -403,7 +401,7 @@ class CustomCache(RedisCache):
         self.cache_data = {}
 
 
-class WeatherEndpoint(RestEndpoint):
+class WeatherEndpoint(Base, RestEndpoint):
     __abstract__ = True
 
     class Configuration:
@@ -435,7 +433,7 @@ class WeatherEndpoint(RestEndpoint):
         return Response(data, headers={"X-Cache": "MISS"})
 
 
-class ConfigurableCacheEndpoint(RestEndpoint):
+class ConfigurableCacheEndpoint(Base, RestEndpoint):
     __abstract__ = True
 
     class Configuration:
@@ -537,7 +535,7 @@ class RateLimitMiddleware(Middleware):
 
 
 # --- Hello World Endpoint for Middleware Test ---
-class HelloWorldEndpoint(RestEndpoint):
+class HelloWorldEndpoint(Base, RestEndpoint):
     __abstract__ = True
 
     def get(self, request):
@@ -551,7 +549,7 @@ class HelloWorldEndpoint(RestEndpoint):
 
 
 # --- Async Demo Endpoint ---
-class AsyncDemoEndpoint(RestEndpoint):
+class AsyncDemoEndpoint(Base, RestEndpoint):
     __abstract__ = True
 
     async def get(self, request):

@@ -3,6 +3,7 @@ from sqlalchemy import Column, Integer, String
 from lightapi.auth import JWTAuthentication
 from lightapi.cache import RedisCache
 from lightapi.core import LightApi, Middleware
+from lightapi.models import Base
 from lightapi.filters import ParameterFilter
 from lightapi.pagination import Paginator
 from lightapi.rest import Response, RestEndpoint, Validator
@@ -19,7 +20,8 @@ class CustomEndpointValidator(Validator):
         return value
 
 
-class Company(RestEndpoint):
+class Company(Base, RestEndpoint):
+    __table_args__ = {"extend_existing": True}
     """Company entity for demonstration purposes.
 
     This endpoint allows management of company information.
@@ -64,7 +66,7 @@ class CustomPaginator(Paginator):
     sort = True
 
 
-class CustomEndpoint(RestEndpoint):
+class CustomEndpoint(Base, RestEndpoint):
     __tablename__ = "custom_endpoints"
 
     id = Column(Integer, primary_key=True)

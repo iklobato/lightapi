@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker
 
 from lightapi.core import LightApi
 from lightapi.filters import ParameterFilter
-from lightapi.models import Base, register_model_class
+from lightapi.models import Base
 from lightapi.pagination import Paginator
 from lightapi.rest import RestEndpoint
 
@@ -128,8 +128,7 @@ class ProductPaginator(Paginator):
 
 
 # Product model with filtering and pagination
-@register_model_class
-class Product(RestEndpoint):
+class Product(Base, RestEndpoint):
     __tablename__ = "pagination_products"
 
     id = Column(Integer, primary_key=True)

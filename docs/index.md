@@ -78,8 +78,8 @@ app.run()
 from sqlalchemy import Column, Integer, String
 from lightapi import LightApi, RestEndpoint, Base, register_model_class
 
-@register_model_class
-class User(RestEndpoint):
+
+class User(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)

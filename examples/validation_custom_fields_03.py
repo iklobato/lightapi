@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String
 
 from lightapi.core import LightApi, Response
-from lightapi.models import Base, register_model_class
+from lightapi.models import Base
 from lightapi.rest import RestEndpoint, Validator
 
 
@@ -32,8 +32,7 @@ class ProductValidator(Validator):
 
 
 # Define a model that uses the validator
-@register_model_class
-class Product(RestEndpoint):
+class Product(Base, RestEndpoint):
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True)

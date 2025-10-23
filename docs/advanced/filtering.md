@@ -12,7 +12,7 @@ The `ParameterFilter` inspects query parameters (e.g., `?status=completed&catego
 from lightapi.rest import RestEndpoint
 from lightapi.filters import ParameterFilter
 
-class TaskEndpoint(RestEndpoint):
+class TaskEndpoint(Base, RestEndpoint):
     class Configuration:
         filter_class = ParameterFilter
 
@@ -45,7 +45,7 @@ class DateRangeFilter(BaseFilter):
             return query
         return queryset
 
-class TaskEndpoint(RestEndpoint):
+class TaskEndpoint(Base, RestEndpoint):
     class Configuration:
         filter_class = DateRangeFilter
 ```

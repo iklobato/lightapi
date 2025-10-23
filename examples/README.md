@@ -15,36 +15,36 @@ Then visit `http://localhost:8000/docs` to see the auto-generated API documentat
 ## 📚 Examples Overview
 
 ### 🔧 Basic Examples
-- **`rest_crud_basic.py`** - Basic CRUD operations with SQLAlchemy models
-- **`example.py`** - Simple getting started example
-- **`general_usage.py`** - General usage patterns and best practices
+- **`rest_crud_basic_01.py`** - Basic CRUD operations with SQLAlchemy models
+- **`example_01.py`** - Simple getting started example
+- **`general_usage_01.py`** - General usage patterns and best practices
 
 ### ⚡ Performance & Async
-- **`async_performance.py`** - Async/await support for high-performance APIs
-- **`caching_redis_custom.py`** - Redis caching strategies and performance optimization
-- **`advanced_caching_redis.py`** - Advanced caching with TTL, invalidation, and statistics
+- **`async_performance_06.py`** - Async/await support for high-performance APIs
+- **`caching_redis_custom_05.py`** - Redis caching strategies and performance optimization
+- **`advanced_caching_redis_05.py`** - Advanced caching with TTL, invalidation, and statistics
 
 ### 🔐 Security & Authentication
-- **`authentication_jwt.py`** - JWT authentication with login/logout
-- **`middleware_cors_auth.py`** - CORS and authentication middleware
-- **`middleware_custom.py`** - Custom middleware development
+- **`authentication_jwt_02.py`** - JWT authentication with login/logout
+- **`middleware_cors_auth_07.py`** - CORS and authentication middleware
+- **`middleware_custom_07.py`** - Custom middleware development
 
 ### 🔍 Data Management
-- **`filtering_pagination.py`** - Basic filtering and pagination
-- **`advanced_filtering_pagination.py`** - Complex queries, search, and advanced filtering
-- **`validation_custom_fields.py`** - Basic request validation
-- **`advanced_validation.py`** - Comprehensive validation with edge cases
+- **`filtering_pagination_04.py`** - Basic filtering and pagination
+- **`advanced_filtering_pagination_04.py`** - Complex queries, search, and advanced filtering
+- **`validation_custom_fields_03.py`** - Basic request validation
+- **`advanced_validation_03.py`** - Comprehensive validation with edge cases
 
 ### 📖 Documentation & Configuration
-- **`swagger_openapi_docs.py`** - OpenAPI/Swagger documentation customization
-- **`yaml_configuration.py`** - YAML-driven API generation and configuration
+- **`swagger_openapi_docs_08.py`** - OpenAPI/Swagger documentation customization
+- **`yaml_configuration_09.py`** - YAML-driven API generation and configuration
 
 ### 🏗️ Complex Applications
-- **`blog_post.py`** - Blog post management system
-- **`relationships_sqlalchemy.py`** - SQLAlchemy relationships and foreign keys
-- **`comprehensive_ideal_usage.py`** - Comprehensive feature showcase
-- **`mega_example.py`** - Large-scale application example
-- **`user_goal_example.py`** - User management with goals and relationships
+- **`blog_post_10.py`** - Blog post management system
+- **`relationships_sqlalchemy_10.py`** - SQLAlchemy relationships and foreign keys
+- **`comprehensive_ideal_usage_10.py`** - Comprehensive feature showcase
+- **`mega_example_10.py`** - Large-scale application example
+- **`user_goal_example_10.py`** - User management with goals and relationships
 
 ## 🛠️ Prerequisites
 
@@ -73,7 +73,7 @@ pip install lightapi[all]
 
 ### 1. Basic CRUD Example
 ```bash
-python examples/rest_crud_basic.py
+python examples/rest_crud_basic_01.py
 ```
 - Visit: `http://localhost:8000/docs`
 - Test endpoints: `/products`, `/products/{id}`
@@ -81,7 +81,7 @@ python examples/rest_crud_basic.py
 
 ### 2. Async Performance Example
 ```bash
-python examples/async_performance.py
+python examples/async_performance_06.py
 ```
 - Compare sync vs async performance
 - Test concurrent request handling
@@ -89,7 +89,7 @@ python examples/async_performance.py
 
 ### 3. JWT Authentication Example
 ```bash
-LIGHTAPI_JWT_SECRET="your-secret-key" python examples/authentication_jwt.py
+LIGHTAPI_JWT_SECRET="your-secret-key" python examples/authentication_jwt_02.py
 ```
 - Login: `POST /authendpoint`
 - Access protected: `GET /secretresource`
@@ -101,7 +101,7 @@ LIGHTAPI_JWT_SECRET="your-secret-key" python examples/authentication_jwt.py
 redis-server
 
 # Run example
-python examples/advanced_caching_redis.py
+python examples/advanced_caching_redis_05.py
 ```
 - Test cache hits/misses
 - Monitor cache statistics
@@ -109,7 +109,7 @@ python examples/advanced_caching_redis.py
 
 ### 5. Advanced Filtering Example
 ```bash
-python examples/advanced_filtering_pagination.py
+python examples/advanced_filtering_pagination_04.py
 ```
 - Test complex queries
 - Try pagination and sorting
@@ -117,7 +117,7 @@ python examples/advanced_filtering_pagination.py
 
 ### 6. Validation Example
 ```bash
-python examples/advanced_validation.py
+python examples/advanced_validation_03.py
 ```
 - Test field validation
 - Try invalid data
@@ -195,7 +195,7 @@ wait
 ## 🔧 Feature Categories
 
 ### 🔧 Basic CRUD Operations
-**Files**: `rest_crud_basic.py`, `example.py`
+**Files**: `rest_crud_basic_01.py`, `example_01.py`
 
 Learn the fundamentals of creating REST APIs with automatic CRUD operations:
 - Model definition with SQLAlchemy
@@ -210,7 +210,7 @@ Learn the fundamentals of creating REST APIs with automatic CRUD operations:
 - SQLAlchemy model integration
 
 ### ⚡ Performance & Async
-**Files**: `async_performance.py`, `caching_redis_custom.py`, `advanced_caching_redis.py`
+**Files**: `async_performance_06.py`, `caching_redis_custom_05.py`, `advanced_caching_redis_05.py`
 
 Discover async/await patterns and caching strategies for high-performance APIs:
 - Async endpoint methods
@@ -225,7 +225,7 @@ Discover async/await patterns and caching strategies for high-performance APIs:
 - Performance comparisons
 
 ### 🔐 Security & Authentication
-**Files**: `authentication_jwt.py`, `middleware_cors_auth.py`, `middleware_custom.py`
+**Files**: `authentication_jwt_02.py`, `middleware_cors_auth_07.py`, `middleware_custom_07.py`
 
 Implement JWT authentication, CORS, and custom security middleware:
 - JWT token generation and validation
@@ -240,7 +240,7 @@ Implement JWT authentication, CORS, and custom security middleware:
 - CORS origins setup
 
 ### 🔍 Data Management
-**Files**: `filtering_pagination.py`, `advanced_filtering_pagination.py`, `validation_custom_fields.py`, `advanced_validation.py`
+**Files**: `filtering_pagination_04.py`, `advanced_filtering_pagination_04.py`, `validation_custom_fields_03.py`, `advanced_validation_03.py`
 
 Master filtering, pagination, sorting, and complex queries:
 - Query parameter handling
@@ -308,19 +308,19 @@ app.run(debug=True)
 ## 📚 Learning Path
 
 ### Beginner (Start Here)
-1. **`rest_crud_basic.py`** - Learn basic CRUD operations
-2. **`example.py`** - Understand core concepts
-3. **`swagger_openapi_docs.py`** - Explore auto-documentation
+1. **`rest_crud_basic_01.py`** - Learn basic CRUD operations
+2. **`example_01.py`** - Understand core concepts
+3. **`swagger_openapi_docs_08.py`** - Explore auto-documentation
 
 ### Intermediate
-1. **`async_performance.py`** - Learn async programming
-2. **`authentication_jwt.py`** - Add security
-3. **`caching_redis_custom.py`** - Implement caching
+1. **`async_performance_06.py`** - Learn async programming
+2. **`authentication_jwt_02.py`** - Add security
+3. **`caching_redis_custom_05.py`** - Implement caching
 
 ### Advanced
-1. **`advanced_filtering_pagination.py`** - Master complex queries
-2. **`advanced_validation.py`** - Implement comprehensive validation
-3. **`comprehensive_ideal_usage.py`** - Build production-ready APIs
+1. **`advanced_filtering_pagination_04.py`** - Master complex queries
+2. **`advanced_validation_03.py`** - Implement comprehensive validation
+3. **`comprehensive_ideal_usage_10.py`** - Build production-ready APIs
 
 ## 🤝 Contributing Examples
 

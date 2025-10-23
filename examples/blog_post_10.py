@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
-from lightapi import LightApi
+from lightapi import Base, LightApi
 from lightapi.database import Base
 from lightapi.rest import RestEndpoint
 
@@ -33,7 +33,7 @@ class Comment(Base):
     post = relationship("BlogPost", back_populates="comments")
 
 
-class Endpoint(RestEndpoint):
+class Endpoint(Base, RestEndpoint):
     __tablename__ = "asdasd"
 
     def get(self, post_id: int):

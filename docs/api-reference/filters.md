@@ -70,8 +70,8 @@ Provides automatic filtering based on query parameters.
 #### Configuration
 
 ```python
-@register_model_class
-class Product(RestEndpoint):
+
+class Product(Base, RestEndpoint):
     __tablename__ = 'products'
     
     id = Column(Integer, primary_key=True)
@@ -353,8 +353,8 @@ class FacetedSearchFilter(BaseFilter):
 ### With REST Endpoints
 
 ```python
-@register_model_class
-class Product(RestEndpoint):
+
+class Product(Base, RestEndpoint):
     __tablename__ = 'products'
     
     id = Column(Integer, primary_key=True)
@@ -385,8 +385,8 @@ class Product(RestEndpoint):
 ### With Pagination
 
 ```python
-@register_model_class
-class Product(RestEndpoint):
+
+class Product(Base, RestEndpoint):
     class Configuration:
         filter_class = AdvancedParameterFilter
         pagination_class = CustomPaginator

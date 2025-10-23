@@ -4,6 +4,7 @@ import uuid
 from sqlalchemy import Column, Integer, String
 
 from lightapi.core import LightApi, Middleware, Response
+from lightapi.models import Base
 from lightapi.rest import RestEndpoint
 
 
@@ -169,7 +170,7 @@ class RateLimitMiddleware(Middleware):
 
 
 # A simple resource for testing middleware
-class HelloWorldEndpoint(RestEndpoint):
+class HelloWorldEndpoint(Base, RestEndpoint):
     __abstract__ = True  # Not a database model
 
     def get(self, request):

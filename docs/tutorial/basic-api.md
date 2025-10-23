@@ -233,8 +233,8 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from lightapi import RestEndpoint, register_model_class
 
-@register_model_class
-class Author(RestEndpoint):
+
+class Author(Base, RestEndpoint):
     __tablename__ = 'authors'
     
     id = Column(Integer, primary_key=True)
@@ -247,8 +247,8 @@ class Author(RestEndpoint):
     # Relationship to books
     books = relationship("Book", back_populates="author")
 
-@register_model_class
-class Category(RestEndpoint):
+
+class Category(Base, RestEndpoint):
     __tablename__ = 'categories'
     
     id = Column(Integer, primary_key=True)
@@ -259,8 +259,8 @@ class Category(RestEndpoint):
     # Relationship to books
     books = relationship("Book", back_populates="category")
 
-@register_model_class
-class Book(RestEndpoint):
+
+class Book(Base, RestEndpoint):
     __tablename__ = 'books'
     
     id = Column(Integer, primary_key=True)

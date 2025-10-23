@@ -216,7 +216,7 @@ app.add_middleware([
 2. **Separate Layers**
    ```python
    # Use caching at application level, pagination at endpoint level
-   class CachedEndpoint(RestEndpoint):
+   class CachedEndpoint(Base, RestEndpoint):
        class Configuration:
            caching_class = RedisCache  # No pagination here
    
@@ -234,7 +234,7 @@ app.add_middleware([
    ```python
    from sqlalchemy import Index
    
-   class User(RestEndpoint):
+   class User(Base, RestEndpoint):
        email = Column(String, index=True)  # Add index
        name = Column(String)
        
@@ -324,7 +324,7 @@ from sqlalchemy import Column, Integer, String
 # Set environment variables
 os.environ['LIGHTAPI_JWT_SECRET'] = 'test-secret-key-123'
 
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)

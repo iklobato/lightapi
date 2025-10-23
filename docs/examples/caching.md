@@ -51,8 +51,8 @@ export REDIS_PASSWORD=your-redis-password
 ### 2. Basic Cached Endpoint
 
 ```python
-@register_model_class
-class CachedProduct(RestEndpoint):
+
+class CachedProduct(Base, RestEndpoint):
     __tablename__ = 'cached_products'
     
     id = Column(Integer, primary_key=True)
@@ -75,7 +75,7 @@ class CachedProduct(RestEndpoint):
 ### 3. Custom Cache Configuration
 
 ```python
-class CustomCachedProduct(RestEndpoint):
+class CustomCachedProduct(Base, RestEndpoint):
     __tablename__ = 'products'
     
     id = Column(Integer, primary_key=True)
@@ -128,7 +128,7 @@ class CustomCachedProduct(RestEndpoint):
 ### 4. Cache Invalidation
 
 ```python
-class SmartCachedProduct(RestEndpoint):
+class SmartCachedProduct(Base, RestEndpoint):
     __tablename__ = 'products'
     
     id = Column(Integer, primary_key=True)
@@ -187,7 +187,7 @@ class SmartCachedProduct(RestEndpoint):
 ### 5. Advanced Caching Patterns
 
 ```python
-class AdvancedCachedEndpoint(RestEndpoint):
+class AdvancedCachedEndpoint(Base, RestEndpoint):
     __tablename__ = 'advanced_items'
     
     id = Column(Integer, primary_key=True)
@@ -336,7 +336,7 @@ curl -v http://localhost:8000/products
 ### 1. Cache Statistics
 
 ```python
-class CacheStatsEndpoint(RestEndpoint):
+class CacheStatsEndpoint(Base, RestEndpoint):
     __abstract__ = True
     
     def get(self, request):
@@ -361,7 +361,7 @@ class CacheStatsEndpoint(RestEndpoint):
 ### 2. Cache Health Check
 
 ```python
-class CacheHealthEndpoint(RestEndpoint):
+class CacheHealthEndpoint(Base, RestEndpoint):
     __abstract__ = True
     
     def get(self, request):
@@ -427,7 +427,7 @@ class CacheWarmingService:
 ### 2. Cache Tags and Invalidation
 
 ```python
-class TaggedCacheEndpoint(RestEndpoint):
+class TaggedCacheEndpoint(Base, RestEndpoint):
     __tablename__ = 'tagged_items'
     
     id = Column(Integer, primary_key=True)
@@ -478,7 +478,7 @@ class TaggedCacheEndpoint(RestEndpoint):
 import time
 import uuid
 
-class DistributedCacheEndpoint(RestEndpoint):
+class DistributedCacheEndpoint(Base, RestEndpoint):
     __tablename__ = 'expensive_items'
     
     id = Column(Integer, primary_key=True)
@@ -576,7 +576,7 @@ class ProductionCacheConfig:
     }
 
 # Use in endpoint
-class ConfiguredCachedEndpoint(RestEndpoint):
+class ConfiguredCachedEndpoint(Base, RestEndpoint):
     class Configuration:
         caching_class = RedisCache
         caching_method_names = ['GET']

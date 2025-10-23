@@ -64,7 +64,7 @@ Each handler returns either a `(body, status_code)` tuple, a `Response` instance
 from lightapi.rest import RestEndpoint
 from lightapi.auth import JWTAuthentication
 
-class UserEndpoint(RestEndpoint):
+class UserEndpoint(Base, RestEndpoint):
     class Configuration:
         http_method_names = ['GET', 'POST']
         authentication_class = JWTAuthentication

@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from starlette.testclient import TestClient
 
-from examples.middleware_cors_auth import Company, CustomEndpoint, create_app
+from examples.middleware_cors_auth_07 import Company, CustomEndpoint, create_app
 from lightapi.config import config
 from lightapi.core import Middleware, Response
 from lightapi.lightapi import LightApi

@@ -55,7 +55,7 @@ class CustomJWTAuth(JWTAuthentication):
 ### 3. Login Endpoint
 
 ```python
-class AuthEndpoint(RestEndpoint):
+class AuthEndpoint(Base, RestEndpoint):
     __abstract__ = True  # Not a database model
     
     def post(self, request):
@@ -86,7 +86,7 @@ class AuthEndpoint(RestEndpoint):
 ### 4. Protected Endpoints
 
 ```python
-class SecretResource(RestEndpoint):
+class SecretResource(Base, RestEndpoint):
     __abstract__ = True
     
     class Configuration:
@@ -111,8 +111,8 @@ class SecretResource(RestEndpoint):
 ### 5. Database Model with Authentication
 
 ```python
-@register_model_class
-class UserProfile(RestEndpoint):
+
+class UserProfile(Base, RestEndpoint):
     __tablename__ = 'user_profiles'
     
     id = Column(Integer, primary_key=True)
@@ -250,7 +250,7 @@ def generate_token(self, payload):
 ```python
 import bcrypt
 
-class SecureAuthEndpoint(RestEndpoint):
+class SecureAuthEndpoint(Base, RestEndpoint):
     def post(self, request):
         data = getattr(request, 'data', {})
         username = data.get('username')
@@ -284,7 +284,7 @@ def require_role(required_role):
         return wrapper
     return decorator
 
-class AdminEndpoint(RestEndpoint):
+class AdminEndpoint(Base, RestEndpoint):
     __abstract__ = True
     
     class Configuration:
@@ -317,7 +317,7 @@ class APIKeyAuthentication(BaseAuthentication):
         
         return False
 
-class APIKeyEndpoint(RestEndpoint):
+class APIKeyEndpoint(Base, RestEndpoint):
     class Configuration:
         authentication_class = APIKeyAuthentication
 ```

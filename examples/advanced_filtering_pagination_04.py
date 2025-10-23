@@ -16,13 +16,12 @@ Features demonstrated:
 
 from lightapi import LightApi
 from lightapi.rest import RestEndpoint
-from lightapi.models import register_model_class
+from lightapi.models import Base
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text
 from datetime import datetime, timedelta
 import random
 
-@register_model_class
-class AdvancedProduct(RestEndpoint):
+class AdvancedProduct(Base, RestEndpoint):
     """Product model with advanced filtering capabilities"""
     __tablename__ = "advanced_products"
     
@@ -241,8 +240,7 @@ class AdvancedProduct(RestEndpoint):
             # If sort field doesn't exist, return unsorted
             return products
 
-@register_model_class
-class SearchableArticle(RestEndpoint):
+class SearchableArticle(Base, RestEndpoint):
     """Article model with advanced search capabilities"""
     __tablename__ = "searchable_articles"
     

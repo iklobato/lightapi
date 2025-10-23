@@ -1,13 +1,12 @@
 from sqlalchemy import Column, Integer, String
 
 from lightapi.core import LightApi
-from lightapi.models import Base, register_model_class
+from lightapi.models import Base
 from lightapi.rest import RestEndpoint
 
 
-# Define a model that inherits from RestEndpoint
-@register_model_class
-class User(RestEndpoint):
+# Define a model that inherits from Base and RestEndpoint
+class User(Base, RestEndpoint):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)

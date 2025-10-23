@@ -15,7 +15,7 @@ Run with: LIGHTAPI_JWT_SECRET="test-secret-key-123" uv run python examples/user_
 
 import os
 
-from lightapi import LightApi, Middleware, RestEndpoint
+from lightapi import Base, LightApi, Middleware, RestEndpoint
 from lightapi.auth import JWTAuthentication
 from lightapi.cache import RedisCache
 from lightapi.core import Response
@@ -39,7 +39,8 @@ class CustomEndpointValidator:
         return value
 
 
-class Company(RestEndpoint):
+class Company(Base, RestEndpoint):
+    __table_args__ = {"extend_existing": True}
     """Company endpoint - no authentication required"""
 
     class Configuration:
@@ -67,7 +68,7 @@ class CustomPaginator(Paginator):
     sort = True
 
 
-class CustomEndpoint(RestEndpoint):
+class CustomEndpoint(Base, RestEndpoint):
     """Custom endpoint with JWT authentication"""
 
     class Configuration:

@@ -34,7 +34,7 @@ class ItemValidator(Validator):
         return value.strip()
 
 # 3. Define a custom RestEndpoint using all pluggable features
-class ItemEndpoint(RestEndpoint):
+class ItemEndpoint(Base, RestEndpoint):
     tablename = 'items'
 
     class Configuration:

@@ -12,7 +12,7 @@ The `RedisCache` class provides Redis-based caching with automatic serialization
 from lightapi.rest import RestEndpoint
 from lightapi.cache import RedisCache
 
-class Product(RestEndpoint):
+class Product(Base, RestEndpoint):
     __tablename__ = 'products'
     
     class Configuration:
@@ -118,7 +118,7 @@ class MemoryCache(BaseCache):
         if key in self.expiry:
             del self.expiry[key]
 
-class Product(RestEndpoint):
+class Product(Base, RestEndpoint):
     class Configuration:
         caching_class = MemoryCache
         caching_method_names = ['GET']
@@ -129,7 +129,7 @@ class Product(RestEndpoint):
 Caches are automatically invalidated for data-modifying operations:
 
 ```python
-class Product(RestEndpoint):
+class Product(Base, RestEndpoint):
     class Configuration:
         caching_class = RedisCache
         caching_method_names = ['GET']
@@ -168,7 +168,7 @@ def post(self, request):
 Cache responses based on conditions:
 
 ```python
-class Product(RestEndpoint):
+class Product(Base, RestEndpoint):
     class Configuration:
         caching_class = RedisCache
         caching_method_names = ['GET']

@@ -16,7 +16,7 @@ Handles Cross-Origin Resource Sharing (CORS) automatically:
 from lightapi.core import LightApi, CORSMiddleware
 from lightapi.rest import RestEndpoint
 
-class APIEndpoint(RestEndpoint):
+class APIEndpoint(Base, RestEndpoint):
     class Configuration:
         http_method_names = ['GET', 'POST', 'OPTIONS']
 
@@ -45,11 +45,11 @@ from lightapi.core import LightApi, AuthenticationMiddleware
 from lightapi.auth import JWTAuthentication
 from lightapi.rest import RestEndpoint
 
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     # No need to specify authentication_class here
     pass
 
-class Product(RestEndpoint):
+class Product(Base, RestEndpoint):
     pass
 
 app = LightApi()

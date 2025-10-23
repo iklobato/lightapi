@@ -15,13 +15,12 @@ Features demonstrated:
 
 from lightapi import LightApi
 from lightapi.rest import RestEndpoint
-from lightapi.models import register_model_class
+from lightapi.models import Base
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime
 from datetime import datetime
 import re
 
-@register_model_class
-class ValidatedUser(RestEndpoint):
+class ValidatedUser(Base, RestEndpoint):
     """User model with comprehensive validation"""
     __tablename__ = "validated_users"
     
@@ -193,8 +192,7 @@ class ValidatedUser(RestEndpoint):
                 "message": str(e)
             }, 500
 
-@register_model_class
-class ValidatedProduct(RestEndpoint):
+class ValidatedProduct(Base, RestEndpoint):
     """Product model with different validation rules"""
     __tablename__ = "validated_products"
     

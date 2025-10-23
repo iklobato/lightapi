@@ -3,6 +3,7 @@ from sqlalchemy import Column, String
 from lightapi.auth import JWTAuthentication
 from lightapi.cache import RedisCache
 from lightapi.core import AuthenticationMiddleware, CORSMiddleware, Middleware, Response
+from lightapi.models import Base
 from lightapi.filters import ParameterFilter
 from lightapi.lightapi import LightApi
 from lightapi.pagination import Paginator
@@ -20,7 +21,8 @@ class CustomEndpointValidator(Validator):
         return value
 
 
-class Company(RestEndpoint):
+class Company(Base, RestEndpoint):
+    __table_args__ = {"extend_existing": True}
     name = Column(String)
     email = Column(String, unique=True)
     website = Column(String)
@@ -50,7 +52,7 @@ class CustomPaginator(Paginator):
     sort = True
 
 
-class CustomEndpoint(RestEndpoint):
+class CustomEndpoint(Base, RestEndpoint):
     class Configuration:
         # Remove the http_method_names restriction to get full CRUD automatically
         # http_method_names = ['GET', 'POST', 'OPTIONS']  # This was limiting the methods!

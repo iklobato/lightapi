@@ -10,7 +10,7 @@ LightAPI auto-generates standard CRUD routes when you register SQLAlchemy models
 # app/endpoints/custom_user.py
 from lightapi.rest import RestEndpoint
 
-class CustomUserEndpoint(RestEndpoint):
+class CustomUserEndpoint(Base, RestEndpoint):
     tablename = 'users'
     # Only allow GET and POST methods
     http_method_names = ['GET', 'POST']
@@ -38,7 +38,7 @@ app.register({'/custom-users': CustomUserEndpoint})
 When defining a custom endpoint (not a SQLAlchemy model), always specify the intended path(s) using the `route_patterns` attribute:
 
 ```python
-class HelloWorldEndpoint(RestEndpoint):
+class HelloWorldEndpoint(Base, RestEndpoint):
     route_patterns = ["/hello"]
     def get(self, request):
         return {"message": "Hello, World!"}
@@ -54,7 +54,7 @@ app.register(HelloWorldEndpoint)
 - `http_exclude`: List of methods to exclude from the default set.
 
 ```python
-class ReadOnlyEndpoint(RestEndpoint):
+class ReadOnlyEndpoint(Base, RestEndpoint):
     tablename = 'items'
     http_method_names = ['GET']
 ```

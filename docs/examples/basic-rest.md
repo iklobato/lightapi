@@ -21,8 +21,8 @@ The basic REST API example shows how to:
 ### 1. Model Definition
 
 ```python
-@register_model_class
-class User(RestEndpoint):
+
+class User(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)
@@ -32,7 +32,7 @@ class User(RestEndpoint):
 ```
 
 **Key Points:**
-- `@register_model_class` decorator registers the model with SQLAlchemy
+- `` decorator registers the model with SQLAlchemy
 - `__tablename__` defines the database table name
 - Inheriting from `RestEndpoint` provides automatic CRUD operations
 - Standard SQLAlchemy column definitions
@@ -216,7 +216,7 @@ class UserValidator(Validator):
             'errors': errors
         }
 
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)
@@ -234,7 +234,7 @@ class User(RestEndpoint):
 from sqlalchemy import Boolean, DateTime
 from datetime import datetime
 
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)
@@ -251,7 +251,7 @@ class User(RestEndpoint):
 ```python
 from lightapi.auth import JWTAuthentication
 
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)

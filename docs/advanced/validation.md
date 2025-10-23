@@ -30,7 +30,7 @@ Configure your endpoint to use the validator:
 from lightapi.rest import RestEndpoint
 from app.validators import UserValidator
 
-class UserEndpoint(RestEndpoint):
+class UserEndpoint(Base, RestEndpoint):
     class Configuration:
         validator_class = UserValidator
 

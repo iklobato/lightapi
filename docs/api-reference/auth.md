@@ -93,7 +93,7 @@ config.jwt_secret = "your-secret-key"
 ```python
 from lightapi.auth import JWTAuthentication
 
-class ProtectedEndpoint(RestEndpoint):
+class ProtectedEndpoint(Base, RestEndpoint):
     __tablename__ = 'protected_data'
     
     id = Column(Integer, primary_key=True)
@@ -347,14 +347,14 @@ Apply authentication only to specific endpoints:
 
 ```python
 # Public endpoint (no authentication)
-class PublicEndpoint(RestEndpoint):
+class PublicEndpoint(Base, RestEndpoint):
     __abstract__ = True
     
     def get(self, request):
         return {"message": "Public data"}, 200
 
 # Protected endpoint
-class ProtectedEndpoint(RestEndpoint):
+class ProtectedEndpoint(Base, RestEndpoint):
     __abstract__ = True
     
     class Configuration:
@@ -539,7 +539,7 @@ def test_cors_preflight_request(client):
 3. **CORS issues with authentication**
    ```python
    # Ensure OPTIONS is in allowed methods
-   class ProtectedEndpoint(RestEndpoint):
+   class ProtectedEndpoint(Base, RestEndpoint):
        class Configuration:
            authentication_class = JWTAuthentication
            http_method_names = ['GET', 'POST', 'OPTIONS']

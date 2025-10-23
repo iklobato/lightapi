@@ -12,7 +12,7 @@ Add `pagination_class` to your endpoint's `Configuration`:
 from lightapi.rest import RestEndpoint
 from lightapi.pagination import Paginator
 
-class ItemEndpoint(RestEndpoint):
+class ItemEndpoint(Base, RestEndpoint):
     class Configuration:
         pagination_class = Paginator
 
@@ -38,7 +38,7 @@ class CustomPaginator(Paginator):
 Then assign your custom paginator:
 
 ```python
-class ItemEndpoint(RestEndpoint):
+class ItemEndpoint(Base, RestEndpoint):
     class Configuration:
         pagination_class = CustomPaginator
 ```
@@ -58,7 +58,7 @@ class SortedPaginator(Paginator):
 Use it in your endpoint:
 
 ```python
-class ItemEndpoint(RestEndpoint):
+class ItemEndpoint(Base, RestEndpoint):
     class Configuration:
         pagination_class = SortedPaginator
 ```

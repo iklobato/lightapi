@@ -64,7 +64,7 @@ If you need direct access to the session, inject it into your custom endpoint:
 # app/endpoints/custom_task.py
 from lightapi.rest import RestEndpoint
 
-class CustomTaskEndpoint(RestEndpoint):
+class CustomTaskEndpoint(Base, RestEndpoint):
     tablename = "tasks"
 
     async def get(self, request):

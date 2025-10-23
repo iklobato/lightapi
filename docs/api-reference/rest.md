@@ -14,8 +14,8 @@ The base class for creating REST API endpoints. RestEndpoint automatically provi
 from sqlalchemy import Column, Integer, String, Boolean
 from lightapi import RestEndpoint, register_model_class
 
-@register_model_class
-class User(RestEndpoint):
+
+class User(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)
@@ -38,7 +38,7 @@ This automatically creates endpoints for:
 The `Configuration` inner class allows you to customize endpoint behavior:
 
 ```python
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)
@@ -76,7 +76,7 @@ class User(RestEndpoint):
 Retrieves resources from the database with automatic filtering and pagination.
 
 ```python
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)
@@ -138,7 +138,7 @@ GET /users?role=admin&is_active=true
 Creates new resources in the database.
 
 ```python
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     def post(self, request):
         data = getattr(request, 'data', {})
         
@@ -190,7 +190,7 @@ class User(RestEndpoint):
 Updates existing resources (full update).
 
 ```python
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     def put(self, request):
         data = getattr(request, 'data', {})
         object_id = data.get('id')
@@ -230,7 +230,7 @@ class User(RestEndpoint):
 Deletes resources from the database.
 
 ```python
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     def delete(self, request):
         data = getattr(request, 'data', {})
         object_id = data.get('id')
@@ -257,7 +257,7 @@ class User(RestEndpoint):
 Performs partial updates on resources.
 
 ```python
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     def patch(self, request):
         data = getattr(request, 'data', {})
         object_id = data.get('id')
@@ -287,7 +287,7 @@ class User(RestEndpoint):
 Returns allowed HTTP methods for CORS support.
 
 ```python
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     def options(self, request):
         allowed_methods = getattr(
             self.Configuration, 
@@ -309,7 +309,7 @@ class User(RestEndpoint):
 ```python
 from lightapi.auth import JWTAuthentication
 
-class ProtectedUser(RestEndpoint):
+class ProtectedUser(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)
@@ -354,7 +354,7 @@ class UserValidator(Validator):
             'errors': errors
         }
 
-class ValidatedUser(RestEndpoint):
+class ValidatedUser(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)
@@ -370,7 +370,7 @@ class ValidatedUser(RestEndpoint):
 ```python
 from lightapi.cache import RedisCache
 
-class CachedUser(RestEndpoint):
+class CachedUser(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)
@@ -405,7 +405,7 @@ class CustomPaginator(Paginator):
         page = int(self.request.query_params.get('page', 1))
         return (page - 1) * self.get_limit()
 
-class FilteredUser(RestEndpoint):
+class FilteredUser(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)
@@ -421,7 +421,7 @@ class FilteredUser(RestEndpoint):
 ### Custom Business Logic
 
 ```python
-class BusinessUser(RestEndpoint):
+class BusinessUser(Base, RestEndpoint):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)
@@ -474,7 +474,7 @@ class BusinessUser(RestEndpoint):
 You can create endpoints that don't interact with the database:
 
 ```python
-class HealthCheckEndpoint(RestEndpoint):
+class HealthCheckEndpoint(Base, RestEndpoint):
     __abstract__ = True  # Not a database model
     
     def get(self, request):
@@ -484,7 +484,7 @@ class HealthCheckEndpoint(RestEndpoint):
             "version": "1.0.0"
         }, 200
 
-class StatisticsEndpoint(RestEndpoint):
+class StatisticsEndpoint(Base, RestEndpoint):
     __abstract__ = True
     
     class Configuration:
@@ -635,7 +635,7 @@ RestEndpoint provides standard HTTP error responses:
 ### Custom Error Handling
 
 ```python
-class RobustEndpoint(RestEndpoint):
+class RobustEndpoint(Base, RestEndpoint):
     __tablename__ = 'items'
     
     id = Column(Integer, primary_key=True)
@@ -670,7 +670,7 @@ class RobustEndpoint(RestEndpoint):
 ### 1. Use Configuration Classes
 
 ```python
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     class Configuration:
         # Be explicit about allowed methods
         http_method_names = ['GET', 'POST', 'PUT', 'DELETE']
@@ -689,7 +689,7 @@ class User(RestEndpoint):
 ### 2. Override Methods Judiciously
 
 ```python
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     def get(self, request):
         # Add business logic while preserving functionality
         base_query = self.session.query(self.__class__)
@@ -713,7 +713,7 @@ class User(RestEndpoint):
 ### 3. Handle Errors Gracefully
 
 ```python
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     def post(self, request):
         try:
             return super().post(request)
@@ -736,7 +736,7 @@ class User(RestEndpoint):
 from typing import Dict, Any, Tuple
 from starlette.requests import Request
 
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     def get(self, request: Request) -> Tuple[Dict[str, Any], int]:
         # Implementation with proper type hints
         pass
@@ -760,7 +760,7 @@ To start your API, always use `api.run(host, port)`. Do not use external librari
 When registering custom (non-model) endpoints, you must specify the intended REST path(s) using the `route_patterns` attribute. Fallback to class names is not supported for custom endpoints.
 
 ```python
-class HelloWorldEndpoint(RestEndpoint):
+class HelloWorldEndpoint(Base, RestEndpoint):
     route_patterns = ["/hello"]
     def get(self, request):
         return {"message": "Hello, World!"}

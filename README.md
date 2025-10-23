@@ -126,11 +126,10 @@ pip install -e .
 ```python
 from lightapi import LightApi
 from lightapi.rest import RestEndpoint
-from lightapi.models import register_model_class
+from lightapi.models import Base
 from sqlalchemy import Column, Integer, String, Float
 
-@register_model_class
-class Product(RestEndpoint):
+class Product(Base, RestEndpoint):
     __tablename__ = "products"
     
     id = Column(Integer, primary_key=True)
@@ -159,13 +158,12 @@ if __name__ == "__main__":
 ```python
 from lightapi import LightApi
 from lightapi.rest import RestEndpoint
-from lightapi.models import register_model_class
+from lightapi.models import Base
 from lightapi.cache import cache_manager
 from sqlalchemy import Column, Integer, String, Float, DateTime
 from datetime import datetime
 
-@register_model_class
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     __tablename__ = "users"
     
     id = Column(Integer, primary_key=True)
@@ -223,12 +221,11 @@ LightAPI automatically generates CRUD endpoints for your SQLAlchemy models:
 ```python
 from lightapi import LightApi
 from lightapi.rest import RestEndpoint
-from lightapi.models import register_model_class
+from lightapi.models import Base
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime
 from datetime import datetime
 
-@register_model_class
-class Product(RestEndpoint):
+class Product(Base, RestEndpoint):
     __tablename__ = "products"
     
     id = Column(Integer, primary_key=True)
@@ -280,8 +277,7 @@ LightAPI supports async endpoints for high-performance applications:
 import asyncio
 from lightapi.rest import RestEndpoint
 
-@register_model_class
-class AsyncProduct(RestEndpoint):
+class AsyncProduct(Base, RestEndpoint):
     __tablename__ = "async_products"
     
     id = Column(Integer, primary_key=True)
@@ -390,15 +386,13 @@ from lightapi.auth import AuthEndpoint
 # Set JWT secret
 os.environ['LIGHTAPI_JWT_SECRET'] = 'your-super-secret-key'
 
-@register_model_class
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     __tablename__ = "users"
     
     id = Column(Integer, primary_key=True)
     username = Column(String(50), unique=True)
     password_hash = Column(String(255))
 
-@register_model_class
 class AuthUser(AuthEndpoint):
     """Authentication endpoint"""
     __tablename__ = "auth_users"
@@ -483,8 +477,7 @@ Boost performance with intelligent Redis caching:
 ```python
 from lightapi.cache import cache_manager
 
-@register_model_class
-class CachedProduct(RestEndpoint):
+class CachedProduct(Base, RestEndpoint):
     __tablename__ = "cached_products"
     
     id = Column(Integer, primary_key=True)
@@ -604,8 +597,7 @@ remaining = cache_manager.ttl("product:123")
 Powerful querying capabilities out of the box:
 
 ```python
-@register_model_class
-class AdvancedProduct(RestEndpoint):
+class AdvancedProduct(Base, RestEndpoint):
     __tablename__ = "advanced_products"
     
     id = Column(Integer, primary_key=True)
@@ -705,8 +697,7 @@ Comprehensive input validation and error handling:
 import re
 from datetime import datetime
 
-@register_model_class
-class ValidatedUser(RestEndpoint):
+class ValidatedUser(Base, RestEndpoint):
     __tablename__ = "validated_users"
     
     id = Column(Integer, primary_key=True)
@@ -1303,8 +1294,7 @@ alembic upgrade head
 ```python
 from starlette.requests import Request
 
-@register_model_class
-class FileUpload(RestEndpoint):
+class FileUpload(Base, RestEndpoint):
     def post(self, request: Request):
         form = await request.form()
         file = form["file"]

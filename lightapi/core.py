@@ -109,6 +109,35 @@ class LightApi:
 
         # If it's a SQLAlchemy model (RESTful resource)
         if hasattr(handler, "__tablename__") and handler.__tablename__:
+            # Auto-integrate with SQLAlchemy Base if needed
+            from .database import Base
+            from sqlalchemy import Column
+            
+            # Check if has Column attributes and doesn't inherit from Base
+            has_columns = any(isinstance(getattr(handler, attr, None), Column) 
+                           for attr in dir(handler))
+            
+            if has_columns and not issubclass(handler, Base):
+                # Create a new class that inherits from both Base and the original class
+                # This replicates the logic from register_model_class
+                unique_name = f"{handler.__module__}.{handler.__name__}"
+                
+                # Create new class with Base as parent
+                new_handler = type(
+                    unique_name,
+                    (Base, handler),
+                    {
+                        "__tablename__": handler.__tablename__,
+                        "__table_args__": {"extend_existing": True},
+                    },
+                )
+                
+                # Replace the original class in its module's namespace
+                import sys
+                module = sys.modules[handler.__module__]
+                setattr(module, handler.__name__, new_handler)
+                handler = new_handler
+            
             tablename = handler.__tablename__
             methods = (
                 handler.Configuration.http_method_names

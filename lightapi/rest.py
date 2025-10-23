@@ -45,14 +45,32 @@ class RestEndpoint:
         """
         Configure subclasses of RestEndpoint.
 
+        Marks classes as non-abstract when they define __tablename__ and 
+        SQLAlchemy Column attributes.
+
+        For SQLAlchemy models, use: class MyModel(Base, RestEndpoint)
+
         Args:
             **kwargs: Arbitrary keyword arguments.
         """
         super().__init_subclass__(**kwargs)
 
-        # Only mark as abstract if not a SQLAlchemy model class
+        # Skip if explicitly marked as abstract
+        if kwargs.get('abstract', False) or cls.__dict__.get('__abstract__', False):
+            cls.__abstract__ = True
+            return
+
+        # Mark as non-abstract if tablename + columns detected
         if hasattr(cls, "__tablename__") and cls.__tablename__:
-            cls.__abstract__ = False
+            # Check if has Column attributes (SQLAlchemy model)
+            from sqlalchemy import Column
+            has_columns = any(isinstance(getattr(cls, attr, None), Column) 
+                           for attr in dir(cls))
+            
+            if has_columns:
+                cls.__abstract__ = False
+            else:
+                cls.__abstract__ = True
         else:
             cls.__abstract__ = True
 

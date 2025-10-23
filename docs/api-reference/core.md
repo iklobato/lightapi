@@ -50,7 +50,7 @@ Registers REST endpoints with the application.
 from lightapi import LightApi, RestEndpoint
 from sqlalchemy import Column, Integer, String
 
-class User(RestEndpoint):
+class User(Base, RestEndpoint):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
     name = Column(String(100))
@@ -431,7 +431,7 @@ LightAPI provides consistent error responses:
 ```python
 from lightapi.core import Response
 
-class CustomEndpoint(RestEndpoint):
+class CustomEndpoint(Base, RestEndpoint):
     def get(self, request):
         try:
             # Your logic here
