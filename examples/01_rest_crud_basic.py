@@ -8,6 +8,7 @@ from lightapi.rest import RestEndpoint
 # Define a model that inherits from Base and RestEndpoint
 class User(Base, RestEndpoint):
     __tablename__ = "users"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True)
     name = Column(String(100))
@@ -22,6 +23,16 @@ class User(Base, RestEndpoint):
     # - OPTIONS: Return allowed methods
 
 
+def _print_usage():
+    """Print usage instructions."""
+    print("🚀 Basic REST API Started")
+    print("Server running at http://localhost:8000")
+    print("API documentation available at http://localhost:8000/docs")
+    print("\nTry these endpoints:")
+    print("  curl http://localhost:8000/users/")
+    print("  curl -X POST http://localhost:8000/users/ -H 'Content-Type: application/json' -d '{\"name\": \"John\", \"email\": \"john@example.com\"}'")
+
+
 if __name__ == "__main__":
     # Initialize the API with SQLite database
     app = LightApi(
@@ -34,8 +45,7 @@ if __name__ == "__main__":
     # Register our endpoint
     app.register(User)
 
-    print("Server running at http://localhost:8000")
-    print("API documentation available at http://localhost:8000/docs")
+    _print_usage()
 
     # Run the server
     app.run(host="localhost", port=8000, debug=True)

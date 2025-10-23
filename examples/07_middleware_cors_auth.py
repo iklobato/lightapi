@@ -53,6 +53,8 @@ class CustomPaginator(Paginator):
 
 
 class CustomEndpoint(Base, RestEndpoint):
+    __tablename__ = "customendpoint"
+    __table_args__ = {"extend_existing": True}
     class Configuration:
         # Remove the http_method_names restriction to get full CRUD automatically
         # http_method_names = ['GET', 'POST', 'OPTIONS']  # This was limiting the methods!

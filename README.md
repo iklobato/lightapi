@@ -1049,15 +1049,15 @@ app.add_middleware(AuthenticationMiddleware, excluded_paths=['/docs', '/health']
 LightAPI includes comprehensive examples for all features:
 
 ### 📂 Example Files
-- **`examples/rest_crud_basic.py`** - Basic CRUD operations
-- **`examples/async_performance.py`** - Async/await performance demo
-- **`examples/authentication_jwt.py`** - JWT authentication
-- **`examples/caching_redis_custom.py`** - Redis caching strategies
-- **`examples/advanced_filtering_pagination.py`** - Complex queries
-- **`examples/advanced_validation.py`** - Comprehensive validation
-- **`examples/yaml_configuration.py`** - YAML-driven API generation
-- **`examples/middleware_custom.py`** - Custom middleware
-- **`examples/swagger_openapi_docs.py`** - Documentation customization
+- **`examples/01_rest_crud_basic.py`** - Basic CRUD operations
+- **`examples/06_async_performance.py`** - Async/await performance demo
+- **`examples/02_authentication_jwt.py`** - JWT authentication
+- **`examples/05_caching_redis_custom.py`** - Redis caching strategies
+- **`examples/04_advanced_filtering_pagination.py`** - Complex queries
+- **`examples/03_advanced_validation.py`** - Comprehensive validation
+- **`examples/09_yaml_configuration.py`** - YAML-driven API generation
+- **`examples/07_middleware_custom.py`** - Custom middleware
+- **`examples/08_swagger_openapi_docs.py`** - Documentation customization
 
 ### 🚀 Running Examples
 
@@ -1070,17 +1070,17 @@ cd lightapi
 pip install -e .
 
 # Run basic CRUD example
-python examples/rest_crud_basic.py
+python examples/01_rest_crud_basic.py
 
 # Run async performance example
-python examples/async_performance.py
+python examples/06_async_performance.py
 
 # Run JWT authentication example
-python examples/authentication_jwt.py
+python examples/02_authentication_jwt.py
 
 # Run caching example (requires Redis)
 redis-server  # Start Redis in another terminal
-python examples/caching_redis_custom.py
+python examples/05_caching_redis_custom.py
 ```
 
 ---

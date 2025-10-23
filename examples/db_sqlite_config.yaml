@@ -1,0 +1,52 @@
+# SQLite Database Configuration
+# Perfect for development, testing, and small applications
+
+# SQLite connection - file-based database
+database_url: "sqlite:////var/folders/4x/q8y1hw0j4zg75lpz9bfyt_3c0000gn/T/tmpmwy5lbab.db"
+
+# API metadata
+swagger_title: "SQLite Company API"
+swagger_version: "1.0.0"
+swagger_description: |
+  Company management API using SQLite database
+  
+  ## Database Features
+  - File-based storage
+  - ACID compliance
+  - Foreign key support
+  - Perfect for development and small applications
+  
+  ## Connection Details
+  - Database file: tmpmwy5lbab.db
+  - Foreign keys: Enabled
+  - WAL mode: Recommended for production
+enable_swagger: true
+
+# Tables configuration
+tables:
+  # Companies - full CRUD
+  - name: companies
+    crud:
+      - get     # List and view companies
+      - post    # Create new companies
+      - put     # Update company information
+      - patch   # Partial updates
+      - delete  # Remove companies
+  
+  # Employees - full CRUD with foreign key to companies
+  - name: employees
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete
+  
+  # Projects - full CRUD with foreign key to companies
+  - name: projects
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete

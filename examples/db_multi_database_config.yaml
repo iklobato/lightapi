@@ -1,0 +1,72 @@
+# Multi-Database Configuration
+# Demonstrates switching between database types using environment variables
+
+# Database URL determined by environment
+database_url: "${DATABASE_URL}"
+
+swagger_title: "Multi-Database Company API"
+swagger_version: "3.0.0"
+swagger_description: |
+  Flexible company management API supporting multiple database backends
+  
+  ## Supported Databases
+  
+  ### SQLite (Development)
+  ```
+  DATABASE_URL=sqlite:///company.db
+  ```
+  - File-based storage
+  - Zero configuration
+  - Perfect for development and testing
+  
+  ### PostgreSQL (Production)
+  ```
+  DATABASE_URL=postgresql://user:pass@host:port/db
+  ```
+  - Enterprise-grade features
+  - Advanced SQL support
+  - High availability options
+  
+  ### MySQL (Alternative Production)
+  ```
+  DATABASE_URL=mysql+pymysql://user:pass@host:port/db
+  ```
+  - High performance
+  - Wide ecosystem support
+  - Proven scalability
+  
+  ## Environment Variables
+  - `DATABASE_URL`: Database connection string
+  - `DB_TYPE`: Database type (sqlite|postgresql|mysql)
+  - `DB_HOST`: Database host
+  - `DB_PORT`: Database port
+  - `DB_NAME`: Database name
+  - `DB_USER`: Database username
+  - `DB_PASS`: Database password
+enable_swagger: true
+
+tables:
+  # Universal table configuration works with all database types
+  - name: companies
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete
+  
+  - name: employees
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete
+  
+  - name: projects
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete

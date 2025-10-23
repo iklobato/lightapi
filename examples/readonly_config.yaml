@@ -1,0 +1,29 @@
+database:
+  echo: false
+  url: sqlite:////var/folders/4x/q8y1hw0j4zg75lpz9bfyt_3c0000gn/T/tmpcowxvv10.db
+endpoints:
+  analytics:
+    description: Analytics data (read-only)
+    methods:
+    - GET
+    table: analytics
+  comments:
+    description: Comment data (read-only)
+    methods:
+    - GET
+    table: comments
+  posts:
+    description: Post data (read-only)
+    methods:
+    - GET
+    table: posts
+  users:
+    description: User data (read-only)
+    methods:
+    - GET
+    table: users
+swagger:
+  description: Read-only data viewing API
+  enabled: true
+  title: Read-Only Analytics API
+  version: 1.0.0

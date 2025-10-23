@@ -1,0 +1,41 @@
+database:
+  echo: false
+  max_overflow: 10
+  pool_pre_ping: true
+  pool_recycle: 3600
+  pool_size: 5
+  url: ${DATABASE_URL}
+endpoints:
+  orders:
+    description: Order management endpoints
+    methods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    table: orders
+  products:
+    description: Product management endpoints
+    methods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    table: products
+  users:
+    description: User management endpoints
+    methods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    table: users
+server:
+  debug: false
+  host: ${SERVER_HOST}
+  port: ${SERVER_PORT}
+swagger:
+  description: Staging environment API
+  enabled: true
+  title: ${API_TITLE}
+  version: ${API_VERSION}

@@ -7,6 +7,12 @@ from lightapi.models import Base
 from lightapi.pagination import Paginator
 from lightapi.rest import RestEndpoint
 
+# Constants
+DEFAULT_PAGE_SIZE = 10
+MAX_PAGE_SIZE = 100
+PRICE_MULTIPLIER = 100
+DEFAULT_DB_NAME = "pagination_example.db"
+DEFAULT_PORT = 8000
 
 # Custom filter implementation
 class ProductFilter(ParameterFilter):
@@ -143,6 +149,7 @@ class Product(Base, RestEndpoint):
 
     # Override GET to transform price from cents to dollars in response
     def get(self, request):
+        """Get products with filtering and pagination using early returns."""
         # Save the request for the paginator to access
         if hasattr(self, "paginator"):
             self.paginator.request = request
@@ -153,23 +160,37 @@ class Product(Base, RestEndpoint):
         if hasattr(self, "filter"):
             query = self.filter.filter_queryset(query, request)
 
-        # Apply pagination
-        if hasattr(self, "paginator"):
-            page = self.paginator.paginate(query)
-            results = page.items
-
-            # Prepare response with pagination metadata
-            response = {
-                "count": page.total,
-                "next": page.next_page,
-                "previous": page.prev_page,
-                "page": page.page,
-                "pages": page.pages,
-                "results": [],
-            }
-        else:
+        # Apply pagination - early return if no paginator
+        if not hasattr(self, "paginator"):
             results = query.all()
             response = {"results": []}
+            
+            # Format results
+            for obj in results:
+                response["results"].append(
+                    {
+                        "id": obj.id,
+                        "name": obj.name,
+                        "price": obj.price / 100,  # Convert to dollars
+                        "category": obj.category,
+                        "description": obj.description,
+                    }
+                )
+            return response, 200
+
+        # Pagination path
+        page = self.paginator.paginate(query)
+        results = page.items
+
+        # Prepare response with pagination metadata
+        response = {
+            "count": page.total,
+            "next": page.next_page,
+            "previous": page.prev_page,
+            "page": page.page,
+            "pages": page.pages,
+            "results": [],
+        }
 
         # Format results
         for obj in results:

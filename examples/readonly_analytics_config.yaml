@@ -2,7 +2,7 @@
 # Perfect for analytics, reporting, and data viewing APIs
 
 # Database connection
-database_url: "sqlite:////tmp/tmpyx9kmrtq.db"
+database_url: "sqlite:////var/folders/4x/q8y1hw0j4zg75lpz9bfyt_3c0000gn/T/tmpc_d6_io5.db"
 
 # API information
 swagger_title: "Analytics Data API"

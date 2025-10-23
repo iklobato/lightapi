@@ -3,6 +3,7 @@ import os
 import random
 import time
 import uuid
+from typing import Dict, Any, Optional, List
 
 from sqlalchemy import (
     Column,
@@ -32,6 +33,20 @@ from lightapi.models import Base
 from lightapi.pagination import Paginator
 from lightapi.rest import RestEndpoint, Validator
 from lightapi.swagger import SwaggerGenerator
+
+# Constants
+DEFAULT_DB_NAME = "mega_example.db"
+DEFAULT_PORT = 8000
+DEFAULT_PAGE_SIZE = 10
+MAX_PAGE_SIZE = 100
+PRICE_MULTIPLIER = 100
+DEFAULT_CACHE_TTL = 300
+MIN_PRODUCT_NAME_LENGTH = 3
+MAX_PRODUCT_NAME_LENGTH = 100
+DEFAULT_SUPPLIER_COUNT = 5
+DEFAULT_CATEGORY_COUNT = 3
+DEFAULT_PRODUCT_COUNT = 20
+DEFAULT_ORDER_COUNT = 10
 
 # --- Association Table for Product-Category ---
 product_category_association = Table(
@@ -94,24 +109,28 @@ class Category(Base, RestEndpoint):
     description = Column(String(200))
     products = relationship("Product", secondary=product_category_association, back_populates="categories")
 
+    def _serialize_category(self, category, include_products=True):
+        """Serialize category with optional products."""
+        result = {c.name: getattr(category, c.name) for c in category.__table__.columns}
+        
+        if include_products:
+            result["products"] = [{"id": p.id, "name": p.name, "price": p.price, "sku": p.sku} for p in category.products]
+        else:
+            result["product_count"] = len(category.products)
+        return result
+
     def get(self, request):
+        """Get category(ies)."""
         category_id = request.path_params.get("id")
+        
         if category_id:
             category = self.session.query(self.__class__).filter_by(id=category_id).first()
             if not category:
                 return {"error": "Category not found"}, 404
-            result = {"id": category.id, "name": category.name, "description": category.description, "products": []}
-            for product in category.products:
-                result["products"].append({"id": product.id, "name": product.name, "price": product.price, "sku": product.sku})
-            return {"result": result}, 200
-        else:
-            categories = self.session.query(self.__class__).all()
-            results = []
-            for category in categories:
-                results.append(
-                    {"id": category.id, "name": category.name, "description": category.description, "product_count": len(category.products)}
-                )
-            return {"results": results}, 200
+            return {"result": self._serialize_category(category)}, 200
+        
+        categories = self.session.query(self.__class__).all()
+        return {"results": [self._serialize_category(c, include_products=False) for c in categories]}, 200
 
 
 class Supplier(Base, RestEndpoint):
@@ -126,6 +145,7 @@ class Supplier(Base, RestEndpoint):
 
 class Product(Base, RestEndpoint):
     __tablename__ = "products"
+    __table_args__ = {"extend_existing": True}
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
     price = Column(Float, nullable=False)
@@ -137,64 +157,88 @@ class Product(Base, RestEndpoint):
     categories = relationship("Category", secondary=product_category_association, back_populates="products")
     order_items = relationship("OrderItem", back_populates="product")
 
+    def _serialize_product(self, product, include_relationships: bool = True) -> Dict[str, Any]:
+        """Serialize product with optional relationships."""
+        result = {c.name: getattr(product, c.name) for c in product.__table__.columns}
+        
+        # Convert datetime fields to ISO format
+        if result.get('created_at'):
+            result['created_at'] = result['created_at'].isoformat()
+        if result.get('updated_at'):
+            result['updated_at'] = result['updated_at'].isoformat()
+            
+        if include_relationships:
+            result["supplier"] = {"id": product.supplier.id, "name": product.supplier.name} if product.supplier else None
+            result["categories"] = [{"id": c.id, "name": c.name} for c in product.categories]
+        else:
+            result["supplier"] = product.supplier.name if product.supplier else None
+            result["category_count"] = len(product.categories)
+        return result
+
+    def _validate_product_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate product data, raise ValueError on error."""
+        if not data.get('name'):
+            raise ValueError("Product name is required")
+        if not data.get('price'):
+            raise ValueError("Product price is required")
+        if not data.get('sku'):
+            raise ValueError("Product SKU is required")
+        return data
+
+    def _error_response(self, message: str, status_code: int = 400) -> tuple:
+        """Standard error response - returns immediately."""
+        return {"error": message, "status": status_code}, status_code
+
     def get(self, request):
+        """Get product(s) with early returns."""
         product_id = request.path_params.get("id")
+        
+        # Early return for single product
         if product_id:
             product = self.session.query(self.__class__).filter_by(id=product_id).first()
             if not product:
-                return {"error": "Product not found"}, 404
-            result = {
-                "id": product.id,
-                "name": product.name,
-                "price": product.price,
-                "sku": product.sku,
-                "created_at": product.created_at.isoformat() if product.created_at else None,
-                "updated_at": product.updated_at.isoformat() if product.updated_at else None,
-                "supplier": None,
-                "categories": [],
-            }
-            if product.supplier:
-                result["supplier"] = {"id": product.supplier.id, "name": product.supplier.name}
-            for category in product.categories:
-                result["categories"].append({"id": category.id, "name": category.name})
-            return {"result": result}, 200
-        else:
-            products = self.session.query(self.__class__).all()
-            results = []
-            for product in products:
-                results.append(
-                    {
-                        "id": product.id,
-                        "name": product.name,
-                        "price": product.price,
-                        "sku": product.sku,
-                        "supplier": product.supplier.name if product.supplier else None,
-                        "category_count": len(product.categories),
-                    }
-                )
-            return {"results": results}, 200
+                return self._error_response("Product not found", 404)
+            return {"result": self._serialize_product(product)}, 200
+        
+        # Default: return all products
+        products = self.session.query(self.__class__).all()
+        return {"results": [self._serialize_product(p, include_relationships=False) for p in products]}, 200
 
     def post(self, request):
+        """Create a new product with early returns."""
         try:
             data = getattr(request, "data", {})
+            data = self._validate_product_data(data)
+            
             categories_data = data.pop("categories", [])
             supplier_id = data.pop("supplier_id", None)
+            
             product = self.__class__(**data)
+            
+            # Set supplier if provided - early return if not found
             if supplier_id:
                 supplier = self.session.query(Supplier).filter_by(id=supplier_id).first()
-                if supplier:
-                    product.supplier = supplier
+                if not supplier:
+                    return self._error_response(f"Supplier with ID {supplier_id} not found", 404)
+                product.supplier = supplier
+            
+            # Add categories if provided - early return if any not found
             if categories_data:
                 for category_id in categories_data:
                     category = self.session.query(Category).filter_by(id=category_id).first()
-                    if category:
-                        product.categories.append(category)
+                    if not category:
+                        return self._error_response(f"Category with ID {category_id} not found", 404)
+                    product.categories.append(category)
+            
             self.session.add(product)
             self.session.commit()
             return {"id": product.id, "name": product.name, "price": product.price, "sku": product.sku}, 201
+            
+        except ValueError as e:
+            return self._error_response(str(e), 400)
         except Exception as e:
             self.session.rollback()
-            return Response({"error": str(e)}, status_code=500)
+            return self._error_response(str(e), 500)
 
 
 class Customer(Base, RestEndpoint):
@@ -562,36 +606,89 @@ class AsyncDemoEndpoint(Base, RestEndpoint):
 
 
 # --- Main App ---
+def _create_sample_categories(session):
+    """Create sample categories."""
+    categories = [
+        Category(name="Electronics", description="Electronic devices and accessories"),
+        Category(name="Clothing", description="Apparel and fashion items"),
+        Category(name="Books", description="Books and publications")
+    ]
+    session.add_all(categories)
+    return categories
+
+def _create_sample_suppliers(session):
+    """Create sample suppliers."""
+    suppliers = [
+        Supplier(name="TechSupplies Inc.", contact_name="John Tech", email="john@techsupplies.com"),
+        Supplier(name="Fashion Wholesale", contact_name="Mary Style", email="mary@fashionwholesale.com")
+    ]
+    session.add_all(suppliers)
+    return suppliers
+
+def _create_sample_products(session, categories, suppliers):
+    """Create sample products with relationships."""
+    products = [
+        Product(name="Laptop", price=999.99, sku="TECH001", supplier=suppliers[0]),
+        Product(name="Smartphone", price=499.99, sku="TECH002", supplier=suppliers[0]),
+        Product(name="T-Shirt", price=19.99, sku="CLOTH001", supplier=suppliers[1]),
+        Product(name="Novel", price=14.99, sku="BOOK001")
+    ]
+    
+    # Add category relationships
+    products[0].categories.append(categories[0])  # Laptop -> Electronics
+    products[1].categories.append(categories[0])  # Smartphone -> Electronics
+    products[2].categories.append(categories[1])  # T-Shirt -> Clothing
+    products[3].categories.append(categories[2])  # Novel -> Books
+    
+    session.add_all(products)
+    return products
+
+def _create_sample_orders(session, products):
+    """Create sample orders and order items."""
+    customer = Customer(name="Alice Johnson", email="alice@example.com", phone="555-1234")
+    session.add(customer)
+    
+    order = Order(customer=customer, status="completed", order_date=datetime.datetime.now())
+    order_items = [
+        OrderItem(order=order, product=products[0], quantity=1, price=products[0].price),
+        OrderItem(order=order, product=products[2], quantity=2, price=products[2].price)
+    ]
+    
+    session.add_all([order] + order_items)
+
 def init_database():
+    """Initialize database with sample data."""
     engine = create_engine("sqlite:///mega_example.db")
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
+    
     if session.query(Product).count() == 0:
-        electronics = Category(name="Electronics", description="Electronic devices and accessories")
-        clothing = Category(name="Clothing", description="Apparel and fashion items")
-        books = Category(name="Books", description="Books and publications")
-        session.add_all([electronics, clothing, books])
-        supplier1 = Supplier(name="TechSupplies Inc.", contact_name="John Tech", email="john@techsupplies.com")
-        supplier2 = Supplier(name="Fashion Wholesale", contact_name="Mary Style", email="mary@fashionwholesale.com")
-        session.add_all([supplier1, supplier2])
-        laptop = Product(name="Laptop", price=999.99, sku="TECH001", supplier=supplier1)
-        laptop.categories.append(electronics)
-        phone = Product(name="Smartphone", price=499.99, sku="TECH002", supplier=supplier1)
-        phone.categories.append(electronics)
-        tshirt = Product(name="T-Shirt", price=19.99, sku="CLOTH001", supplier=supplier2)
-        tshirt.categories.append(clothing)
-        novel = Product(name="Novel", price=14.99, sku="BOOK001")
-        novel.categories.append(books)
-        session.add_all([laptop, phone, tshirt, novel])
-        customer = Customer(name="Alice Johnson", email="alice@example.com", phone="555-1234")
-        session.add(customer)
-        order = Order(customer=customer, status="completed", order_date=datetime.datetime.now())
-        order_item1 = OrderItem(order=order, product=laptop, quantity=1, price=laptop.price)
-        order_item2 = OrderItem(order=order, product=tshirt, quantity=2, price=tshirt.price)
-        session.add_all([order, order_item1, order_item2])
+        categories = _create_sample_categories(session)
+        suppliers = _create_sample_suppliers(session)
+        products = _create_sample_products(session, categories, suppliers)
+        _create_sample_orders(session, products)
         session.commit()
+    
     session.close()
+
+
+def _print_usage():
+    """Print usage instructions."""
+    print("🚀 Mega Example API Started")
+    print("Server running at http://localhost:8000")
+    print("API documentation available at http://localhost:8000/docs")
+    print("\nTry these example queries:")
+    print("  curl http://localhost:8000/products/")
+    print("  curl http://localhost:8000/categories/")
+    print("  curl http://localhost:8000/suppliers/")
+    print("  curl http://localhost:8000/orders/")
+    print("  curl http://localhost:8000/hello")
+    print("  curl http://localhost:8000/weather/London")
+    print("  curl http://localhost:8000/async_demo")
+    print("\nAuthentication required for:")
+    print("  curl http://localhost:8000/secret")
+    print("  curl http://localhost:8000/user_profiles/")
 
 
 if __name__ == "__main__":
@@ -649,29 +746,8 @@ if __name__ == "__main__":
     app.register(AsyncDemoEndpointCustom)
     # Add middleware
     app.add_middleware([LoggingMiddleware, CORSMiddleware, RateLimitMiddleware, AuthenticationMiddleware])
-    print("Server running at http://localhost:8000")
-    print("API documentation available at http://localhost:8000/docs")
-    print("\nTry these example queries:")
-    print("1. Get all products:")
-    print("   curl http://localhost:8000/products")
-    print("2. Get a specific product with relationships:")
-    print("   curl http://localhost:8000/products/1")
-    print("3. Get all categories:")
-    print("   curl http://localhost:8000/categories")
-    print("4. Get a specific category with its products:")
-    print("   curl http://localhost:8000/categories/1")
-    print("5. Get an order with its items:")
-    print("   curl http://localhost:8000/orders/1")
-    print("6. Get weather:")
-    print("   curl http://localhost:8000/weather/London")
-    print("7. Hello world endpoint:")
-    print("   curl http://localhost:8000/hello")
-    print("8. JWT login:")
-    print(
-        '   curl -X POST http://localhost:8000/auth/login -H \'Content-Type: application/json\' -d \'{"username": "admin", "password": "password"}\''
-    )
-    print("9. Access protected resource:")
-    print("   curl -X GET http://localhost:8000/secret -H 'Authorization: Bearer YOUR_TOKEN'")
-    print("10. Async demo endpoint:")
-    print("   curl http://localhost:8000/async_demo")
+    
+    _print_usage()
+    
+    # Run the server
     app.run(host="localhost", port=8000, debug=True)

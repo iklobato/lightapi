@@ -4,7 +4,7 @@ This directory contains comprehensive examples demonstrating all YAML configurat
 
 ## 📚 Available Examples
 
-### 1. Basic YAML Configuration (`yaml_basic_example_09.py`)
+### 1. Basic YAML Configuration (`09_yaml_basic_example.py`)
 **Perfect for beginners and simple applications**
 
 ```yaml
@@ -34,7 +34,7 @@ tables:
 
 ---
 
-### 2. Advanced Role-Based Permissions (`yaml_advanced_permissions_09.py`)
+### 2. Advanced Role-Based Permissions (`09_yaml_advanced_permissions.py`)
 **Enterprise-ready configuration with role-based access control**
 
 ```yaml
@@ -75,7 +75,7 @@ tables:
 
 ---
 
-### 3. Environment Variables (`yaml_environment_variables_09.py`)
+### 3. Environment Variables (`09_yaml_environment_variables.py`)
 **Flexible deployment across different environments**
 
 ```yaml
@@ -115,7 +115,7 @@ tables:
 
 ---
 
-### 4. Multiple Database Types (`yaml_database_types_09.py`)
+### 4. Multiple Database Types (`09_yaml_database_types.py`)
 **Support for SQLite, PostgreSQL, and MySQL**
 
 ```yaml
@@ -153,7 +153,7 @@ tables:
 
 ---
 
-### 5. Minimal and Read-Only APIs (`yaml_minimal_readonly_09.py`)
+### 5. Minimal and Read-Only APIs (`09_yaml_minimal_readonly.py`)
 **Lightweight configurations for specific use cases**
 
 ```yaml
@@ -196,7 +196,7 @@ tables:
 
 ---
 
-### 6. Comprehensive System (`yaml_comprehensive_example_09.py`)
+### 6. Comprehensive System (`09_yaml_comprehensive_example.py`)
 **Complete demonstration with all features**
 
 ```yaml
@@ -247,16 +247,16 @@ tables:
 
 ### 1. Choose Your Example
 Pick the example that best matches your use case:
-- **Beginner**: Start with `yaml_basic_example_09.py`
-- **Production**: Use `yaml_advanced_permissions_09.py`
-- **Deployment**: Try `yaml_environment_variables_09.py`
-- **Database Migration**: Check `yaml_database_types_09.py`
-- **Simple Apps**: Use `yaml_minimal_readonly_09.py`
+- **Beginner**: Start with `09_yaml_basic_example.py`
+- **Production**: Use `09_yaml_advanced_permissions.py`
+- **Deployment**: Try `09_yaml_environment_variables.py`
+- **Database Migration**: Check `09_yaml_database_types.py`
+- **Simple Apps**: Use `09_yaml_minimal_readonly.py`
 
 ### 2. Run the Example
 ```bash
 cd /workspace/project/lightapi/examples
-python yaml_basic_example_09.py
+python 09_yaml_basic_example.py
 ```
 
 ### 3. Test the Generated API

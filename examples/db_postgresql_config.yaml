@@ -1,0 +1,62 @@
+# PostgreSQL Database Configuration
+# Production-ready relational database with advanced features
+
+# PostgreSQL connection string
+# Format: postgresql://username:password@host:port/database
+database_url: "${POSTGRESQL_URL}"
+
+# Alternative formats:
+# database_url: "postgresql+psycopg2://user:pass@localhost:5432/company_db"
+# database_url: "postgresql://user:pass@db.example.com:5432/company_db?sslmode=require"
+
+swagger_title: "PostgreSQL Company API"
+swagger_version: "2.0.0"
+swagger_description: |
+  Enterprise company management API using PostgreSQL
+  
+  ## Database Features
+  - ACID compliance with advanced isolation levels
+  - JSON/JSONB support for flexible data
+  - Full-text search capabilities
+  - Advanced indexing (B-tree, Hash, GiST, GIN)
+  - Partitioning and sharding support
+  - Concurrent connections and connection pooling
+  
+  ## Production Features
+  - High availability with replication
+  - Point-in-time recovery
+  - Advanced security features
+  - Extensive monitoring and logging
+  
+  ## Connection Details
+  - Host: ${DB_HOST}
+  - Port: ${DB_PORT}
+  - Database: ${DB_NAME}
+  - SSL: Required in production
+enable_swagger: true
+
+tables:
+  # Full CRUD for all tables in PostgreSQL
+  - name: companies
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete
+  
+  - name: employees
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete
+  
+  - name: projects
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete

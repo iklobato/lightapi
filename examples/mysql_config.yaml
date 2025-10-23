@@ -1,0 +1,38 @@
+database:
+  charset: utf8mb4
+  echo: false
+  max_overflow: 20
+  pool_pre_ping: true
+  pool_recycle: 3600
+  pool_size: 10
+  url: mysql+pymysql://user:password@localhost:3306/mydb
+endpoints:
+  orders:
+    description: Order management endpoints
+    methods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    table: orders
+  products:
+    description: Product management endpoints
+    methods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    table: products
+  users:
+    description: User management endpoints
+    methods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    table: users
+swagger:
+  description: API using MySQL database
+  enabled: true
+  title: MySQL Database API
+  version: 1.0.0

@@ -1,0 +1,10 @@
+database_url: sqlite:////var/folders/4x/q8y1hw0j4zg75lpz9bfyt_3c0000gn/T/tmpcowxvv10.db
+tables:
+- methods:
+  - GET
+  - POST
+  name: users
+- methods:
+  - GET
+  - POST
+  name: posts

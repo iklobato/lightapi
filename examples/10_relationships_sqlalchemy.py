@@ -23,13 +23,15 @@ product_category_association = Table(
     "product_category",
     Base.metadata,
     Column("product_id", Integer, ForeignKey("products.id")),
-    Column("category_id", Integer, ForeignKey("categories.id")),
+    Column("category_id", Integer, ForeignKey("rel_categories.id")),
+    extend_existing=True
 )
 
 
 # Define models with relationships
 class Category(Base, RestEndpoint):
-    __tablename__ = "categories"
+    __tablename__ = "rel_categories"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True)
     name = Column(String(50), unique=True, nullable=False)
@@ -90,6 +92,7 @@ class Category(Base, RestEndpoint):
 
 class Supplier(Base, RestEndpoint):
     __tablename__ = "suppliers"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
@@ -103,6 +106,7 @@ class Supplier(Base, RestEndpoint):
 
 class Product(Base, RestEndpoint):
     __tablename__ = "products"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
@@ -121,60 +125,36 @@ class Product(Base, RestEndpoint):
     # One-to-many relationship with order items
     order_items = relationship("OrderItem", back_populates="product")
 
-    # Override GET to include relationships
+    def _serialize_product(self, product, include_relationships=True):
+        """Serialize product with optional relationships."""
+        result = {c.name: getattr(product, c.name) for c in product.__table__.columns}
+        
+        # Convert datetime fields to ISO format
+        if result.get('created_at'):
+            result['created_at'] = result['created_at'].isoformat()
+        if result.get('updated_at'):
+            result['updated_at'] = result['updated_at'].isoformat()
+            
+        if include_relationships:
+            result["supplier"] = {"id": product.supplier.id, "name": product.supplier.name} if product.supplier else None
+            result["categories"] = [{"id": c.id, "name": c.name} for c in product.categories]
+        else:
+            result["supplier"] = product.supplier.name if product.supplier else None
+            result["category_count"] = len(product.categories)
+        return result
+
     def get(self, request):
-        # Check if we're looking for a specific product
+        """Get product(s) with relationships."""
         product_id = request.path_params.get("id")
-
+        
         if product_id:
-            # Get a specific product with relationships
             product = self.session.query(self.__class__).filter_by(id=product_id).first()
-
             if not product:
                 return {"error": "Product not found"}, 404
-
-            # Format product with relationships
-            result = {
-                "id": product.id,
-                "name": product.name,
-                "price": product.price,
-                "sku": product.sku,
-                "created_at": product.created_at.isoformat() if product.created_at else None,
-                "updated_at": product.updated_at.isoformat() if product.updated_at else None,
-                "supplier": None,
-                "categories": [],
-            }
-
-            # Add supplier info
-            if product.supplier:
-                result["supplier"] = {
-                    "id": product.supplier.id,
-                    "name": product.supplier.name,
-                }
-
-            # Add categories
-            for category in product.categories:
-                result["categories"].append({"id": category.id, "name": category.name})
-
-            return {"result": result}, 200
-        else:
-            # List products with minimal relationship info
-            products = self.session.query(self.__class__).all()
-            results = []
-
-            for product in products:
-                results.append(
-                    {
-                        "id": product.id,
-                        "name": product.name,
-                        "price": product.price,
-                        "sku": product.sku,
-                        "supplier": product.supplier.name if product.supplier else None,
-                        "category_count": len(product.categories),
-                    }
-                )
-
-            return {"results": results}, 200
+            return {"result": self._serialize_product(product)}, 200
+        
+        products = self.session.query(self.__class__).all()
+        return {"results": [self._serialize_product(p, include_relationships=False) for p in products]}, 200
 
     # Override POST to handle relationships
     def post(self, request):
@@ -222,6 +202,7 @@ class Product(Base, RestEndpoint):
 
 class Customer(Base, RestEndpoint):
     __tablename__ = "customers"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
@@ -234,6 +215,7 @@ class Customer(Base, RestEndpoint):
 
 class Order(Base, RestEndpoint):
     __tablename__ = "orders"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True)
     order_date = Column(DateTime, default=func.now())
@@ -319,6 +301,7 @@ class Order(Base, RestEndpoint):
 
 class OrderItem(Base, RestEndpoint):
     __tablename__ = "order_items"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True)
     quantity = Column(Integer, default=1)
@@ -332,70 +315,93 @@ class OrderItem(Base, RestEndpoint):
 
 
 # Initialize the database with sample data
+def _create_sample_categories(session):
+    """Create sample categories."""
+    categories = [
+        Category(name="Electronics", description="Electronic devices and accessories"),
+        Category(name="Clothing", description="Apparel and fashion items"),
+        Category(name="Books", description="Books and publications")
+    ]
+    session.add_all(categories)
+    return categories
+
+def _create_sample_suppliers(session):
+    """Create sample suppliers."""
+    suppliers = [
+        Supplier(name="TechSupplies Inc.", contact_name="John Tech", email="john@techsupplies.com"),
+        Supplier(name="Fashion Wholesale", contact_name="Mary Style", email="mary@fashionwholesale.com")
+    ]
+    session.add_all(suppliers)
+    return suppliers
+
+def _create_sample_products(session, categories, suppliers):
+    """Create sample products with relationships."""
+    products = [
+        Product(name="Laptop", price=999.99, sku="TECH001", supplier=suppliers[0]),
+        Product(name="Smartphone", price=499.99, sku="TECH002", supplier=suppliers[0]),
+        Product(name="T-Shirt", price=19.99, sku="CLOTH001", supplier=suppliers[1]),
+        Product(name="Novel", price=14.99, sku="BOOK001")
+    ]
+    
+    # Add category relationships
+    products[0].categories.append(categories[0])  # Laptop -> Electronics
+    products[1].categories.append(categories[0])  # Smartphone -> Electronics
+    products[2].categories.append(categories[1])  # T-Shirt -> Clothing
+    products[3].categories.append(categories[2])  # Novel -> Books
+    
+    session.add_all(products)
+    return products
+
+def _create_sample_customer(session):
+    """Create sample customer."""
+    customer = Customer(name="Alice Johnson", email="alice@example.com", phone="555-1234")
+    session.add(customer)
+    return customer
+
+def _create_sample_order(session, customer, products):
+    """Create sample order with order items."""
+    order = Order(customer=customer, status="completed", order_date=datetime.datetime.now())
+    order_items = [
+        OrderItem(order=order, product=products[0], quantity=1, price=products[0].price),
+        OrderItem(order=order, product=products[2], quantity=2, price=products[2].price)
+    ]
+    session.add_all([order] + order_items)
+    return order
+
 def init_database():
-    # Create database engine
+    """Initialize database with sample data."""
     engine = create_engine("sqlite:///relationships_example.db")
-
-    # Create tables
     Base.metadata.create_all(engine)
-
-    # Create session
     Session = sessionmaker(bind=engine)
     session = Session()
-
-    # Check if we already have data
+    
     if session.query(Product).count() == 0:
-        # Create categories
-        electronics = Category(name="Electronics", description="Electronic devices and accessories")
-        clothing = Category(name="Clothing", description="Apparel and fashion items")
-        books = Category(name="Books", description="Books and publications")
-        session.add_all([electronics, clothing, books])
-
-        # Create suppliers
-        supplier1 = Supplier(
-            name="TechSupplies Inc.",
-            contact_name="John Tech",
-            email="john@techsupplies.com",
-        )
-        supplier2 = Supplier(
-            name="Fashion Wholesale",
-            contact_name="Mary Style",
-            email="mary@fashionwholesale.com",
-        )
-        session.add_all([supplier1, supplier2])
-
-        # Create products with relationships
-        laptop = Product(name="Laptop", price=999.99, sku="TECH001", supplier=supplier1)
-        laptop.categories.append(electronics)
-
-        phone = Product(name="Smartphone", price=499.99, sku="TECH002", supplier=supplier1)
-        phone.categories.append(electronics)
-
-        tshirt = Product(name="T-Shirt", price=19.99, sku="CLOTH001", supplier=supplier2)
-        tshirt.categories.append(clothing)
-
-        novel = Product(name="Novel", price=14.99, sku="BOOK001")
-        novel.categories.append(books)
-
-        session.add_all([laptop, phone, tshirt, novel])
-
-        # Create customer
-        customer = Customer(name="Alice Johnson", email="alice@example.com", phone="555-1234")
-        session.add(customer)
-
-        # Create order with items
-        order = Order(customer=customer, status="completed", order_date=datetime.now())
-
-        # Add items to order
-        order_item1 = OrderItem(order=order, product=laptop, quantity=1, price=laptop.price)
-        order_item2 = OrderItem(order=order, product=tshirt, quantity=2, price=tshirt.price)
-
-        session.add_all([order, order_item1, order_item2])
-
-        # Commit the session
+        categories = _create_sample_categories(session)
+        suppliers = _create_sample_suppliers(session)
+        products = _create_sample_products(session, categories, suppliers)
+        customer = _create_sample_customer(session)
+        _create_sample_order(session, customer, products)
         session.commit()
-
+    
     session.close()
+
+
+def _print_usage():
+    """Print usage instructions."""
+    print("🚀 Relationships API Started")
+    print("Server running at http://localhost:8000")
+    print("API documentation available at http://localhost:8000/docs")
+    print("\nTry these example queries:")
+    print("1. Get all products:")
+    print("   curl http://localhost:8000/products")
+    print("2. Get a specific product with relationships:")
+    print("   curl http://localhost:8000/products/1")
+    print("3. Get all categories:")
+    print("   curl http://localhost:8000/categories")
+    print("4. Get a specific category with its products:")
+    print("   curl http://localhost:8000/categories/1")
+    print("5. Get an order with its items:")
+    print("   curl http://localhost:8000/orders/1")
 
 
 if __name__ == "__main__":
@@ -416,18 +422,6 @@ if __name__ == "__main__":
     app.register(Order)
     app.register(OrderItem)
 
-    print("Server running at http://localhost:8000")
-    print("API documentation available at http://localhost:8000/docs")
-    print("\nTry these example queries:")
-    print("1. Get all products:")
-    print("   curl http://localhost:8000/products")
-    print("2. Get a specific product with relationships:")
-    print("   curl http://localhost:8000/products/1")
-    print("3. Get all categories:")
-    print("   curl http://localhost:8000/categories")
-    print("4. Get a specific category with its products:")
-    print("   curl http://localhost:8000/categories/1")
-    print("5. Get an order with its items:")
-    print("   curl http://localhost:8000/orders/1")
+    _print_usage()
 
     app.run(host="localhost", port=8000, debug=True)

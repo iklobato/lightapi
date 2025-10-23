@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from examples.filtering_pagination_04 import (
+from examples.04_filtering_pagination import (
     Product,
     ProductFilter,
     ProductPaginator,

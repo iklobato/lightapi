@@ -1,0 +1,62 @@
+# MySQL Database Configuration
+# Popular open-source relational database
+
+# MySQL connection string
+# Format: mysql+pymysql://username:password@host:port/database
+database_url: "${MYSQL_URL}"
+
+# Alternative formats:
+# database_url: "mysql://user:pass@localhost:3306/company_db"
+# database_url: "mysql+mysqlconnector://user:pass@mysql.example.com:3306/company_db"
+
+swagger_title: "MySQL Company API"
+swagger_version: "2.0.0"
+swagger_description: |
+  Company management API using MySQL database
+  
+  ## Database Features
+  - InnoDB storage engine with ACID compliance
+  - Row-level locking for high concurrency
+  - Foreign key constraints
+  - Full-text indexing
+  - Replication support (master-slave, master-master)
+  - Partitioning capabilities
+  
+  ## Performance Features
+  - Query cache for improved performance
+  - Multiple storage engines (InnoDB, MyISAM, Memory)
+  - Connection pooling
+  - Optimized for read-heavy workloads
+  
+  ## Connection Details
+  - Host: ${DB_HOST}
+  - Port: ${DB_PORT}
+  - Database: ${DB_NAME}
+  - Charset: utf8mb4 (recommended)
+enable_swagger: true
+
+tables:
+  # Full CRUD operations for MySQL
+  - name: companies
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete
+  
+  - name: employees
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete
+  
+  - name: projects
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete

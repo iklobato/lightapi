@@ -2,7 +2,7 @@
 # Perfect for simple applications with essential operations only
 
 # Database connection
-database_url: "sqlite:////tmp/tmpoamp68bn.db"
+database_url: "sqlite:////var/folders/4x/q8y1hw0j4zg75lpz9bfyt_3c0000gn/T/tmp9t06itta.db"
 
 # Basic API information
 swagger_title: "Simple Blog API"

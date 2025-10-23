@@ -1,0 +1,42 @@
+# Development Environment Configuration
+# This configuration uses environment variables for flexible deployment
+
+# Database connection from environment variable
+database_url: "${DATABASE_URL}"
+
+# API metadata from environment variables
+swagger_title: "${API_TITLE}"
+swagger_version: "${API_VERSION}"
+swagger_description: |
+  ${API_DESCRIPTION}
+  
+  Environment: ${ENVIRONMENT}
+  Debug Mode: ${DEBUG_MODE}
+enable_swagger: true
+
+# Tables configuration
+tables:
+  # Full access in development
+  - name: api_keys
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete
+  
+  - name: applications
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete
+  
+  - name: configuration
+    crud:
+      - get
+      - post
+      - put
+      - patch
+      - delete

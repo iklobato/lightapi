@@ -1,0 +1,20 @@
+database_url: sqlite:////var/folders/4x/q8y1hw0j4zg75lpz9bfyt_3c0000gn/T/tmpg75wbgql.db
+tables:
+- methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+  name: users
+- methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+  name: products
+- methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+  name: orders

@@ -68,6 +68,7 @@ class CustomPaginator(Paginator):
 
 class CustomEndpoint(Base, RestEndpoint):
     __tablename__ = "custom_endpoints"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True)
 

@@ -299,7 +299,7 @@ def save_yaml_files(configurations, db_path):
             config['database_url'] = f'sqlite:///{db_path}'
         
         filename = f'config_{name}.yaml'
-        filepath = os.path.join('/workspace/project/lightapi/examples', filename)
+        filepath = os.path.join(os.path.dirname(__file__), filename)
         
         with open(filepath, 'w') as f:
             yaml.dump(config, f, default_flow_style=False, indent=2)

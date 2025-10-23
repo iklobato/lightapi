@@ -70,6 +70,7 @@ class CustomPaginator(Paginator):
 
 class CustomEndpoint(Base, RestEndpoint):
     """Custom endpoint with JWT authentication"""
+    __table_args__ = {"extend_existing": True}
 
     class Configuration:
         http_method_names = ["GET", "POST"]
@@ -79,6 +80,10 @@ class CustomEndpoint(Base, RestEndpoint):
         # caching_class = RedisCache
         # caching_method_names = ['GET']
         # pagination_class = CustomPaginator
+
+    def _serialize(self, obj):
+        """Serialize model to dict."""
+        return {c.name: getattr(obj, c.name) for c in obj.__table__.columns}
 
     def post(self, request):
         """Handle authenticated POST requests"""
@@ -135,8 +140,9 @@ app.register(Company)
 # In production, you would configure this more selectively
 # app.add_middleware([MyCustomMiddleware, CustomCORSMiddleware])
 
-if __name__ == "__main__":
-    print("🚀 Starting LightAPI User Goal Example")
+def _print_usage():
+    """Print usage instructions."""
+    print("🚀 Starting LightAPI Comprehensive Example")
     print("📋 Available endpoints:")
     print("   • /company - No authentication required")
     print("   • /custom  - JWT authentication required")
@@ -147,4 +153,7 @@ if __name__ == "__main__":
     print("📚 API Documentation: http://127.0.0.1:8000/api/docs")
     print("=" * 80)
 
+
+if __name__ == "__main__":
+    _print_usage()
     app.run(host="127.0.0.1", port=8000)

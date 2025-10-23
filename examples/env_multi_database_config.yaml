@@ -1,0 +1,41 @@
+# Multi-Database Environment Configuration
+# Demonstrates different database types
+
+# Primary database from environment
+database_url: "${PRIMARY_DATABASE_URL}"
+
+swagger_title: "Multi-Database API"
+swagger_version: "${API_VERSION}"
+swagger_description: |
+  Multi-database configuration example
+  
+  Primary DB: ${PRIMARY_DATABASE_URL}
+  Environment: ${ENVIRONMENT}
+  
+  Supports:
+  - SQLite: sqlite:///path/to/db.db
+  - PostgreSQL: postgresql://user:pass@host:port/db
+  - MySQL: mysql+pymysql://user:pass@host:port/db
+enable_swagger: true
+
+tables:
+  - name: api_keys
+    crud:
+      - get
+      - post
+      - put
+      - delete
+  
+  - name: applications
+    crud:
+      - get
+      - post
+      - put
+      - delete
+  
+  - name: configuration
+    crud:
+      - get
+      - post
+      - put
+      - delete
