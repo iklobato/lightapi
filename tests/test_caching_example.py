@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from examples.05_caching_redis_custom import (
+from examples.caching_redis_custom import (
     ConfigurableCacheEndpoint,
     CustomCache,
     WeatherEndpoint,
@@ -32,8 +32,8 @@ class TestWeatherEndpoint:
         endpoint.cache = CustomCache()
         return endpoint
 
-    @patch("examples.05_caching_redis_custom.time.sleep")
-    @patch("examples.05_caching_redis_custom.print")
+    @patch("examples.caching_redis_custom.time.sleep")
+    @patch("examples.caching_redis_custom.print")
     def test_get_cache_miss(self, mock_print, mock_sleep, endpoint):
         """Test that get generates new data on cache miss.
 
@@ -64,8 +64,8 @@ class TestWeatherEndpoint:
         # Verify sleep was called to simulate slow operation
         mock_sleep.assert_called_once_with(0.1)
 
-    @patch("examples.05_caching_redis_custom.time.sleep")
-    @patch("examples.05_caching_redis_custom.print")
+    @patch("examples.caching_redis_custom.time.sleep")
+    @patch("examples.caching_redis_custom.print")
     def test_get_cache_hit(self, mock_print, mock_sleep, endpoint):
         """Test that get returns cached data on cache hit.
 
@@ -107,7 +107,7 @@ class TestWeatherEndpoint:
         # Verify sleep was not called (no slow operation)
         mock_sleep.assert_not_called()
 
-    @patch("examples.05_caching_redis_custom.print")
+    @patch("examples.caching_redis_custom.print")
     def test_delete_specific_city(self, mock_print, endpoint):
         """Test that delete removes cache for a specific city.
 
@@ -137,7 +137,7 @@ class TestWeatherEndpoint:
         # Verify delete cache method was called
         mock_print.assert_any_call("Cache DELETE for 'weather:London'")
 
-    @patch("examples.05_caching_redis_custom.print")
+    @patch("examples.caching_redis_custom.print")
     def test_delete_all_cities(self, mock_print, endpoint):
         """Test that delete with no city param clears all cache.
 
@@ -185,8 +185,8 @@ class TestConfigurableCacheEndpoint:
         endpoint.cache = CustomCache()
         return endpoint
 
-    @patch("examples.05_caching_redis_custom.time.sleep")
-    @patch("examples.05_caching_redis_custom.print")
+    @patch("examples.caching_redis_custom.time.sleep")
+    @patch("examples.caching_redis_custom.print")
     def test_get_with_custom_ttl(self, mock_print, mock_sleep, endpoint):
         """Test that get respects custom TTL from query params.
 
@@ -215,8 +215,8 @@ class TestConfigurableCacheEndpoint:
         # Verify sleep was called to simulate slow operation
         mock_sleep.assert_called_once_with(1)
 
-    @patch("examples.05_caching_redis_custom.time.sleep")
-    @patch("examples.05_caching_redis_custom.print")
+    @patch("examples.caching_redis_custom.time.sleep")
+    @patch("examples.caching_redis_custom.print")
     def test_get_with_default_ttl(self, mock_print, mock_sleep, endpoint):
         """Test that get uses default TTL when not specified.
 
@@ -241,8 +241,8 @@ class TestConfigurableCacheEndpoint:
         # Verify cache was set with default TTL
         mock_print.assert_any_call("Cache SET for 'resource:resource123' (expires in 60s)")
 
-    @patch("examples.05_caching_redis_custom.time.sleep")
-    @patch("examples.05_caching_redis_custom.print")
+    @patch("examples.caching_redis_custom.time.sleep")
+    @patch("examples.caching_redis_custom.print")
     def test_get_cache_hit(self, mock_print, mock_sleep, endpoint):
         """Test that get uses cached data when available.
 

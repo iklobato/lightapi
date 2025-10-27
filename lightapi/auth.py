@@ -2,10 +2,14 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-import jwt
 from starlette.responses import JSONResponse
 
 from .config import config
+from .jwt_custom import jwt_encode, jwt_decode
+
+
+class InvalidTokenError(Exception):
+    pass
 
 
 class BaseAuthentication:
@@ -86,7 +90,7 @@ class JWTAuthentication(BaseAuthentication):
             payload = self.decode_token(token)
             request.state.user = payload
             return True
-        except jwt.InvalidTokenError:
+        except InvalidTokenError:
             return False
 
     def generate_token(self, payload: Dict, expiration: Optional[int] = None) -> str:
@@ -103,9 +107,9 @@ class JWTAuthentication(BaseAuthentication):
         exp_seconds = expiration or self.expiration
         token_data = {
             **payload,
-            "exp": datetime.utcnow() + timedelta(seconds=exp_seconds),
+            "exp": time.time() + exp_seconds,
         }
-        return jwt.encode(token_data, self.secret_key, algorithm=self.algorithm)
+        return jwt_encode(token_data, self.secret_key, algorithm=self.algorithm)
 
     def decode_token(self, token: str) -> Dict:
         """
@@ -118,6 +122,9 @@ class JWTAuthentication(BaseAuthentication):
             dict: The decoded token payload.
 
         Raises:
-            jwt.InvalidTokenError: If the token is invalid or expired.
+            InvalidTokenError: If the token is invalid or expired.
         """
-        return jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+        try:
+            return jwt_decode(token, self.secret_key, algorithms=[self.algorithm])
+        except ValueError as e:
+            raise InvalidTokenError(str(e))
