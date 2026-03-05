@@ -126,10 +126,7 @@ app.run(port=8001)
    app = LightApi(database_url="sqlite:///app.db")
    app.register({'/users': User})
    
-   # Tables are created automatically on first run
-   # For explicit creation:
-   from lightapi.database import Base, engine
-   Base.metadata.create_all(engine)
+   # Tables are created automatically when app.register() is called
    ```
 
 ## Middleware Issues

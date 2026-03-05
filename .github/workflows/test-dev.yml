@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11"]
+        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
     - uses: actions/checkout@v4
@@ -30,10 +30,10 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e .[test,dev]
+        pip install -e ".[dev,async]"
     
-    - name: Run linting (Python 3.11 only)
-      if: matrix.python-version == '3.11'
+    - name: Run linting (Python 3.12 only)
+      if: matrix.python-version == '3.12'
       run: |
         # Install linting tools
         pip install black isort flake8 mypy
@@ -59,13 +59,13 @@ jobs:
         pytest tests/ -v --tb=short
     
     - name: Test package build
-      if: matrix.python-version == '3.11'
+      if: matrix.python-version == '3.12'
       run: |
         pip install build
         python -m build
         
     - name: Check package
-      if: matrix.python-version == '3.11'
+      if: matrix.python-version == '3.12'
       run: |
         pip install twine
         twine check dist/*

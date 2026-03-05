@@ -1,3 +1,5 @@
+> **Note:** This page describes the v1 API and has not yet been updated for v2. See the [README](../../README.md) for current documentation.
+
 # Authentication Example
 
 This example demonstrates how to implement JWT (JSON Web Token) authentication in LightAPI.

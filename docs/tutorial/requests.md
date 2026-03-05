@@ -1,69 +1,100 @@
 ---
 title: Handling Requests
+description: Working with the Starlette Request object in LightAPI v2 method overrides
 ---
 
-LightAPI simplifies request handling by automatically parsing incoming data and making parameters accessible.
+# Handling Requests
+
+In LightAPI v2, the `request` parameter in method overrides is a standard [Starlette `Request`](https://www.starlette.io/requests/) object.
 
 ## JSON Payloads
 
-For `POST`, `PUT`, and `PATCH` methods, LightAPI reads the request body and attempts to parse it as JSON. Parsed data is available on `request.data`:
+For `POST`, `PUT`, and `PATCH` overrides, read the body with `await request.body()` (async) or `request.body()` in sync methods, then parse as JSON:
+
+=== "Async"
+
+    ```python
+    import json
+
+    class OrderEndpoint(RestEndpoint):
+        item: str
+        quantity: int
+
+        async def post(self, request):
+            data = json.loads(await request.body())
+            # data is a plain dict
+            return await self._create_async(data)
+    ```
+
+=== "Sync"
+
+    ```python
+    import json
+
+    class OrderEndpoint(RestEndpoint):
+        item: str
+        quantity: int
+
+        def post(self, request):
+            data = json.loads(request.body())
+            return self.create(data)
+    ```
+
+You can also use `await request.json()` as a shorthand for async handlers:
 
 ```python
 async def post(self, request):
-    payload = request.data  # Dict from JSON body
-    # Use payload directly
+    data = await request.json()
+    return await self._create_async(data)
 ```
-
-If the body is empty or invalid JSON, `request.data` will be an empty dict.
 
 ## Path Parameters
 
-When defining endpoints with path parameters (e.g., `/items/{id}`), you can access them via `request.path_params` or `request.match_info`:
+Detail routes (`/items/{id}`) pass `pk` directly to the handler — you rarely need to read it from the request. If you need it manually:
 
 ```python
 async def get(self, request):
-    item_id = request.path_params.get('id')
-    # or
-    item_id = request.match_info['id']
-```
-
-For more robust endpoints, especially in testing scenarios, it's recommended to support parameters from both path and query:
-
-```python
-def get(self, request):
-    # First check path parameters
-    item_id = None
-    if hasattr(request, 'path_params'):
-        item_id = request.path_params.get('id')
-        
-    # If not found, check query parameters
-    if not item_id and hasattr(request, 'query_params'):
-        item_id = request.query_params.get('id')
-        
-    # Use a default if still not found
-    if not item_id:
-        item_id = 'default'
+    item_id = request.path_params.get("id")
 ```
 
 ## Query Parameters
 
-Query parameters (e.g., `?limit=10&sort=asc`) are available via:
+Query parameters are available via `request.query_params` (a `QueryParams` mapping):
 
 ```python
-params = dict(request.query_params)
-limit = params.get('limit')
-sort_order = params.get('sort')
+async def get(self, request):
+    page = request.query_params.get("page", "1")
+    search = request.query_params.get("search", "")
 ```
 
-You can also leverage the built-in `ParameterFilter` (see Advanced → Request Filtering) to automatically apply filters based on query parameters.
+For automatic filtering and pagination, use `Meta.filtering` and `Meta.pagination` instead of manual query parameter parsing.
 
 ## Request Headers
 
-You can inspect headers directly from the `request` object:
-
 ```python
-auth_header = request.headers.get('Authorization')
-user_agent = request.headers.get('User-Agent')
+async def get(self, request):
+    auth_header = request.headers.get("Authorization")
+    content_type = request.headers.get("Content-Type")
+    user_agent = request.headers.get("User-Agent")
 ```
 
-This allows you to implement custom authentication, content negotiation, or other header-based logic.
+## Authenticated user
+
+When `JWTAuthentication` is configured, the decoded token payload is stored in `request.state.user` after successful authentication:
+
+```python
+async def post(self, request):
+    user = request.state.user   # dict from JWT payload
+    user_id = user.get("sub")
+    data = await request.json()
+    data["author_id"] = int(user_id)
+    return await self._create_async(data)
+```
+
+## Request method
+
+```python
+async def get(self, request):
+    print(request.method)    # "GET"
+    print(request.url.path)  # "/items"
+```

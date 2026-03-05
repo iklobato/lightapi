@@ -1,8 +1,73 @@
-import hashlib
+from __future__ import annotations
+
 import json
+import logging
+import os
 from typing import Any, Dict, Optional
 
 import redis
+
+logger = logging.getLogger(__name__)
+
+_REDIS_URL = os.environ.get("LIGHTAPI_REDIS_URL", "redis://localhost:6379/0")
+_redis_client: "redis.Redis | None" = None
+
+
+def _get_redis() -> "redis.Redis | None":
+    global _redis_client
+    if _redis_client is None:
+        try:
+            _redis_client = redis.from_url(_REDIS_URL, socket_connect_timeout=1)
+        except Exception:
+            return None
+    return _redis_client
+
+
+def _ping_redis() -> bool:
+    """Return True if Redis is reachable."""
+    client = _get_redis()
+    if client is None:
+        return False
+    try:
+        return bool(client.ping())
+    except Exception:
+        return False
+
+
+def get_cached(key: str) -> Any | None:
+    """Return the cached value for *key* or None on miss / Redis failure."""
+    client = _get_redis()
+    if client is None:
+        return None
+    try:
+        raw = client.get(key)
+        return json.loads(raw) if raw else None
+    except Exception:
+        return None
+
+
+def set_cached(key: str, value: Any, ttl: int) -> None:
+    """Store *value* under *key* for *ttl* seconds. Silently ignores errors."""
+    client = _get_redis()
+    if client is None:
+        return
+    try:
+        client.setex(key, ttl, json.dumps(value))
+    except Exception:
+        pass
+
+
+def invalidate_cache_prefix(prefix: str) -> None:
+    """Delete all keys that start with *prefix*. Silently ignores errors."""
+    client = _get_redis()
+    if client is None:
+        return
+    try:
+        keys = list(client.scan_iter(f"{prefix}*"))
+        if keys:
+            client.delete(*keys)
+    except Exception:
+        pass
 
 
 class BaseCache:

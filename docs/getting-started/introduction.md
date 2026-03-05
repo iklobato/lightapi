@@ -1,220 +1,143 @@
 ---
 title: Introduction to LightAPI
-description: Learn about LightAPI's core concepts and architecture
+description: Learn about LightAPI v2's core concepts and architecture
 ---
 
 # Introduction to LightAPI
 
-**LightAPI** is a powerful yet lightweight Python framework for building REST APIs with minimal code. Built on aiohttp and SQLAlchemy, it automatically generates REST APIs from your existing database tables using either Python code or simple YAML configuration files.
+**LightAPI** is a lightweight Python framework for building REST APIs with minimal code. Built on **Starlette + Uvicorn** and **SQLAlchemy**, it lets you define a single class that simultaneously acts as the ORM model, the Pydantic v2 schema, and the HTTP request handler — no separate files, no boilerplate.
 
 ## What Makes LightAPI Special?
 
-LightAPI bridges the gap between rapid prototyping and production-ready APIs. Whether you're exposing an existing database as a REST API or building a new application from scratch, LightAPI provides the tools you need with minimal configuration.
+### One Class, Three Roles
 
-### 🚀 **Zero-Code API Generation**
+```python
+from typing import Optional
+from lightapi import LightApi, RestEndpoint, Field
+from sqlalchemy import create_engine
 
-The standout feature of LightAPI is its ability to create fully functional REST APIs from YAML configuration files:
+class Article(RestEndpoint):
+    title: str = Field(min_length=1, max_length=200)
+    body: str
+    published: Optional[bool] = None
+
+engine = create_engine("sqlite:///blog.db")
+app = LightApi(engine=engine)
+app.register({"/articles": Article})
+```
+
+That single `Article` class:
+
+- Creates an `articles` table with `id`, `title`, `body`, `published`, `created_at`, `updated_at`, `version` columns
+- Generates Pydantic v2 schemas for create (write) and read operations
+- Exposes `GET /articles`, `POST /articles`, `GET /articles/{id}`, `PUT /articles/{id}`, `PATCH /articles/{id}`, `DELETE /articles/{id}`
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Auto CRUD** | Full REST endpoints generated from annotated fields |
+| **Optimistic locking** | Built-in `version` column prevents lost updates |
+| **Pydantic v2 validation** | Request bodies validated automatically with detailed error messages |
+| **JWT Authentication** | Protect endpoints with `JWTAuthentication` + permission classes |
+| **Filtering** | `FieldFilter`, `SearchFilter`, `OrderingFilter` via query params |
+| **Pagination** | `page_number` and `cursor` styles via `Meta.pagination` |
+| **Serializer** | Control which fields appear in read vs. write operations |
+| **Caching** | Redis-backed response caching via `Meta.cache` |
+| **Middleware** | Sync and async `process()` middleware with pre/post hooks |
+| **Async I/O** | Swap `create_engine` for `create_async_engine` to enable async |
+| **Background tasks** | Fire-and-forget via `self.background(fn, *args)` |
+| **Reflection** | Point at an existing database with `Meta.reflect = True` |
+| **YAML config** | Bootstrap from a `lightapi.yaml` file via `LightApi.from_config()` |
+| **ASGI** | Pure Starlette ASGI app — deploy behind any ASGI server |
+
+## Architecture Overview
+
+```
+Request
+  │
+  ▼
+Starlette Router
+  │
+  ├── Pre-middlewares  (sync or async process())
+  │
+  ├── RestEndpoint handler
+  │     ├── Authentication check
+  │     ├── queryset() / async queryset()   ← scope the query
+  │     ├── Filtering backends
+  │     ├── Pagination
+  │     ├── Serializer
+  │     └── Cache lookup / store
+  │
+  ├── Post-middlewares
+  │
+  └── BackgroundTasks (fire-and-forget after response)
+```
+
+## Sync vs. Async
+
+LightAPI supports both sync and async I/O on the same application instance. Async I/O is opt-in — swap `create_engine` for `create_async_engine`:
+
+=== "Sync (SQLite / PostgreSQL)"
+
+    ```python
+    from sqlalchemy import create_engine
+    from lightapi import LightApi
+
+    engine = create_engine("sqlite:///app.db")
+    app = LightApi(engine=engine)
+    ```
+
+=== "Async (PostgreSQL / SQLite)"
+
+    ```python
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from lightapi import LightApi
+
+    engine = create_async_engine("postgresql+asyncpg://user:pass@localhost/db")
+    app = LightApi(engine=engine)
+    ```
+
+When an `AsyncEngine` is detected, every built-in CRUD operation automatically uses async sessions.
+
+## YAML Bootstrap
+
+For zero-code setups against an existing database, use `LightApi.from_config()`:
 
 ```yaml
-# config.yaml
-database_url: "sqlite:///my_app.db"
-swagger_title: "My API"
-enable_swagger: true
+# lightapi.yaml
+database_url: "${DATABASE_URL}"
+cors_origins:
+  - "https://myapp.com"
 
-tables:
-  - name: users
-    crud: [get, post, put, delete]
-  - name: posts
-    crud: [get, post]
+endpoints:
+  - path: /users
+    class: myapp.endpoints.UserEndpoint
+  - path: /posts
+    class: myapp.endpoints.PostEndpoint
 ```
 
 ```python
 from lightapi import LightApi
 
-app = LightApi.from_config('config.yaml')
+app = LightApi.from_config("lightapi.yaml")
 app.run()
 ```
 
-**That's it!** You now have a fully functional REST API with:
-- Full CRUD operations
-- Automatic input validation
-- Interactive Swagger documentation
-- Proper HTTP status codes
-- Error handling
+## Stack
 
-## Key Features
+| Component | Library |
+|-----------|---------|
+| HTTP server | Uvicorn |
+| ASGI framework | Starlette |
+| ORM | SQLAlchemy 2.x |
+| Validation | Pydantic v2 |
+| JWT | PyJWT |
+| Caching | Redis (optional) |
+| Async DB drivers | asyncpg, aiosqlite (optional) |
 
-### 🔥 **Core Features**
-- **Zero-Code APIs**: Create REST APIs from YAML configuration files
-- **Database Reflection**: Automatically discovers existing database tables
-- **Full CRUD Operations**: GET, POST, PUT, PATCH, DELETE operations
-- **Multiple Databases**: SQLite, PostgreSQL, MySQL support via SQLAlchemy
-- **Async/Await Support**: Built on aiohttp for high performance
+## Next Steps
 
-### 🔐 **Security & Authentication**
-- **JWT Authentication**: Built-in JSON Web Token support
-- **CORS Support**: Cross-Origin Resource Sharing middleware
-- **Input Validation**: Automatic validation based on database schema
-- **Role-Based Permissions**: Control operations per table/user role
-
-### ⚡ **Performance & Scalability**
-- **Redis Caching**: Built-in caching with TTL management
-- **Query Optimization**: Automatic filtering, pagination, and sorting
-- **Connection Pooling**: Efficient database connection management
-- **Async Operations**: Non-blocking request handling
-
-### 🛠️ **Developer Experience**
-- **Auto Documentation**: Interactive Swagger/OpenAPI documentation
-- **Environment Variables**: Flexible deployment configurations
-- **Comprehensive Examples**: Real-world examples for all features
-- **Rich Error Handling**: Detailed error messages and debugging
-
-## Core Concepts
-
-### 1. Database Reflection
-
-LightAPI uses **SQLAlchemy reflection** to automatically discover your existing database schema:
-
-- **Table Structure**: Automatically detects columns, data types, and constraints
-- **Relationships**: Handles foreign keys and table relationships
-- **Validation**: Uses database constraints for automatic input validation
-- **Multiple Databases**: Supports SQLite, PostgreSQL, MySQL
-
-### 2. CRUD Operations
-
-Each table can be configured with specific CRUD operations:
-
-| Operation | HTTP Method | Endpoint | Description |
-|-----------|-------------|----------|-------------|
-| `get` | GET | `/table/` | List all records |
-| `get` | GET | `/table/{id}` | Get specific record |
-| `post` | POST | `/table/` | Create new record |
-| `put` | PUT | `/table/{id}` | Update entire record |
-| `patch` | PATCH | `/table/{id}` | Partially update record |
-| `delete` | DELETE | `/table/{id}` | Delete record |
-
-### 3. Configuration-Driven Development
-
-LightAPI supports two development approaches:
-
-#### YAML Configuration (Recommended)
-- **Zero Python code** required
-- **Database reflection** for automatic schema discovery
-- **Environment variables** for flexible deployment
-- **Role-based permissions** through selective CRUD operations
-
-#### Python Code (Traditional)
-- **Full control** over models and endpoints
-- **Custom business logic** and validation
-- **Advanced features** like custom middleware
-- **SQLAlchemy models** with automatic REST endpoints
-
-## Use Cases
-
-### 🚀 **Rapid Prototyping**
-```yaml
-# prototype.yaml - MVP in minutes
-database_url: "sqlite:///prototype.db"
-tables:
-  - name: users
-    crud: [get, post]
-  - name: posts
-    crud: [get, post]
-```
-
-### 🏢 **Enterprise Applications**
-```yaml
-# enterprise.yaml - Production-ready
-database_url: "${DATABASE_URL}"
-enable_swagger: false  # Disabled in production
-
-tables:
-  - name: users
-    crud: [get, post, put, patch, delete]  # Full admin access
-  - name: orders
-    crud: [get, post, patch]  # Limited operations
-  - name: audit_log
-    crud: [get]  # Read-only for compliance
-```
-
-### 📊 **Analytics APIs**
-```yaml
-# analytics.yaml - Read-only data access
-database_url: "postgresql://readonly@analytics-db/data"
-tables:
-  - name: page_views
-    crud: [get]
-  - name: sales_data
-    crud: [get]
-```
-
-## Framework Philosophy
-
-### Simplicity First
-- **Minimal configuration** required to get started
-- **Sensible defaults** for common use cases
-- **Clear error messages** for debugging
-- **Intuitive API design** that follows REST conventions
-
-### Production Ready
-- **Async/await support** for high performance
-- **Built-in security** features (JWT, CORS, validation)
-- **Caching support** with Redis integration
-- **Environment-based configuration** for deployment
-- **Comprehensive error handling** and logging
-
-### Developer Experience
-- **Interactive documentation** with Swagger UI
-- **Hot reloading** during development
-- **Type hints** for better IDE support
-- **Comprehensive examples** and documentation
-
-## Who Should Use LightAPI?
-
-### ✅ **Perfect For:**
-- Exposing existing databases as REST APIs
-- Rapid prototyping and MVP development
-- Microservices with simple CRUD operations
-- Analytics and reporting APIs
-- Legacy system modernization
-- Teams that prefer configuration over code
-
-### ⚠️ **Consider Alternatives For:**
-- Complex business logic requiring extensive custom code
-- GraphQL APIs (LightAPI focuses on REST)
-- Real-time applications requiring WebSockets
-- Applications requiring extensive custom authentication flows
-
-## Comparison with Other Frameworks
-
-| Feature | LightAPI | FastAPI | Flask | Django REST |
-|---------|----------|---------|-------|-------------|
-| **Zero-Code APIs** | ✅ YAML Config | ❌ | ❌ | ❌ |
-| **Database Reflection** | ✅ Automatic | ❌ | ❌ | ❌ |
-| **Auto CRUD** | ✅ Built-in | ❌ Manual | ❌ Manual | ✅ Complex |
-| **Async Support** | ✅ Native | ✅ Native | ❌ | ❌ |
-| **Auto Documentation** | ✅ Swagger | ✅ Swagger | ❌ | ✅ Complex |
-| **Learning Curve** | 🟢 Easy | 🟡 Medium | 🟢 Easy | 🔴 Hard |
-| **Setup Time** | 🟢 Minutes | 🟡 Hours | 🟡 Hours | 🔴 Days |
-
-## Getting Started
-
-Ready to build your first API? Here's your learning path:
-
-### 🚀 **Quick Start (5 minutes)**
-1. [Installation](installation.md) - Set up LightAPI
-2. [Quickstart](quickstart.md) - Your first API in 5 minutes
-
-### 📚 **Deep Dive**
-1. [Configuration Guide](configuration.md) - YAML and Python configuration
-2. [Tutorial](../tutorial/basic-api.md) - Step-by-step API building
-3. [Examples](../examples/) - Real-world examples and patterns
-
-### 🔧 **Advanced Topics**
-1. [Authentication](../advanced/authentication.md) - Secure your APIs
-2. [Caching](../advanced/caching.md) - Improve performance
-3. [Deployment](../deployment/production.md) - Production setup
-
----
-
-**Ready to transform your database into a REST API?** Let's start with the [Installation Guide](installation.md)! 
+- **[Installation](installation.md)** — install LightAPI and its optional extras
+- **[Quickstart](quickstart.md)** — build a working API in under 5 minutes
+- **[First Steps](first-steps.md)** — project layout and step-by-step walkthrough

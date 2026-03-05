@@ -9,33 +9,32 @@ Get LightAPI up and running in your development environment. This guide covers i
 
 ## Requirements
 
-LightAPI requires Python 3.8 or higher and supports the following platforms:
+LightAPI requires Python 3.10 or higher and supports the following platforms:
 
-- **Python**: 3.8, 3.9, 3.10, 3.11, 3.12
+- **Python**: 3.10, 3.11, 3.12, 3.13
 - **Operating Systems**: Linux, macOS, Windows
 - **Databases**: SQLite, PostgreSQL, MySQL (via SQLAlchemy)
 
 ## Installation Methods
 
-### Method 1: pip (Recommended)
+### Method 1: uv (Recommended)
 
-Install LightAPI from PyPI using pip:
+```bash
+uv add lightapi
+```
+
+### Method 2: pip
 
 ```bash
 pip install lightapi
 ```
 
-### Method 2: Development Installation
-
-For development or to get the latest features:
+### Method 3: Development Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/iklobato/lightapi.git
 cd lightapi
-
-# Install in development mode
-pip install -e .
+uv sync --extra dev
 ```
 
 ### Method 3: Virtual Environment (Recommended)
@@ -58,129 +57,98 @@ pip install lightapi
 
 ## Core Dependencies
 
-LightAPI automatically installs these core dependencies:
+LightAPI v2 ships with these pinned core dependencies:
 
-```
-aiohttp>=3.8.0          # Async HTTP server
-sqlalchemy>=1.4.0       # Database ORM
-pyyaml>=6.0             # YAML configuration support
-pydantic>=1.10.0        # Data validation
-```
+| Package | Version | Purpose |
+|---|---|---|
+| `sqlalchemy` | `>=2.0` | ORM and imperative mapping |
+| `pydantic` | `>=2.0` | Schema validation |
+| `starlette` | `>=0.37` | ASGI framework |
+| `uvicorn` | `>=0.30` | ASGI server |
+| `pyjwt` | `>=2.8` | JWT authentication |
+| `redis` | `>=5.0` | Response caching |
+| `pyyaml` | `>=6.0` | YAML configuration |
 
-## Optional Dependencies
+## Optional Extras
 
-Install additional packages for specific features:
+### Async I/O (`lightapi[async]`)
 
-### Database Drivers
-
-```bash
-# PostgreSQL support
-pip install psycopg2-binary
-
-# MySQL support  
-pip install pymysql
-
-# SQLite (included with Python)
-# No additional installation needed
-```
-
-### Caching Support
+Activate fully async database I/O by installing the async extra:
 
 ```bash
-# Redis caching
-pip install redis
-
-# In-memory caching (built-in)
-# No additional installation needed
+uv add "lightapi[async]"
+# or: pip install "lightapi[async]"
 ```
 
-### Authentication
+This installs:
+
+| Package | Purpose |
+|---|---|
+| `sqlalchemy[asyncio]` | Async SQLAlchemy core |
+| `asyncpg` | PostgreSQL async driver |
+| `aiosqlite` | SQLite async driver |
+| `greenlet` | Required by SQLAlchemy async |
+
+Then swap `create_engine` for `create_async_engine`:
+
+```python
+# Before (sync)
+from sqlalchemy import create_engine
+engine = create_engine("postgresql://user:pass@localhost/db")
+
+# After (async — one-line change)
+from sqlalchemy.ext.asyncio import create_async_engine
+engine = create_async_engine("postgresql+asyncpg://user:pass@localhost/db")
+```
+
+See [Async Support](../advanced/async.md) for the full guide.
+
+### Development Tools (`lightapi[dev]`)
 
 ```bash
-# JWT authentication
-pip install pyjwt
-
-# OAuth support
-pip install authlib
+uv add "lightapi[dev]"
 ```
 
-### Development Tools
-
-```bash
-# Testing
-pip install pytest pytest-asyncio httpx
-
-# Code formatting
-pip install black isort
-
-# Type checking
-pip install mypy
-```
-
-## Complete Installation
-
-For a full-featured installation with all optional dependencies:
-
-```bash
-pip install lightapi[all]
-```
-
-Or install specific feature sets:
-
-```bash
-# Database support
-pip install lightapi[postgres,mysql]
-
-# Caching support
-pip install lightapi[redis]
-
-# Authentication support
-pip install lightapi[auth]
-
-# Development tools
-pip install lightapi[dev]
-```
+Includes: `pytest`, `pytest-asyncio`, `pytest-cov`, `httpx`, `aiosqlite`, `ruff`, `mypy`.
 
 ## Verify Installation
 
-Test your installation with a simple script:
-
 ```python
-# test_installation.py
-from lightapi import LightApi
+# verify.py
+from sqlalchemy import create_engine
+from lightapi import LightApi, RestEndpoint, Field
 
-# Create a simple API
-app = LightApi(database_url="sqlite:///test.db")
+class PingEndpoint(RestEndpoint):
+    message: str = Field(default="pong")
 
-# Add a simple endpoint
-@app.get("/health")
-def health_check():
-    return {"status": "healthy", "version": "1.0.0"}
-
-print("✅ LightAPI installed successfully!")
-print("🚀 Ready to build APIs!")
-
-# Optional: Run the server
-if __name__ == "__main__":
-    print("Starting test server on http://localhost:8000")
-    print("Visit http://localhost:8000/health to test")
-    app.run(host="0.0.0.0", port=8000)
+engine = create_engine("sqlite:///:memory:")
+app = LightApi(engine=engine)
+app.register({"/ping": PingEndpoint})
+print("LightAPI installed successfully.")
 ```
-
-Run the test:
 
 ```bash
-python test_installation.py
+python verify.py
+# LightAPI installed successfully.
 ```
 
-You should see:
-```
-✅ LightAPI installed successfully!
-🚀 Ready to build APIs!
-Starting test server on http://localhost:8000
-```
+**Verify async support:**
 
-Visit `http://localhost:8000/health` to confirm everything works.
+```python
+import asyncio
+from sqlalchemy.ext.asyncio import create_async_engine
+from lightapi import get_async_session
+from sqlalchemy import text
+
+async def check():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with get_async_session(engine) as s:
+        result = await s.execute(text("SELECT 1"))
+        assert result.scalar() == 1
+    print("Async support working.")
+
+asyncio.run(check())
+```
 
 ## Database Setup
 
@@ -335,10 +303,10 @@ pip install --user lightapi
 pip install --upgrade sqlalchemy
 ```
 
-**Issue**: aiohttp installation fails on Windows
+**Issue**: asyncpg installation fails on Windows
 ```bash
-# Solution: Install Visual C++ Build Tools or use conda
-conda install aiohttp
+# Solution: Install Visual C++ Build Tools or use the pre-built wheel
+pip install asyncpg --only-binary asyncpg
 ```
 
 **Issue**: PostgreSQL driver installation fails

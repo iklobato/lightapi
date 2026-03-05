@@ -1,9 +1,8 @@
 import inspect
 import typing  # noqa: F401
-from typing import Any, Dict, List, Type
+from typing import Any, Dict, Type
 
 from sqlalchemy import Column
-from sqlalchemy import inspect as sql_inspect
 from starlette.responses import HTMLResponse, JSONResponse
 
 from .rest import RestEndpoint

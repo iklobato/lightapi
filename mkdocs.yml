@@ -55,7 +55,7 @@ plugins:
   #     repository: iklobato/LightAPI
   #     branch: main
   - search:
-        lang: it
+      lang: en
   - awesome-pages
   #- blog:
   #    blog_toc: true

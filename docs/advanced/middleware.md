@@ -1,244 +1,252 @@
 ---
 title: Middleware
+description: Sync and async request/response middleware for LightAPI v2
 ---
 
-LightAPI provides a middleware system that lets you process requests and responses globally before and after your endpoint logic. The framework includes built-in middleware for common use cases and supports custom middleware.
+# Middleware
 
-## Built-in Middleware
+Middleware intercepts every request before it reaches the endpoint and every response before it is sent to the client. LightAPI v2 supports both **sync** and **async** `process()` methods — they coexist in the same middleware list without any configuration.
 
-LightAPI provides several built-in middleware classes for common functionality:
+---
 
-### CORSMiddleware
+## Defining Middleware
 
-Handles Cross-Origin Resource Sharing (CORS) automatically:
-
-```python
-from lightapi.core import LightApi, CORSMiddleware
-from lightapi.rest import RestEndpoint
-
-class APIEndpoint(Base, RestEndpoint):
-    class Configuration:
-        http_method_names = ['GET', 'POST', 'OPTIONS']
-
-app = LightApi()
-app.register({'/api': APIEndpoint})
-
-# Basic CORS support
-app.add_middleware([CORSMiddleware()])
-
-# Custom CORS configuration
-cors_middleware = CORSMiddleware(
-    allow_origins=['https://myapp.com', 'https://admin.myapp.com'],
-    allow_methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allow_headers=['Authorization', 'Content-Type', 'X-API-Key'],
-    allow_credentials=True
-)
-app.add_middleware([cors_middleware])
-```
-
-### AuthenticationMiddleware
-
-Applies authentication globally to all endpoints:
+Subclass `Middleware` from `lightapi.core` and implement `process(request, response)`:
 
 ```python
-from lightapi.core import LightApi, AuthenticationMiddleware
-from lightapi.auth import JWTAuthentication
-from lightapi.rest import RestEndpoint
+from starlette.requests import Request
+from starlette.responses import Response
+from lightapi.core import Middleware
 
-class User(Base, RestEndpoint):
-    # No need to specify authentication_class here
-    pass
-
-class Product(Base, RestEndpoint):
-    pass
-
-app = LightApi()
-
-# Apply JWT authentication to all endpoints
-app.add_middleware([
-    AuthenticationMiddleware(JWTAuthentication)
-])
-
-app.register({'/users': User, '/products': Product})
-app.run()
-```
-
-## Custom Middleware
-
-Create custom middleware by subclassing the `Middleware` base class:
-
-### 1. Creating Middleware
-
-```python
-from lightapi.core import Middleware, Response
-
-class TimingMiddleware(Middleware):
-    def process(self, request, response):
-        import time
-        # Before handling (response is None)
+class MyMiddleware(Middleware):
+    def process(
+        self, request: Request, response: Response | None
+    ) -> Response | None:
         if response is None:
-            request.state.start_time = time.time()
-            return None
-
-        # After handling
-        duration = time.time() - request.state.start_time
-        response.headers['X-Process-Time'] = str(round(duration, 4))
-        return response
-
-class LoggingMiddleware(Middleware):
-    def process(self, request, response):
-        # Pre-processing
-        if response is None:
-            print(f"Request: {request.method} {request.url}")
-            return None
-        
-        # Post-processing
-        print(f"Response: {response.status_code}")
-        return response
-
-class RateLimitMiddleware(Middleware):
-    def __init__(self):
-        self.requests = {}
-        self.limit = 100  # requests per minute
-        
-    def process(self, request, response):
-        if response is None:
-            import time
-            client_ip = request.client.host
-            current_time = time.time()
-            
-            # Clean old entries
-            minute_ago = current_time - 60
-            self.requests = {ip: times for ip, times in self.requests.items() 
-                           if any(t > minute_ago for t in times)}
-            
-            # Check rate limit
-            if client_ip not in self.requests:
-                self.requests[client_ip] = []
-            
-            recent_requests = [t for t in self.requests[client_ip] if t > minute_ago]
-            
-            if len(recent_requests) >= self.limit:
-                from starlette.responses import JSONResponse
-                return JSONResponse(
-                    {"error": "Rate limit exceeded"}, 
-                    status_code=429
-                )
-            
-            self.requests[client_ip].append(current_time)
-            return None
-        
+            # Pre-processing: called before the endpoint
+            # Return a Response to short-circuit (skip the endpoint)
+            # Return None to continue
+            ...
+        else:
+            # Post-processing: called with the endpoint's response
+            # Modify and return it, or return it unchanged
+            ...
         return response
 ```
 
-**Important concepts:**
+### Execution Phases
 
-- The `process` method is called twice per request:
-  - **Before** the endpoint: `response` is `None` (pre-processing)
-  - **After** the endpoint: `response` is the generated response (post-processing)
-- To short-circuit the request (e.g., for authentication or rate limiting), return a `Response` directly during pre-processing
-- Use `request.state` to store data between pre and post-processing
+| Phase | `response` value | Return value |
+|---|---|---|
+| **Pre** (before endpoint) | `None` | `None` → continue; `Response` → short-circuit |
+| **Post** (after endpoint) | The endpoint's `Response` | Modified or original `Response` |
 
-### 2. Registering Middleware
+Pre-request phase runs middlewares in **declaration order**.  
+Post-request phase runs middlewares in **reverse declaration order**.
 
-Add your middleware classes to the application via `add_middleware`:
+---
+
+## Registering Middleware
+
+Pass a list of `Middleware` subclasses to `LightApi`:
 
 ```python
 from lightapi import LightApi
-from app.middleware import TimingMiddleware, LoggingMiddleware, RateLimitMiddleware
 
-app = LightApi()
-
-# Register middleware in order of execution
-app.add_middleware([
-    RateLimitMiddleware,      # Check rate limits first
-    LoggingMiddleware,        # Log requests
-    TimingMiddleware          # Time processing
-])
-
-app.register({'/items': Item})
-app.run()
+app = LightApi(
+    engine=engine,
+    middlewares=[AuthMiddleware, LoggingMiddleware, CORSMiddleware],
+)
 ```
 
-## Combining Built-in and Custom Middleware
+---
 
-You can combine built-in and custom middleware:
+## Async Middleware
 
-```python
-from lightapi.core import LightApi, CORSMiddleware, AuthenticationMiddleware
-from lightapi.auth import JWTAuthentication
-from app.middleware import LoggingMiddleware, TimingMiddleware
-
-app = LightApi()
-
-# Middleware order matters - they execute in the order registered
-app.add_middleware([
-    LoggingMiddleware,                        # Log all requests first
-    CORSMiddleware(),                         # Handle CORS
-    AuthenticationMiddleware(JWTAuthentication), # Authenticate requests
-    TimingMiddleware                          # Time processing last
-])
-
-app.register({'/api': APIEndpoint})
-app.run()
-```
-
-## Middleware Execution Order
-
-Middleware executes in the order it's registered:
-
-1. **Pre-processing**: First to last (top to bottom)
-2. **Endpoint execution**
-3. **Post-processing**: Last to first (bottom to top)
+Define `async def process` for middleware that needs to do async I/O:
 
 ```python
-app.add_middleware([
-    MiddlewareA,  # Pre: 1st, Post: 3rd
-    MiddlewareB,  # Pre: 2nd, Post: 2nd  
-    MiddlewareC   # Pre: 3rd, Post: 1st
-])
-```
+from lightapi.core import Middleware
 
-## Advanced Middleware Examples
-
-### Conditional Middleware
-
-Apply middleware only to specific conditions:
-
-```python
-class ConditionalMiddleware(Middleware):
-    def process(self, request, response):
-        # Only apply to API endpoints
-        if not request.url.path.startswith('/api/'):
-            return response
-        
+class AsyncAuditMiddleware(Middleware):
+    async def process(self, request, response):
         if response is None:
-            # Pre-processing for API endpoints only
-            request.state.api_request = True
-            return None
-        
-        # Post-processing for API endpoints
-        if hasattr(request.state, 'api_request'):
-            response.headers['X-API-Version'] = '1.0'
-        return response
+            await database.log_request(
+                method=request.method,
+                path=str(request.url.path),
+            )
+        return None
 ```
 
-### Error Handling Middleware
+LightAPI uses `asyncio.iscoroutinefunction(mw.process)` to detect async middleware and awaits it inside the async handler. **No configuration needed** — sync and async middleware coexist transparently.
+
+---
+
+## Practical Examples
+
+### Request Logging (sync)
 
 ```python
-class ErrorHandlingMiddleware(Middleware):
+import logging
+from lightapi.core import Middleware
+
+logger = logging.getLogger(__name__)
+
+class RequestLogMiddleware(Middleware):
     def process(self, request, response):
         if response is None:
-            return None
-        
-        # Handle different error status codes
-        if response.status_code >= 500:
-            print(f"Server error: {response.status_code}")
-            # Could send to monitoring service
-        elif response.status_code >= 400:
-            print(f"Client error: {response.status_code}")
-        
-        return response
+            logger.info("%s %s", request.method, request.url.path)
+        else:
+            logger.info("← %s", response.status_code)
+        return response if response else None
 ```
 
-All incoming requests and outgoing responses will pass through your middleware in the order they are registered.
+### Response Header Injection (sync)
+
+```python
+from lightapi.core import Middleware
+
+class ServerHeaderMiddleware(Middleware):
+    def process(self, request, response):
+        if response is not None:
+            response.headers["X-Powered-By"] = "LightAPI"
+        return None
+```
+
+### Rate Limiting (async, short-circuit)
+
+```python
+from starlette.responses import JSONResponse
+from lightapi.core import Middleware
+
+class RateLimitMiddleware(Middleware):
+    async def process(self, request, response):
+        if response is None:
+            ip = request.client.host
+            if await _check_rate_limit(ip):          # async Redis call
+                return JSONResponse(
+                    {"detail": "rate limit exceeded"}, status_code=429
+                )
+        return None
+```
+
+### JWT Extraction (async pre-processing)
+
+```python
+import jwt
+from lightapi.core import Middleware
+
+class JWTContextMiddleware(Middleware):
+    async def process(self, request, response):
+        if response is None:
+            token = request.headers.get("Authorization", "").removeprefix("Bearer ")
+            if token:
+                try:
+                    payload = jwt.decode(token, SECRET, algorithms=["HS256"])
+                    request.state.user = payload
+                except jwt.PyJWTError:
+                    pass
+        return None
+```
+
+### Timing Middleware (async post-processing)
+
+```python
+import time
+from lightapi.core import Middleware
+
+class TimingMiddleware(Middleware):
+    async def process(self, request, response):
+        if response is None:
+            request.state._start = time.monotonic()
+        else:
+            elapsed_ms = (time.monotonic() - request.state._start) * 1000
+            response.headers["X-Response-Time"] = f"{elapsed_ms:.1f}ms"
+        return None
+```
+
+---
+
+## Mixed Sync + Async Stack
+
+Sync and async middleware coexist freely:
+
+```python
+app = LightApi(
+    engine=engine,
+    middlewares=[
+        RateLimitMiddleware,      # async
+        JWTContextMiddleware,     # async
+        RequestLogMiddleware,     # sync
+        ServerHeaderMiddleware,   # sync
+        TimingMiddleware,         # async
+    ],
+)
+```
+
+Pre-request order: `RateLimitMiddleware → JWTContextMiddleware → RequestLogMiddleware → ServerHeaderMiddleware → TimingMiddleware`.
+
+Post-request order: `TimingMiddleware → ServerHeaderMiddleware → RequestLogMiddleware → JWTContextMiddleware → RateLimitMiddleware`.
+
+---
+
+## Built-in Middleware
+
+### `CORSMiddleware`
+
+Enable Cross-Origin Resource Sharing by passing `cors_origins` to `LightApi`:
+
+```python
+app = LightApi(engine=engine, cors_origins=["https://myapp.com", "http://localhost:3000"])
+```
+
+This wraps the Starlette app with `starlette.middleware.cors.CORSMiddleware`.
+
+### `AuthenticationMiddleware`
+
+Re-exported from `lightapi.core` for backward compatibility. Prefer using `Meta.authentication` on individual endpoints for fine-grained control.
+
+---
+
+## Accessing Middleware Inside Tests
+
+Use `httpx.AsyncClient` with `ASGITransport`:
+
+```python
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import create_async_engine
+from lightapi import LightApi, RestEndpoint
+from lightapi.auth import AllowAny
+from lightapi.config import Authentication
+from lightapi.core import Middleware
+from pydantic import Field
+
+log = []
+
+class TrackingMiddleware(Middleware):
+    def process(self, request, response):
+        if response is None:
+            log.append(("pre", request.method))
+        return None
+
+@pytest_asyncio.fixture
+async def client():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    class Item(RestEndpoint):
+        name: str = Field(min_length=1)
+        class Meta:
+            authentication = Authentication(permission=AllowAny)
+
+    app = LightApi(engine=engine, middlewares=[TrackingMiddleware])
+    app.register({"/items": Item})
+    async with AsyncClient(
+        transport=ASGITransport(app=app.build_app()), base_url="http://test"
+    ) as c:
+        yield c
+
+async def test_middleware_is_called(client):
+    await client.get("/items")
+    assert ("pre", "GET") in log
+```

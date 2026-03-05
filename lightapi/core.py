@@ -1,4 +1,3 @@
-import hashlib
 import json
 from inspect import iscoroutinefunction
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Type
@@ -90,8 +89,6 @@ class LightApi:
         Register a model or endpoint class with the application.
         Accepts a single SQLAlchemy model or RestEndpoint subclass per call.
         """
-        from .swagger import openapi_json_route, swagger_ui_route
-
         # If handler has route_patterns (custom endpoints)
         route_patterns = getattr(handler, "route_patterns", None)
         if route_patterns:

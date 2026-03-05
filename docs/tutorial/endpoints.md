@@ -1,82 +1,238 @@
 ---
-title: Creating Endpoints
+title: Endpoint Classes
+description: Deep dive into RestEndpoint — fields, Meta, method overrides, and HttpMethod mixins
 ---
 
-LightAPI auto-generates standard CRUD routes when you register SQLAlchemy models, but you can also define custom endpoints by subclassing the `RestEndpoint` class.
+# Endpoint Classes
 
-## Subclassing RestEndpoint
+`RestEndpoint` is the foundation of every LightAPI v2 application. This page covers every aspect of defining and customising endpoint classes.
+
+## Defining an endpoint
+
+Annotate class-level attributes with Python types. LightAPI's metaclass turns them into SQLAlchemy columns, Pydantic schema fields, and HTTP handlers simultaneously.
 
 ```python
-# app/endpoints/custom_user.py
-from lightapi.rest import RestEndpoint
+from typing import Optional
+from decimal import Decimal
+from lightapi import RestEndpoint, Field
 
-class CustomUserEndpoint(Base, RestEndpoint):
-    tablename = 'users'
-    # Only allow GET and POST methods
-    http_method_names = ['GET', 'POST']
+class ProductEndpoint(RestEndpoint):
+    name: str = Field(min_length=1, max_length=100)
+    slug: str = Field(min_length=1, max_length=100, unique=True, index=True)
+    price: Decimal = Field(gt=0, decimal_places=2)
+    stock: int = Field(ge=0, default=0)
+    description: Optional[str] = None
+    active: Optional[bool] = Field(None, default=True)
+```
 
-    async def get(self, request):
-        return {'message': 'Custom GET endpoint'}
+## Type map
+
+| Python annotation | SQLAlchemy column type | Nullable |
+|-------------------|----------------------|----------|
+| `str` | `String` | No |
+| `int` | `Integer` | No |
+| `float` | `Float` | No |
+| `bool` | `Boolean` | No |
+| `Decimal` | `Numeric(scale=N)` | No |
+| `datetime.datetime` | `DateTime` | No |
+| `Optional[T]` | same as `T`, `nullable=True` | Yes |
+
+## Auto-injected columns
+
+Every `RestEndpoint` subclass automatically gets:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `Integer` PK | Never declared, never writeable |
+| `created_at` | `DateTime` | Set on INSERT |
+| `updated_at` | `DateTime` | Set on INSERT and UPDATE |
+| `version` | `Integer` | Optimistic locking — must be included in PUT/PATCH |
+
+## `Field()` extra kwargs
+
+Beyond Pydantic's built-in constraints, LightAPI processes:
+
+| Kwarg | Description |
+|-------|-------------|
+| `unique=True` | `UNIQUE` constraint |
+| `index=True` | Database index |
+| `foreign_key="table.col"` | Foreign key reference |
+| `decimal_places=N` | Precision for `Decimal` |
+| `exclude=True` | Skip column creation; field is schema-only |
+| `default=<value>` | Column-level default |
+
+## `Meta` inner class
+
+Control authentication, filtering, pagination, serialisation, caching, and more:
+
+```python
+from lightapi import (
+    RestEndpoint,
+    Authentication, JWTAuthentication, IsAuthenticated,
+    Filtering, FieldFilter, SearchFilter, OrderingFilter,
+    Pagination, Serializer, Cache,
+)
+
+class ArticleEndpoint(RestEndpoint):
+    title: str
+    body: str
+    published: bool
+
+    class Meta:
+        authentication = Authentication(
+            backend=JWTAuthentication,
+            permission=IsAuthenticated,
+        )
+        filtering = Filtering(
+            backends=[FieldFilter, SearchFilter, OrderingFilter],
+            fields=["published"],
+            search=["title", "body"],
+            ordering=["title", "created_at"],
+        )
+        pagination = Pagination(style="page_number", page_size=20)
+        serializer = Serializer(read=["id", "title", "published"])
+        cache = Cache(ttl=60)
+```
+
+| `Meta` attribute | Type | Description |
+|-----------------|------|-------------|
+| `authentication` | `Authentication` | Auth backend + permission class/dict |
+| `filtering` | `Filtering` | Filter backends and field whitelists |
+| `pagination` | `Pagination` | Pagination style and page size |
+| `serializer` | `Serializer` | Read/write field sets |
+| `cache` | `Cache` | Redis TTL and vary-on params |
+| `reflect` | `bool` | Reflect an existing table instead of creating |
+| `table` | `str` | Override the inferred table name |
+
+## HTTP method mixins
+
+Use `HttpMethod` mixins to expose only the verbs you need:
+
+```python
+from lightapi import RestEndpoint, HttpMethod
+
+class ReadOnlyEndpoint(RestEndpoint, HttpMethod.GET):
+    name: str
+
+class CreateListEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
+    name: str
+
+class NoDeleteEndpoint(
+    RestEndpoint,
+    HttpMethod.GET, HttpMethod.POST,
+    HttpMethod.PUT, HttpMethod.PATCH,
+):
+    name: str
+```
+
+Requests to disallowed methods return `405 Method Not Allowed`.
+
+Available mixins: `HttpMethod.GET`, `HttpMethod.POST`, `HttpMethod.PUT`, `HttpMethod.PATCH`, `HttpMethod.DELETE`.
+
+## Method overrides
+
+Override any HTTP verb to add custom logic. The signature receives the Starlette `Request` object.
+
+```python
+import json
+from starlette.responses import JSONResponse
+from lightapi import RestEndpoint
+
+class OrderEndpoint(RestEndpoint):
+    item: str
+    quantity: int
+
+    def post(self, request):
+        data = json.loads(request.body())
+        if data.get("quantity", 0) > 100:
+            return JSONResponse({"detail": "Max quantity is 100"}, status_code=422)
+        return self.create(data)
+```
+
+For async engines, define `async def` overrides and use the `_async` helpers:
+
+```python
+class OrderEndpoint(RestEndpoint):
+    item: str
+    quantity: int
 
     async def post(self, request):
-        data = await request.json()
-        return {'received': data}
+        data = json.loads(await request.body())
+        if data.get("quantity", 0) > 100:
+            return JSONResponse({"detail": "Max quantity is 100"}, status_code=422)
+        return await self._create_async(data)
 ```
 
-## Registering Custom Endpoints
+### Built-in CRUD methods (sync)
+
+| Method | Description |
+|--------|-------------|
+| `self.list(request)` | List all rows |
+| `self.retrieve(request, pk)` | Get one row by `pk` |
+| `self.create(data)` | Insert a row |
+| `self.update(request, pk, data)` | Full update with optimistic locking |
+| `self.destroy(request, pk)` | Delete a row |
+
+### Built-in async CRUD helpers
+
+| Method | Description |
+|--------|-------------|
+| `await self._list_async(request)` | Async list |
+| `await self._retrieve_async(request, pk)` | Async get by pk |
+| `await self._create_async(data)` | Async insert |
+| `await self._update_async(request, pk, data)` | Async update |
+| `await self._destroy_async(request, pk)` | Async delete |
+
+## queryset scoping
+
+Override `queryset()` to pre-filter the base query for all operations on this endpoint:
 
 ```python
-from lightapi import LightApi
-from app.endpoints.custom_user import CustomUserEndpoint
+from sqlalchemy import select
 
-app = LightApi()
-app.register({'/custom-users': CustomUserEndpoint})
+class PublishedArticleEndpoint(RestEndpoint):
+    title: str
+    published: bool
+
+    def queryset(self, request):
+        cls = type(self)
+        return select(cls._model_class).where(cls._model_class.published == True)
 ```
 
-## Registering Custom Endpoints with route_patterns
-
-When defining a custom endpoint (not a SQLAlchemy model), always specify the intended path(s) using the `route_patterns` attribute:
+For async engines:
 
 ```python
-class HelloWorldEndpoint(Base, RestEndpoint):
-    route_patterns = ["/hello"]
-    def get(self, request):
-        return {"message": "Hello, World!"}
-
-app.register(HelloWorldEndpoint)
+    async def queryset(self, request):
+        cls = type(self)
+        return select(cls._model_class).where(cls._model_class.published == True)
 ```
 
-> See the mega example for a comprehensive demonstration of this pattern.
+## Table reflection
 
-## HTTP Method Configuration
-
-- `http_method_names`: List of allowed HTTP methods.
-- `http_exclude`: List of methods to exclude from the default set.
+Set `Meta.reflect = True` to map an endpoint to an existing database table instead of creating a new one:
 
 ```python
-class ReadOnlyEndpoint(Base, RestEndpoint):
-    tablename = 'items'
-    http_method_names = ['GET']
+from sqlalchemy import create_engine
+from lightapi import LightApi, RestEndpoint
+
+class LegacyUserEndpoint(RestEndpoint):
+    class Meta:
+        reflect = True
+        table = "users"   # existing table name
+
+engine = create_engine("postgresql://user:pass@localhost/legacy_db")
+app = LightApi(engine=engine)
+app.register({"/users": LegacyUserEndpoint})
 ```
 
-## Accessing Path Parameters
+## Table name inference
 
-You can retrieve path parameters from `request.match_info`:
+The table name is derived from the class name by converting to snake_case and pluralising:
 
-```python
-async def get(self, request):
-    item_id = request.match_info['id']
-    # Use item_id in your logic
-```
+| Class name | Table name |
+|------------|------------|
+| `UserEndpoint` | `users` |
+| `BlogPost` | `blog_posts` |
+| `Article` | `articles` |
 
-## Custom Route Prefixes
-
-You can add a common prefix to routes when registering:
-
-```python
-app.register(
-    {'/v2/items': Item},
-    prefix='/api'
-)
-# Endpoints will be mounted at /api/v2/items/...
-```
+Override with `Meta.table = "custom_name"`.

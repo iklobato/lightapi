@@ -1,4 +1,3 @@
-import os
 from datetime import datetime
 
 from sqlalchemy import Column, Integer, create_engine

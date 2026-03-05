@@ -1,197 +1,75 @@
-# Exceptions Reference
+---
+title: Exceptions API Reference
+description: Built-in exceptions in LightAPI v2
+---
 
-The Exceptions module provides a comprehensive error handling system for LightAPI applications.
+# Exceptions API Reference
 
-## Built-in Exceptions
+LightAPI v2 defines two framework-level exceptions. All other error responses use standard Starlette/HTTP status codes.
 
-### HTTP Exceptions
-
-```python
-from lightapi.exceptions import (
-    HTTPException,
-    NotFound,
-    BadRequest,
-    Unauthorized,
-    Forbidden,
-    MethodNotAllowed,
-    Conflict,
-    InternalServerError
-)
-
-# Usage
-raise NotFound('User not found')
-raise BadRequest('Invalid input')
-```
-
-### Validation Exceptions
+## `ConfigurationError`
 
 ```python
-from lightapi.exceptions import (
-    ValidationError,
-    InvalidField,
-    RequiredField,
-    InvalidType
-)
-
-# Usage
-raise ValidationError('Invalid data format')
-raise InvalidField('email', 'Invalid email format')
+from lightapi import ConfigurationError
+# or: from lightapi.exceptions import ConfigurationError
 ```
 
-### Database Exceptions
+Raised at startup when a `RestEndpoint` or `LightApi` configuration is invalid.
+
+**Common causes:**
+
+- A field annotation uses a type not in the type map and `exclude=True` is not set.
+- `Meta.serializer` has both `fields` and `read`/`write` set (mutually exclusive).
+- `Meta.pagination` uses an invalid `style` value or `page_size < 1`.
+- `Meta.cache` has `ttl < 1`.
+- An async engine is used without the `lightapi[async]` extras installed.
+- A YAML `database_url` references an unset environment variable.
 
 ```python
-from lightapi.exceptions import (
-    DatabaseError,
-    IntegrityError,
-    ConnectionError,
-    QueryError
-)
+from lightapi import RestEndpoint, ConfigurationError
 
-# Usage
-raise DatabaseError('Database connection failed')
-raise IntegrityError('Duplicate entry')
+try:
+    class BadEndpoint(RestEndpoint):
+        data: list   # list is not in the type map
+except ConfigurationError as e:
+    print(e)
+# RestEndpoint 'BadEndpoint': annotation 'list' on field 'data' is not in the type map.
 ```
 
-## Custom Exceptions
-
-### Creating Custom Exceptions
+## `SerializationError`
 
 ```python
-from lightapi.exceptions import HTTPException
-
-class CustomError(HTTPException):
-    status_code = 400
-    error_code = 'CUSTOM_ERROR'
-    
-    def __init__(self, message='Custom error occurred'):
-        super().__init__(message)
+from lightapi import SerializationError
+# or: from lightapi.exceptions import SerializationError
 ```
 
-### Exception Handlers
+Raised when a database row cannot be converted to a serialisable dict. This typically happens when a column value has an unexpected type.
+
+## HTTP-level errors
+
+For HTTP errors returned to clients, LightAPI uses standard Starlette responses:
+
+| Situation | Status |
+|-----------|--------|
+| Resource not found | `404 Not Found` |
+| Version conflict (optimistic locking) | `409 Conflict` |
+| Validation failure | `422 Unprocessable Entity` |
+| Unauthenticated | `401 Unauthorized` |
+| Insufficient permission | `403 Forbidden` |
+| Method not allowed | `405 Method Not Allowed` |
+| Server error | `500 Internal Server Error` |
+
+To return custom error responses from method overrides, use `starlette.responses.JSONResponse`:
 
 ```python
-from lightapi import LightAPI
-from lightapi.exceptions import HTTPException
+from starlette.responses import JSONResponse
 
-app = LightAPI()
+class MyEndpoint(RestEndpoint):
+    name: str
 
-@app.error_handler(CustomError)
-def handle_custom_error(error):
-    return {
-        'error': error.error_code,
-        'message': str(error)
-    }, error.status_code
+    async def post(self, request):
+        data = await request.json()
+        if not data.get("name"):
+            return JSONResponse({"detail": "name is required"}, status_code=422)
+        return await self._create_async(data)
 ```
-
-## Error Response Format
-
-### Default Format
-
-```python
-{
-    "error": "NOT_FOUND",
-    "message": "User not found",
-    "status_code": 404,
-    "details": {
-        "resource": "User",
-        "id": "123"
-    }
-}
-```
-
-### Custom Format
-
-```python
-@app.error_handler(HTTPException)
-def format_error(error):
-    return {
-        'status': 'error',
-        'code': error.error_code,
-        'description': str(error),
-        'timestamp': datetime.now().isoformat()
-    }, error.status_code
-```
-
-## Examples
-
-### Complete Error Handling Setup
-
-```python
-from lightapi import LightAPI
-from lightapi.exceptions import (
-    HTTPException,
-    NotFound,
-    ValidationError,
-    DatabaseError
-)
-from datetime import datetime
-
-app = LightAPI()
-
-# Custom exception
-class BusinessLogicError(HTTPException):
-    status_code = 400
-    error_code = 'BUSINESS_LOGIC_ERROR'
-
-# Global error handler
-@app.error_handler(HTTPException)
-def handle_http_error(error):
-    return {
-        'status': 'error',
-        'code': error.error_code,
-        'message': str(error),
-        'timestamp': datetime.now().isoformat()
-    }, error.status_code
-
-# Specific error handlers
-@app.error_handler(ValidationError)
-def handle_validation_error(error):
-    return {
-        'status': 'error',
-        'code': 'VALIDATION_ERROR',
-        'fields': error.fields,
-        'message': str(error)
-    }, 400
-
-@app.error_handler(DatabaseError)
-def handle_database_error(error):
-    return {
-        'status': 'error',
-        'code': 'DATABASE_ERROR',
-        'message': 'An internal error occurred'
-    }, 500
-
-# Usage in endpoints
-@app.route('/users/<id>')
-def get_user(request, id):
-    user = User.query.get(id)
-    if not user:
-        raise NotFound(f'User {id} not found')
-    return user.dict()
-
-@app.route('/users', methods=['POST'])
-def create_user(request):
-    try:
-        user = User(**request.json)
-        user.save()
-    except ValidationError as e:
-        raise BadRequest(str(e))
-    except IntegrityError:
-        raise Conflict('User already exists')
-    return user.dict(), 201
-```
-
-## Best Practices
-
-1. Use appropriate exception types
-2. Implement custom exceptions for business logic
-3. Handle all exceptions appropriately
-4. Provide meaningful error messages
-5. Follow security best practices in error responses
-
-## See Also
-
-- [Core API](core.md) - Core framework functionality
-- [REST API](rest.md) - REST endpoint implementation
-- [Validation](validation.md) - Request validation 

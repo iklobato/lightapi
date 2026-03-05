@@ -1,3 +1,5 @@
+> **Note:** This page describes the v1 API and has not yet been updated for v2. See the [README](../../README.md) for current documentation.
+
 # Middleware Example
 
 This example demonstrates how to create and use custom middleware in LightAPI for cross-cutting concerns like logging, CORS, rate limiting, and request processing.

@@ -1,96 +1,80 @@
-from unittest.mock import MagicMock
-
+"""Tests for US7: Middleware processing chain."""
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.testclient import TestClient
 
-from lightapi.core import Middleware, Response
+from lightapi import LightApi, RestEndpoint
+from lightapi.core import Middleware
+from lightapi.fields import Field as LField
+
+
+class AuditEndpoint(RestEndpoint):
+    message: str = LField(min_length=1)
 
 
 class LoggingMiddleware(Middleware):
-    def process(self, request, response):
-        self.logged_request = request
+    calls: list = []
+
+    def process(self, request: Request, response: Response | None) -> Response | None:
+        LoggingMiddleware.calls.append(
+            ("pre" if response is None else "post", request.method)
+        )
+        return None if response is None else response
+
+
+class ShortCircuitMiddleware(Middleware):
+    def process(self, request: Request, response: Response | None) -> Response | None:
+        if response is None and request.headers.get("X-Block") == "true":
+            return JSONResponse({"detail": "blocked by middleware"}, status_code=403)
         return response
 
 
-class HeaderModifyingMiddleware(Middleware):
-    def process(self, request, response):
-        if response:
-            response.headers["X-Test-Header"] = "test-value"
-        return response
+@pytest.fixture(scope="module")
+def client_with_logging():
+    LoggingMiddleware.calls = []
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    app_instance = LightApi(engine=engine, middlewares=[LoggingMiddleware])
+    app_instance.register({"/audit": AuditEndpoint})
+    return TestClient(app_instance.build_app())
 
 
-class ResponseModifyingMiddleware(Middleware):
-    def process(self, request, response):
-        if response:
-            return Response({"modified": "response"}, 200)
-        return response
+@pytest.fixture(scope="module")
+def client_with_block():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    app_instance = LightApi(engine=engine, middlewares=[ShortCircuitMiddleware])
+    app_instance.register({"/guarded": AuditEndpoint})
+    return TestClient(app_instance.build_app())
 
 
-class RequestBlockingMiddleware(Middleware):
-    def process(self, request, response):
-        return Response({"error": "blocked"}, 403)
+class TestMiddlewareInvoked:
+    def test_pre_middleware_called_on_get(self, client_with_logging):
+        LoggingMiddleware.calls.clear()
+        client_with_logging.get("/audit")
+        assert any(phase == "pre" and method == "GET" for phase, method in LoggingMiddleware.calls)
+
+    def test_post_middleware_called_after_get(self, client_with_logging):
+        LoggingMiddleware.calls.clear()
+        client_with_logging.get("/audit")
+        assert any(phase == "post" for phase, _ in LoggingMiddleware.calls)
 
 
-class TestMiddleware:
-    def test_base_middleware(self):
-        middleware = Middleware()
-        mock_request = MagicMock()
-        mock_response = MagicMock()
+class TestShortCircuit:
+    def test_blocked_request_returns_403(self, client_with_block):
+        resp = client_with_block.get("/guarded", headers={"X-Block": "true"})
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "blocked by middleware"
 
-        result = middleware.process(mock_request, mock_response)
-
-        assert result == mock_response
-
-    def test_logging_middleware(self):
-        middleware = LoggingMiddleware()
-        mock_request = MagicMock()
-        mock_response = MagicMock()
-
-        result = middleware.process(mock_request, mock_response)
-
-        assert middleware.logged_request == mock_request
-        assert result == mock_response
-
-    def test_header_modifying_middleware(self):
-        middleware = HeaderModifyingMiddleware()
-        mock_request = MagicMock()
-        mock_response = MagicMock()
-        mock_response.headers = {}
-
-        result = middleware.process(mock_request, mock_response)
-
-        assert result == mock_response
-        assert result.headers["X-Test-Header"] == "test-value"
-
-    def test_response_modifying_middleware(self):
-        middleware = ResponseModifyingMiddleware()
-        mock_request = MagicMock()
-        mock_response = MagicMock()
-
-        result = middleware.process(mock_request, mock_response)
-
-        assert result != mock_response
-        assert isinstance(result, Response)
-        assert result.status_code == 200
-        assert "modified" in str(result.body) or "modified" in result.body
-
-    def test_request_blocking_middleware(self):
-        middleware = RequestBlockingMiddleware()
-        mock_request = MagicMock()
-
-        result = middleware.process(mock_request, None)
-
-        assert isinstance(result, Response)
-        assert result.status_code == 403
-        assert "error" in str(result.body) or "error" in result.body
-
-    def test_middleware_with_no_response(self):
-        middleware = HeaderModifyingMiddleware()
-        mock_request = MagicMock()
-
-        result = middleware.process(mock_request, None)
-
-        assert result is None
-
-
-# Merged TestLoggingMiddleware, TestCORSMiddleware, TestRateLimitMiddleware from test_middleware_example.py into this file.
-# Moved TestHelloWorldEndpoint to the end of this file as endpoint-specific middleware tests.
+    def test_normal_request_passes_through(self, client_with_block):
+        resp = client_with_block.get("/guarded")
+        assert resp.status_code == 200

@@ -1,0 +1,90 @@
+# LightAPI v2 — Agent Context
+# Branch: 1-v2-full-refactor
+# Last updated: 2026-03-05
+# SPEC: specs/1-v2-full-refactor/spec.md
+# PLAN: specs/1-v2-full-refactor/plan.md
+
+## Active Feature
+Full refactor of LightAPI to v2. RestEndpoint is simultaneously the SQLAlchemy model and
+Pydantic schema. No models.py, schemas.py, Column(), or @validates in user code.
+
+## Tech Stack
+- Python 3.10+
+- SQLAlchemy 2.0 — imperative mapping (registry.map_imperatively), Select-based queries
+- Pydantic v2 — Field(), create_model(), model_validate(), model_dump()
+- Starlette — Request, JSONResponse, Response, Router, Route
+- Uvicorn — ASGI server
+- PyJWT — JWT auth (JWTAuthentication is FROZEN — do not modify)
+- Redis — caching via frozen RedisCache/cache_manager
+- PyYAML — YAML config loading
+- pytest + httpx + SQLite — testing only
+
+## Module Map
+| File | Role |
+|------|------|
+| lightapi/exceptions.py | ConfigurationError, SerializationError |
+| lightapi/methods.py    | HttpMethod.GET/POST/PUT/PATCH/DELETE markers |
+| lightapi/config.py     | Authentication, Filtering, Pagination, Serializer, Cache |
+| lightapi/fields.py     | lightapi.Field() wrapper (strips foreign_key/unique/index/exclude) |
+| lightapi/schema.py     | SchemaFactory, _row_to_dict, _apply_fields, resolve_fields |
+| lightapi/rest.py       | RestEndpointMeta, RestEndpoint auto-CRUD |
+| lightapi/auth.py       | AllowAny, IsAuthenticated, IsAdminUser (JWTAuthentication FROZEN) |
+| lightapi/filters.py    | FilterBackend, SearchFilter, OrderingFilter |
+| lightapi/pagination.py | PageNumberPaginator, CursorPaginator |
+| lightapi/middleware.py | Middleware base |
+| lightapi/__init__.py   | LightApi, @app.route, @app.middleware, YAML, select shim |
+
+## FROZEN — DO NOT MODIFY
+- lightapi/auth.py: JWTAuthentication, BaseAuthentication (class bodies)
+- lightapi/cache.py: RedisCache, BaseCache
+- lightapi/swagger.py: SwaggerGenerator
+- lightapi/lightapi.py: preserved as legacy until __init__.py rewrite absorbs it
+- .github/workflows/
+- pyproject.toml metadata fields (name, version, description, authors, etc.)
+
+## Key Invariants (enforce in all generated code)
+1. RestEndpoint IS the SQLAlchemy model AND the Pydantic schema.
+2. Fields = annotated class attrs with Field(). Column() never appears in user code.
+3. queryset is the only name for static and dynamic query definitions.
+4. All validation via Pydantic Field(). @validates must not exist.
+5. Every DB row passes through _row_to_dict → _apply_fields → model_validate → model_dump.
+6. IsAdminUser checks payload["is_admin"] == True.
+7. version (int, default 1) is auto-injected; PUT/PATCH require it; 409 on mismatch.
+8. GET list always returns 200 with {"results": []} on empty; never 404.
+9. DB errors propagate to Starlette's default 500 handler.
+
+## Auto-Injected Columns (MUST NOT be redeclared)
+id, created_at, updated_at, version
+
+## Type Map (annotation → SQLAlchemy column)
+str → String, Optional[str] → String nullable
+int → Integer, Optional[int] → Integer nullable
+float → Float, Optional[float] → Float nullable
+bool → Boolean, Optional[bool] → Boolean nullable
+datetime → DateTime, Optional[datetime] → DateTime nullable
+Decimal → Numeric(scale=N)
+UUID → Uuid
+
+## Field() Custom Kwargs (stripped before Pydantic sees them)
+foreign_key, unique, index, exclude, decimal_places
+Stored in json_schema_extra; read by RestEndpointMeta.
+
+## Error Responses
+404: {"detail": "not found"}
+409: {"detail": "version conflict"}
+422: {"detail": [{loc, msg, type}, ...]}  ← Pydantic v2 format
+403: {"detail": "not allowed"}
+405: {"detail": "method not allowed"} + Allow header
+
+## Test Conventions (from constitution)
+- test_<what>_<condition>_<expected> naming
+- Arrange / Act / Assert
+- sqlite:///:memory: for all DB fixtures
+- Mock only at I/O boundary (DB session, Redis client)
+- No external services
+
+## Constitution Gates (must pass before merge)
+1. ruff check
+2. ruff format --check
+3. mypy --strict
+4. pytest -x (≥90% coverage on lightapi/)

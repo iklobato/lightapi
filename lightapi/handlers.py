@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from typing import List, Type
 
 from aiohttp import web
-from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -118,7 +117,6 @@ class AbstractHandler(ABC):
                 else:
                     item = db.query(self.model).filter(self.model.id == getattr(item, self.model.id.name)).first()
 
-            mapper = inspect(self.model)
             for col in self.model.__table__.columns:
                 if getattr(item, col.name) is None and col.default is not None and col.default.is_scalar:
                     setattr(item, col.name, col.default.arg)
