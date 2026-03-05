@@ -126,44 +126,24 @@ app = LightApi.from_config("lightapi.yaml")
 app.run()
 ```
 
-### Legacy format (existing classes)
-
-If you already have `RestEndpoint` subclasses, point to them by dotted import path:
-
-```yaml
-# lightapi.yaml
-database_url: "${DATABASE_URL}"
-cors_origins:
-  - "https://myapp.com"
-
-endpoints:
-  - path: /users
-    class: myapp.endpoints.UserEndpoint
-  - path: /posts
-    class: myapp.endpoints.PostEndpoint
-```
-
 ### YAML schema reference
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `database.url` | string | SQLAlchemy URL (nested form). Supports `${VAR}` substitution. |
-| `database_url` | string | SQLAlchemy URL (legacy flat form). Supports `${VAR}` substitution. |
+| `database.url` | string | SQLAlchemy URL. Supports `${VAR}` substitution. |
 | `cors_origins` | list | CORS allowed origins. |
 | `defaults.authentication.backend` | string | Auth backend class name (e.g. `JWTAuthentication`). |
 | `defaults.authentication.permission` | string | Permission class name (e.g. `IsAuthenticated`). |
 | `defaults.pagination.style` | string | `page_number` or `cursor`. |
 | `defaults.pagination.page_size` | int | Rows per page. |
 | `middleware` | list | Class names or dotted import paths resolved at startup. |
-| `endpoints[].route` | string | URL prefix — declarative format. |
+| `endpoints[].route` | string | URL prefix. |
 | `endpoints[].fields` | object | Inline field definitions (see below). |
 | `endpoints[].meta.methods` | list or dict | HTTP verbs to enable. Dict form allows per-method auth. |
 | `endpoints[].meta.authentication` | object | Overrides `defaults.authentication` for this endpoint. |
 | `endpoints[].meta.filtering` | object | `fields`, `search`, `ordering` lists. Backends are auto-selected. |
 | `endpoints[].meta.pagination` | object | `style` + `page_size` for this endpoint. |
 | `endpoints[].reflect` | bool | Reflect an existing table instead of creating one. |
-| `endpoints[].path` | string | URL prefix — legacy format. |
-| `endpoints[].class` | string | Dotted import path to a `RestEndpoint` subclass — legacy format. |
 
 #### Field definition keys
 

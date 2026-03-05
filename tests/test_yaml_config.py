@@ -1,4 +1,4 @@
-"""Tests for YAML-based LightApi configuration (both legacy and declarative formats)."""
+"""Tests for YAML-based LightApi configuration (declarative format)."""
 import os
 import tempfile
 import textwrap
@@ -49,13 +49,13 @@ class TestSchemaValidation:
     def test_endpoint_without_route_raises(self):
         # Direct model_validate raises pydantic ValidationError;
         # going through from_config wraps it as ConfigurationError.
-        raw = {"database_url": "sqlite:///:memory:", "endpoints": [{"fields": {}}]}
+        raw = {"database": {"url": "sqlite:///:memory:"}, "endpoints": [{"fields": {}}]}
         with pytest.raises(ValidationError):
             LightAPIConfig.model_validate(raw)
 
     def test_unknown_field_type_raises(self):
         raw = {
-            "database_url": "sqlite:///:memory:",
+            "database": {"url": "sqlite:///:memory:"},
             "endpoints": [
                 {"route": "/x", "fields": {"foo": {"type": "nonsense"}}}
             ],
@@ -64,62 +64,13 @@ class TestSchemaValidation:
             LightAPIConfig.model_validate(raw)
 
     def test_missing_env_var_raises(self):
-        path = _write_yaml({"database_url": "${LIGHTAPI_DB_MISSING_XTEST}"})
+        path = _write_yaml({"database": {"url": "${LIGHTAPI_DB_MISSING_XTEST}"}})
         try:
             with pytest.raises(ConfigurationError, match="LIGHTAPI_DB_MISSING_XTEST"):
                 LightApi.from_config(path)
         finally:
             os.unlink(path)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Legacy format
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestLegacyFormat:
-    def test_flat_database_url(self):
-        # Quotes are required: trailing colon in ':memory:' confuses YAML parsers
-        app = _from_str('database_url: "sqlite:///:memory:"\n')
-        assert app is not None
-
-    def test_env_var_substitution(self, monkeypatch):
-        monkeypatch.setenv("LIGHTAPI_TEST_DB_URL", "sqlite:///:memory:")
-        app = _from_str("database_url: ${LIGHTAPI_TEST_DB_URL}\n")
-        assert app is not None
-
-    def test_cors_origins_passed_through(self):
-        app = _from_str(
-            'database_url: "sqlite:///:memory:"\ncors_origins:\n  - https://example.com\n'
-        )
-        assert app._cors_origins == ["https://example.com"]
-
-    def test_legacy_class_import(self, tmp_path, monkeypatch):
-        """endpoints[].class is resolved via importlib and registered."""
-        module_src = textwrap.dedent(
-            """\
-            from lightapi.rest import RestEndpoint
-            from lightapi.methods import HttpMethod
-
-            class ToyEndpoint(RestEndpoint, HttpMethod.GET):
-                name: str = "toy"
-            """
-        )
-        pkg_dir = tmp_path / "toyapp"
-        pkg_dir.mkdir()
-        (pkg_dir / "__init__.py").write_text("")
-        (pkg_dir / "endpoints.py").write_text(module_src)
-        monkeypatch.syspath_prepend(str(tmp_path))
-
-        cfg = yaml.dump(
-            {
-                "database_url": "sqlite:///:memory:",
-                "endpoints": [
-                    {"path": "/toys", "class": "toyapp.endpoints.ToyEndpoint"}
-                ],
-            }
-        )
-        app = _from_str(cfg)
-        assert "/toys" in app._endpoint_map
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -144,7 +95,8 @@ class TestDeclarativeFormat:
 
     def test_dynamic_fields_create_endpoint_class(self):
         content = """\
-            database_url: "sqlite:///:memory:"
+            database:
+              url: "sqlite:///:memory:"
             endpoints:
               - route: /articles
                 fields:
@@ -159,7 +111,8 @@ class TestDeclarativeFormat:
 
     def test_dynamic_fields_are_on_class_annotations(self):
         content = """\
-            database_url: "sqlite:///:memory:"
+            database:
+              url: "sqlite:///:memory:"
             endpoints:
               - route: /items2
                 fields:
@@ -176,7 +129,8 @@ class TestDeclarativeFormat:
     def test_defaults_applied_to_endpoint(self):
         """Defaults authentication should be present on the generated Meta."""
         content = """\
-            database_url: "sqlite:///:memory:"
+            database:
+              url: "sqlite:///:memory:"
             defaults:
               authentication:
                 backend: JWTAuthentication
@@ -197,7 +151,8 @@ class TestDeclarativeFormat:
 
     def test_endpoint_auth_overrides_defaults(self):
         content = """\
-            database_url: "sqlite:///:memory:"
+            database:
+              url: "sqlite:///:memory:"
             defaults:
               authentication:
                 backend: JWTAuthentication
@@ -218,7 +173,8 @@ class TestDeclarativeFormat:
 
     def test_per_method_auth_in_meta(self):
         content = """\
-            database_url: "sqlite:///:memory:"
+            database:
+              url: "sqlite:///:memory:"
             endpoints:
               - route: /itemsauth
                 fields:
@@ -242,7 +198,8 @@ class TestDeclarativeFormat:
 
     def test_filtering_config_auto_selects_backends(self):
         content = """\
-            database_url: "sqlite:///:memory:"
+            database:
+              url: "sqlite:///:memory:"
             endpoints:
               - route: /posts
                 fields:
@@ -265,7 +222,8 @@ class TestDeclarativeFormat:
 
     def test_pagination_config_from_defaults(self):
         content = """\
-            database_url: "sqlite:///:memory:"
+            database:
+              url: "sqlite:///:memory:"
             defaults:
               pagination:
                 style: page_number
@@ -301,7 +259,8 @@ class TestDeclarativeFormat:
 
     def test_middleware_resolved_by_name(self):
         content = """\
-            database_url: "sqlite:///:memory:"
+            database:
+              url: "sqlite:///:memory:"
             middleware: [CORSMiddleware]
             """
         app = _from_str(content)

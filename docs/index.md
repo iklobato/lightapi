@@ -47,7 +47,7 @@ Built on **Starlette + Uvicorn**, validated by **Pydantic v2**, persisted via **
 - **Serializer** — `Meta.serializer = Serializer(read=[...], write=[...])` for per-verb field projection
 - **Middleware** — `Middleware.process(request, response)` — sync or async — with short-circuit support
 - **Database reflection** — map existing tables with `Meta.reflect = True | "partial"`
-- **YAML config** — `LightApi.from_config("lightapi.yaml")` — declarative endpoints with Pydantic-validated schema, or legacy class-pointer format
+- **YAML config** — `LightApi.from_config("lightapi.yaml")` — declarative endpoints with Pydantic-validated schema
 
 ---
 

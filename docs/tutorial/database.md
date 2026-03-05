@@ -166,7 +166,8 @@ database:
 Legacy flat form also works:
 
 ```yaml
-database_url: "${DATABASE_URL}"
+database:
+  url: "${DATABASE_URL}"
 ```
 
 ## Foreign keys and relationships

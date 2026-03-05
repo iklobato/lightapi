@@ -65,7 +65,7 @@ Load a `lightapi.yaml` file, validate it with Pydantic v2, and return a configur
 app = LightApi.from_config("lightapi.yaml")
 ```
 
-Supports both declarative format (`database.url` + inline `fields`) and legacy format (`database_url` + `endpoints[].class`).
+Uses the declarative format: `database.url` + `endpoints[].route` + inline `fields`.
 
 ### Example
 

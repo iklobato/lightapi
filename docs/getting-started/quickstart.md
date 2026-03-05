@@ -116,15 +116,6 @@ app = LightApi.from_config("lightapi.yaml")
 app.run()
 ```
 
-The **legacy format** is also supported if you already have `RestEndpoint` classes:
-
-```yaml
-database_url: "${DATABASE_URL}"
-endpoints:
-  - path: /books
-    class: myapp.endpoints.BookEndpoint
-```
-
 See the [Configuration Guide](configuration.md) for the full YAML schema reference.
 
 ---

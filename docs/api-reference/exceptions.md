@@ -23,8 +23,8 @@ Raised at startup when a `RestEndpoint` or `LightApi` configuration is invalid.
 - `Meta.pagination` uses an invalid `style` value or `page_size < 1`.
 - `Meta.cache` has `ttl < 1`.
 - An async engine is used without the `lightapi[async]` extras installed.
-- A YAML `database.url` or `database_url` references an unset environment variable.
-- The `lightapi.yaml` document fails Pydantic v2 schema validation (invalid field type, missing `route`/`path`, unknown class name, etc.).
+- A YAML `database.url` references an unset environment variable.
+- The `lightapi.yaml` document fails Pydantic v2 schema validation (invalid field type, missing `route`, unknown class name, etc.).
 
 ```python
 from lightapi import RestEndpoint, ConfigurationError

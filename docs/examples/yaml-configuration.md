@@ -4,7 +4,7 @@ title: YAML Configuration Examples
 
 # YAML Configuration Examples
 
-`LightApi.from_config()` loads a `lightapi.yaml` validated by Pydantic v2. Two formats are supported.
+`LightApi.from_config()` loads a `lightapi.yaml` validated by Pydantic v2.
 
 ## Declarative format (recommended)
 
@@ -57,19 +57,6 @@ from lightapi import LightApi
 
 app = LightApi.from_config("lightapi.yaml")
 app.run()
-```
-
-## Legacy format (existing classes)
-
-```yaml
-database_url: "${DATABASE_URL}"
-cors_origins:
-  - "https://myapp.com"
-endpoints:
-  - path: /products
-    class: myapp.endpoints.ProductEndpoint
-  - path: /orders
-    class: myapp.endpoints.OrderEndpoint
 ```
 
 ## Field types
@@ -141,19 +128,16 @@ python -c "from lightapi import LightApi; LightApi.from_config('lightapi.yaml').
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `database.url` | string | SQLAlchemy URL — nested form. |
-| `database_url` | string | SQLAlchemy URL — legacy flat form. |
+| `database.url` | string | SQLAlchemy URL. Supports `${VAR}` substitution. |
 | `cors_origins` | list | CORS allowed origins. |
 | `defaults.authentication.backend` | string | Auth backend class name. |
 | `defaults.authentication.permission` | string | Permission class name. |
 | `defaults.pagination.style` | string | `page_number` or `cursor`. |
 | `defaults.pagination.page_size` | int | Rows per page. |
 | `middleware` | list | Class names resolved at startup. |
-| `endpoints[].route` | string | URL prefix — declarative. |
+| `endpoints[].route` | string | URL prefix. |
 | `endpoints[].fields` | object | Field definitions. |
 | `endpoints[].meta.methods` | list or dict | HTTP verbs or per-method auth dict. |
 | `endpoints[].meta.filtering` | object | `fields`, `search`, `ordering`. |
 | `endpoints[].meta.pagination` | object | `style`, `page_size`. |
 | `endpoints[].reflect` | bool | Reflect existing table. |
-| `endpoints[].path` | string | URL prefix — legacy. |
-| `endpoints[].class` | string | Dotted class path — legacy. |

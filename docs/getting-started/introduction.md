@@ -146,17 +146,6 @@ app = LightApi.from_config("lightapi.yaml")
 app.run()
 ```
 
-**Legacy format** — point to existing `RestEndpoint` classes by dotted path:
-
-```yaml
-database_url: "${DATABASE_URL}"
-endpoints:
-  - path: /users
-    class: myapp.endpoints.UserEndpoint
-  - path: /posts
-    class: myapp.endpoints.PostEndpoint
-```
-
 See [Configuration](configuration.md) for the complete schema reference.
 
 ## Stack

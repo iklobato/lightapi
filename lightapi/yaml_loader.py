@@ -3,14 +3,7 @@
 Uses Pydantic v2 models to validate the YAML structure, then translates
 the validated model into RestEndpoint subclasses and LightApi configuration.
 
-Supports both the legacy format::
-
-    database_url: sqlite:///app.db
-    endpoints:
-      - path: /users
-        class: myapp.endpoints.UserEndpoint
-
-and the new declarative format::
+Declarative format::
 
     database:
       url: postgresql://user:pass@localhost/shop
@@ -195,68 +188,33 @@ class FieldSpec(BaseModel):
 
 class EndpointConfig(BaseModel):
     """A single endpoint entry."""
-    # New declarative format uses "route"; legacy uses "path"
-    route: str | None = None
-    path: str | None = None
-    # New declarative format: inline field definitions
+    route: str
     fields: dict[str, FieldSpec] = {}
-    # Legacy format: dotted import path to an existing class
-    class_: str | None = None
-    # Reflection
     reflect: bool = False
     meta: MetaConfig = MetaConfig()
 
-    model_config = {"populate_by_name": True}
-
-    @model_validator(mode="before")
-    @classmethod
-    def normalise_class_key(cls, data: dict[str, Any]) -> dict[str, Any]:
-        # YAML key "class" is a Python reserved word; rename to class_
-        if "class" in data:
-            data["class_"] = data.pop("class")
-        return data
-
     @model_validator(mode="after")
-    def require_route_or_path(self) -> "EndpointConfig":
-        if not self.route and not self.path:
-            raise ValueError("Each endpoint must have either 'route' or 'path'.")
+    def require_route(self) -> "EndpointConfig":
+        if not self.route:
+            raise ValueError("Each endpoint must have a 'route'.")
         return self
 
     @property
     def effective_route(self) -> str:
-        return (self.route or self.path or "").strip()
+        return self.route.strip()
 
 
 class LightAPIConfig(BaseModel):
     """Root YAML document schema."""
-    # New nested form
     database: DatabaseConfig | None = None
-    # Legacy flat form
-    database_url: str | None = None
     cors_origins: list[str] = []
     defaults: DefaultsConfig = DefaultsConfig()
     endpoints: list[EndpointConfig] = []
     middleware: list[str] = []
 
-    @model_validator(mode="before")
-    @classmethod
-    def substitute_flat_database_url(cls, data: dict[str, Any]) -> dict[str, Any]:
-        if "database_url" in data and isinstance(data["database_url"], str):
-            data["database_url"] = _substitute_env(data["database_url"])
-        return data
-
-    @model_validator(mode="after")
-    def require_database(self) -> "LightAPIConfig":
-        if not self.database and not self.database_url:
-            # Allow a missing db — LightApi falls back to LIGHTAPI_DATABASE_URL env var
-            pass
-        return self
-
     @property
     def effective_database_url(self) -> str | None:
-        if self.database:
-            return self.database.url
-        return self.database_url
+        return self.database.url if self.database else None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -475,8 +433,8 @@ def _build_endpoint_class(entry: EndpointConfig, defaults: DefaultsConfig) -> ty
 def load_config(app_cls: type, config_path: str) -> Any:
     """Parse a lightapi.yaml file and return a configured LightApi instance.
 
-    Accepts both the legacy format (database_url + endpoints[].class) and the
-    new declarative format (database.url + endpoints[].fields + defaults + middleware).
+    Uses the declarative format: database.url + endpoints[].route +
+    endpoints[].fields + defaults + middleware.
     """
     import yaml
     from pydantic import ValidationError
@@ -503,14 +461,7 @@ def load_config(app_cls: type, config_path: str) -> Any:
     mapping: dict[str, type] = {}
     for entry in cfg.endpoints:
         route = entry.effective_route
-        if entry.class_:
-            # Legacy format: import the existing class
-            module_path, class_name = entry.class_.rsplit(".", 1)
-            mod = importlib.import_module(module_path)
-            endpoint_cls = getattr(mod, class_name)
-        else:
-            # New declarative format: build the class dynamically
-            endpoint_cls = _build_endpoint_class(entry, cfg.defaults)
+        endpoint_cls = _build_endpoint_class(entry, cfg.defaults)
         mapping[route] = endpoint_cls
 
     if mapping:
