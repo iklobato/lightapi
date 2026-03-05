@@ -172,7 +172,7 @@ class Paginator:
     offset = 0
     sort = False
 
-    def paginate(self, queryset: Query) -> List[Any]:
+    def paginate(self, queryset: Any) -> list[Any]:
         """
         Apply pagination to a database query.
 
@@ -183,7 +183,7 @@ class Paginator:
             queryset: The SQLAlchemy query to paginate.
 
         Returns:
-            List[Any]: The paginated list of results.
+            The paginated list of results.
         """
         request_limit = self.get_limit()
         request_offset = self.get_offset()
@@ -215,7 +215,7 @@ class Paginator:
         """
         return self.offset
 
-    def apply_sorting(self, queryset: Query) -> Query:
+    def apply_sorting(self, queryset: Any) -> Any:
         """
         Apply sorting to the queryset.
 
@@ -225,6 +225,6 @@ class Paginator:
             queryset: The SQLAlchemy query to sort.
 
         Returns:
-            Query: The sorted query.
+            The sorted query.
         """
         return queryset

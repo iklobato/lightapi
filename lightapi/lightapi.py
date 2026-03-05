@@ -315,7 +315,6 @@ class LightApi:
         for entry in endpoints_cfg:
             path = entry["path"]
             module_path, class_name = entry["class"].rsplit(".", 1)
-            import importlib
             mod = importlib.import_module(module_path)
             endpoint_cls = getattr(mod, class_name)
             mapping[path] = endpoint_cls

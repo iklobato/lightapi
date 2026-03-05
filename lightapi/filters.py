@@ -111,35 +111,13 @@ class OrderingFilter(BaseFilter):
 
 class ParameterFilter(BaseFilter):
     """
-    Base class for query filters.
-
-    Provides a common interface for all filtering methods.
-    By default, returns the queryset unchanged.
-    """
-
-    def filter_queryset(self, queryset: Query, request) -> Query:
-        """
-        Filter a database queryset based on the request.
-
-        Args:
-            queryset: The SQLAlchemy query to filter.
-            request: The HTTP request containing filter parameters.
-
-        Returns:
-            Query: The filtered query.
-        """
-        return queryset
-
-
-class ParameterFilter(BaseFilter):
-    """
     Filter queryset based on request query parameters.
 
     Automatically filters the queryset using query parameters that
     match model field names, performing exact matching.
     """
 
-    def filter_queryset(self, queryset: Query, request) -> Query:
+    def filter_queryset(self, queryset: Any, request: Any) -> Any:
         """
         Filter a database queryset based on request query parameters.
 
@@ -152,7 +130,7 @@ class ParameterFilter(BaseFilter):
             request: The HTTP request containing filter parameters.
 
         Returns:
-            Query: The filtered query.
+            The filtered query.
         """
         query_params = dict(request.query_params)
         if not query_params:
