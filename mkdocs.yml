@@ -1,14 +1,14 @@
 site_name: LightAPI
-site_url: https://iklobato.github.io/LightAPI/
+site_url: https://iklobato.com/lightapi/
 site_description: LightApi is a lightweight API framework designed for rapid development of RESTful APIs in Python.
 
 repo_url: https://github.com/iklobato/LightAPI
 repo_name: LightAPI
-edit_uri: https://github.com/iklobato/LightAPI/edit/main/docs
+edit_uri: https://github.com/iklobato/LightAPI/edit/master/docs
 
 theme:
   name: material
-  #custom_dir: overrides
+  custom_dir: overrides
   language: en
   icon:
     repo: fontawesome/brands/github

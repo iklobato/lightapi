@@ -1,0 +1,30 @@
+{% extends "main.html" %}
+
+{% block content %}
+<script>
+  (function () {
+    // Redirect .md URLs to their clean-URL equivalents.
+    // MkDocs generates /path/page/ not /path/page.md, so any incoming .md
+    // request hits the 404 page. We strip the extension and redirect.
+    var path = window.location.pathname;
+    if (path.endsWith('.md')) {
+      window.location.replace(path.slice(0, -3) + '/');
+      return;
+    }
+  })();
+</script>
+
+<div class="md-content" data-md-component="content">
+  <article class="md-content__inner md-typeset">
+    <h1>404 – Page not found</h1>
+    <p>The page you're looking for doesn't exist.</p>
+    <p>
+      If you followed a link ending in <code>.md</code>, the correct URL uses
+      a trailing slash — you will be redirected automatically.
+    </p>
+    <p>
+      <a href="{{ config.site_url }}">← Back to home</a>
+    </p>
+  </article>
+</div>
+{% endblock %}
