@@ -2,87 +2,109 @@
 title: First Steps
 ---
 
-In this guide, you'll explore LightAPI's core concepts by creating a simple project from scratch.
+Build your first real LightAPI v2 application step by step.
 
 ## 1. Project Layout
-
-A minimal project structure might look like:
 
 ```
 myapp/
 ├── app/
 │   ├── __init__.py
-│   ├── models.py
-│   └── main.py
-├── requirements.txt
-└── README.md
+│   ├── endpoints.py   # RestEndpoint subclasses
+│   └── main.py        # LightApi wiring
+├── pyproject.toml
+└── .env
 ```
 
-- **app/models.py**: Define your SQLAlchemy models here.
-- **app/main.py**: Create and configure the LightAPI application.
+## 2. Defining Your First Endpoint
 
-## 2. Defining Your First Model
-
-In `app/models.py`, define a simple `User` model:
+In v2, one class serves as the ORM model, the Pydantic schema, **and** the HTTP endpoint.
 
 ```python
-# app/models.py
-from sqlalchemy import Column, Integer, String
-from lightapi.database import Base
+# app/endpoints.py
+from typing import Optional
+from lightapi import RestEndpoint
+from lightapi.fields import Field
 
-class User(Base):
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    email = Column(String, unique=True, index=True)
+class UserEndpoint(RestEndpoint):
+    username: str = Field(min_length=3, max_length=50, unique=True, index=True)
+    email: str = Field(min_length=5, unique=True)
+    bio: Optional[str] = None
 ```
 
-This class inherits from `Base`, which includes:
+LightAPI auto-generates:
+- A `users` table (derived from the class name) with columns `id`, `username`, `email`, `bio`, `created_at`, `updated_at`, `version`
+- A Pydantic create schema (excludes `id`, `created_at`, `updated_at`, `version`)
+- A Pydantic read schema (includes all columns including auto-injected ones)
+- `GET /users`, `POST /users`, `GET /users/{id}`, `PUT /users/{id}`, `PATCH /users/{id}`, `DELETE /users/{id}`
 
-- SQLAlchemy metadata
-- Default `__tablename__` generation (snake_case of the class name)
-
-## 3. Creating the Application
-
-In `app/main.py`, register the model and start the server:
+## 3. Wiring Up the Application
 
 ```python
 # app/main.py
+import os
+from sqlalchemy import create_engine
 from lightapi import LightApi
-from app.models import User
+from app.endpoints import UserEndpoint
 
-app = LightApi()
-app.register({
-    '/users': User
-})
+engine = create_engine(os.environ.get("DATABASE_URL", "sqlite:///app.db"))
 
-if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=8000)
+app = LightApi(engine=engine)
+app.register({"/users": UserEndpoint})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
 ```
 
-- `register` automatically generates CRUD routes (GET, POST, PUT, PATCH, DELETE) for `/users`.
-- `run` starts an ASGI server (defaults to Uvicorn under the hood).
-
-## 4. Testing Your Endpoints
-
-Start the app:
+## 4. Running the Application
 
 ```bash
-python app/main.py
+python -m app.main
 ```
 
-Then, in a separate terminal, try:
+## 5. Exploring the API
 
 ```bash
-# Create a new user
-curl -X POST http://localhost:8000/users/ \
-     -H 'Content-Type: application/json' \
-     -d '{"username":"alice","email":"alice@example.com"}'
+# Create a user
+curl -X POST http://localhost:8000/users \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "email": "alice@example.com"}'
+# → 201 {"id": 1, "username": "alice", "email": "alice@example.com", "bio": null, "version": 1, ...}
 
-# Get list of users
-curl http://localhost:8000/users/
+# List users
+curl http://localhost:8000/users
+# → {"results": [{"id": 1, "username": "alice", ...}]}
 
-# Retrieve a user by ID
-curl http://localhost:8000/users/1
+# Update (optimistic locking — version required)
+curl -X PUT http://localhost:8000/users/1 \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "email": "alice@example.com", "bio": "Hello!", "version": 1}'
+# → 200 {"id": 1, ..., "version": 2}
+
+# Validation error
+curl -X POST http://localhost:8000/users \
+  -H "Content-Type: application/json" \
+  -d '{"username": "ab", "email": "alice@example.com"}'
+# → 422 {"detail": [{"loc": ["username"], "msg": "String should have at least 3 characters", ...}]}
 ```
 
-You should see JSON responses corresponding to each action.
+## 6. Restricting HTTP Methods
+
+Use `HttpMethod` mixins to expose only the verbs you need:
+
+```python
+from lightapi import RestEndpoint, HttpMethod
+from lightapi.fields import Field
+
+class ReadOnlyUserEndpoint(RestEndpoint, HttpMethod.GET):
+    username: str = Field(min_length=3)
+    email: str = Field(min_length=5)
+```
+
+A `POST /users` to this endpoint will return `405 Method Not Allowed`.
+
+## Next Steps
+
+- [Authentication](../advanced/authentication.md) — protect endpoints with JWT
+- [Filtering & Pagination](../advanced/filtering.md) — add query filters and pagination
+- [Serializer](../advanced/serializer.md) — control which fields are exposed

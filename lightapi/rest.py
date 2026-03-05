@@ -1,526 +1,549 @@
-import json
-import typing  # noqa: F401
-from typing import Any, Dict, List, Optional, Type
+"""RestEndpointMeta metaclass and RestEndpoint base class."""
+from __future__ import annotations
 
-from sqlalchemy import inspect as sql_inspect
+import datetime
+from decimal import Decimal
+from typing import Any, get_args, get_origin
+from uuid import UUID
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Table,
+    UniqueConstraint,
+    delete,
+    insert,
+    select as sa_select,
+    update,
+)
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+
+try:
+    from sqlalchemy import Uuid as SAUuid  # SQLAlchemy 2.0+
+except ImportError:
+    SAUuid = None  # type: ignore[assignment,misc]
+
 from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 
-from .core import Response
-from .database import Base, SessionLocal
+from lightapi.exceptions import ConfigurationError, SerializationError
+from lightapi.schema import (
+    SchemaFactory,
+    _apply_fields,
+    _row_to_dict,
+    normalise_serializer,
+    resolve_fields,
+)
+
+_AUTO_FIELDS = frozenset({"id", "created_at", "updated_at", "version"})
+
+_TYPE_MAP: dict[Any, Any] = {
+    str: String,
+    int: Integer,
+    float: Float,
+    bool: Boolean,
+    datetime.datetime: DateTime,
+    Decimal: Numeric,
+    UUID: SAUuid if SAUuid is not None else PG_UUID,
+}
+
+_ALL_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
 
 
-class RestEndpoint:
-    """
-    Base class for REST API endpoints.
+def _is_optional(annotation: Any) -> tuple[bool, Any]:
+    """Return (is_optional, inner_type) for an annotation."""
+    import types as _types
+    import typing
 
-    RestEndpoint provides a complete implementation of a REST resource,
-    with built-in support for common HTTP methods, SQLAlchemy integration,
-    data validation, filtering, authentication, caching, and pagination.
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is typing.Union or origin is _types.UnionType:  # type: ignore[attr-defined]
+        non_none = [a for a in args if a is not type(None)]
+        if len(non_none) == 1 and type(None) in args:
+            return True, non_none[0]
+    return False, annotation
 
-    Subclasses can customize behavior through the inner Configuration class
-    and by overriding HTTP method handlers.
 
-    Attributes:
-        __tablename__: SQLAlchemy table name.
-        __table__: SQLAlchemy table metadata.
-        __abstract__: Whether this class is an abstract base class.
-        id: Primary key field (defined by concrete subclasses).
-    """
+class RestEndpointMeta(type):
+    """Metaclass that turns annotated RestEndpoint subclasses into mapped SQLAlchemy tables."""
 
-    def __init__(self, **kwargs):
-        """
-        Initialize an endpoint instance and assign keyword arguments to attributes.
+    def __new__(
+        mcs,
+        name: str,
+        bases: tuple[type, ...],
+        namespace: dict[str, Any],
+        **kwargs: Any,
+    ) -> type:
+        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
 
-        Args:
-            **kwargs: Arbitrary keyword arguments that will be set as instance attributes.
-        """
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+        if name == "RestEndpoint":
+            return cls
 
-    __tablename__ = None
-    __table__ = None
-    __abstract__ = True
+        is_base_only = kwargs.get("base_only", False) or namespace.get("_base_only", False)
+        if is_base_only:
+            cls._allowed_methods = set(_ALL_METHODS)
+            cls._meta = {}
+            cls._fields_info = {}
+            return cls
 
-    def __init_subclass__(cls, **kwargs):
-        """
-        Configure subclasses of RestEndpoint.
+        mcs._process(cls, name, namespace)
+        return cls
 
-        Marks classes as non-abstract when they define __tablename__ and 
-        SQLAlchemy Column attributes.
+    @staticmethod
+    def _process(cls: type, name: str, namespace: dict[str, Any]) -> None:
+        import typing as _typing
 
-        For SQLAlchemy models, use: class MyModel(Base, RestEndpoint)
+        from lightapi.fields import _LIGHTAPI_KWARGS
+        from pydantic.fields import FieldInfo
 
-        Args:
-            **kwargs: Arbitrary keyword arguments.
-        """
-        super().__init_subclass__(**kwargs)
+        # ── Step 1: Collect annotations ──────────────────────────────────────
+        # Use get_type_hints() so that PEP-563 string annotations (from
+        # `from __future__ import annotations`) are resolved to real types.
+        try:
+            resolved = _typing.get_type_hints(cls)
+        except Exception:
+            resolved = {}
 
-        # Skip if explicitly marked as abstract
-        if kwargs.get('abstract', False) or cls.__dict__.get('__abstract__', False):
-            cls.__abstract__ = True
-            return
+        annotations: dict[str, Any] = {}
+        for base in reversed(cls.__mro__):
+            for k, v in getattr(base, "__annotations__", {}).items():
+                if not k.startswith("_") and k not in _AUTO_FIELDS:
+                    # Prefer the resolved type; fall back to the raw annotation.
+                    annotations[k] = resolved.get(k, v)
 
-        # Mark as non-abstract if tablename + columns detected
-        if hasattr(cls, "__tablename__") and cls.__tablename__:
-            # Check if has Column attributes (SQLAlchemy model)
-            from sqlalchemy import Column
-            has_columns = any(isinstance(getattr(cls, attr, None), Column) 
-                           for attr in dir(cls))
-            
-            if has_columns:
-                cls.__abstract__ = False
-            else:
-                cls.__abstract__ = True
-        else:
-            cls.__abstract__ = True
+        # Remove fields inherited from RestEndpoint itself
+        if "RestEndpoint" in [b.__name__ for b in cls.__mro__[1:]]:
+            for b in cls.__mro__[1:]:
+                if b.__name__ == "RestEndpoint":
+                    for k in list(annotations):
+                        if k in getattr(b, "__annotations__", {}):
+                            annotations.pop(k, None)
+                    break
 
-    id = None
+        # ── Step 2: Build SQLAlchemy columns ─────────────────────────────────
+        columns: list[Column] = []
+        fields_info: dict[str, FieldInfo] = {}
 
-    @property
-    def routes(self):
-        """
-        Get the routes for this endpoint.
+        meta_class = namespace.get("Meta") or getattr(cls, "Meta", None)
+        reflect = getattr(meta_class, "reflect", False) if meta_class else False
 
-        Returns:
-            List of web.RouteDef objects associated with this endpoint.
-        """
-        from aiohttp import web
+        if not reflect:
+            for field_name, annotation in annotations.items():
+                field_val = namespace.get(field_name) or getattr(cls, field_name, None)
+                fi = field_val if isinstance(field_val, FieldInfo) else None
+                if fi:
+                    fields_info[field_name] = fi
 
-        if hasattr(self, "__tablename__") and self.__tablename__:
-            base_path = f"/{self.__tablename__}"
-        else:
-            base_path = f"/{self.__class__.__name__.lower()}"
+                extra: dict[str, Any] = (fi.json_schema_extra or {}) if fi else {}
+                if extra.get("exclude"):
+                    continue
 
-        async def endpoint_handler(request):
-            session = SessionLocal()
+                is_opt, inner = _is_optional(annotation)
+                col_type = _TYPE_MAP.get(inner)
+                if col_type is None:
+                    raise ConfigurationError(
+                        f"RestEndpoint '{name}': annotation '{inner}' on field "
+                        f"'{field_name}' is not in the type map. "
+                        "Add exclude=True to skip column generation."
+                    )
 
-            try:
+                col_kwargs: dict[str, Any] = {"nullable": is_opt}
+                col_args: list[Any] = []
 
-                class RequestAdapter:
-                    def __init__(self, aiohttp_request):
-                        self.aiohttp_request = aiohttp_request
-                        self.path_params = aiohttp_request.match_info
-                        self.query_params = aiohttp_request.query
+                if inner is Decimal:
+                    scale = extra.get("decimal_places", 10)
+                    col_type = Numeric(scale=scale)
 
-                    async def get_data(self):
-                        if hasattr(self, "_data"):
-                            return self._data
-                        try:
-                            self._data = await self.aiohttp_request.json()
-                        except:
-                            self._data = {}
-                        return self._data
+                if extra.get("foreign_key"):
+                    col_args.append(ForeignKey(extra["foreign_key"]))
+                if extra.get("unique"):
+                    col_kwargs["unique"] = True
+                if extra.get("index"):
+                    col_kwargs["index"] = True
 
-                    @property
-                    def data(self):
-                        import asyncio
+                columns.append(Column(field_name, col_type, *col_args, **col_kwargs))
 
-                        loop = asyncio.get_event_loop()
-                        return loop.run_until_complete(self.get_data())
-
-                adapted_request = RequestAdapter(request)
-                setup_result = self._setup(adapted_request, session)
-                if setup_result:
-                    return setup_result
-
-                method = request.method.lower()
-                if hasattr(self, method):
-                    result_data, status_code = getattr(self, method)(adapted_request)
-                    return web.json_response(result_data, status=status_code)
-                else:
-                    return web.json_response({"error": "Method not allowed"}, status=405)
-            finally:
-                session.close()
-
-        return [
-            web.get(base_path, endpoint_handler),
-            web.post(base_path, endpoint_handler),
-            web.get(f"{base_path}/{{id}}", endpoint_handler),
-            web.put(f"{base_path}/{{id}}", endpoint_handler),
-            web.delete(f"{base_path}/{{id}}", endpoint_handler),
-            web.patch(f"{base_path}/{{id}}", endpoint_handler),
-            web.options(base_path, endpoint_handler),
+        # ── Step 3: Auto-inject id / created_at / updated_at / version ───────
+        auto_cols = [
+            Column("id", Integer, primary_key=True, autoincrement=True),
+            Column("created_at", DateTime, default=datetime.datetime.utcnow),
+            Column("updated_at", DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow),
+            Column("version", Integer, default=1, nullable=False),
         ]
 
-    class Configuration:
-        """
-        Configuration options for the RestEndpoint.
+        # ── Step 4: SchemaFactory ─────────────────────────────────────────────
+        cls.__schema_create__, cls.__schema_read__ = SchemaFactory.build(cls)  # type: ignore[attr-defined]
 
-        Attributes:
-            http_method_names: List of allowed HTTP methods.
-            validator_class: Class for validating request data.
-            filter_class: Class for filtering querysets.
-            authentication_class: Class for authenticating requests.
-            caching_class: Class for caching responses.
-            caching_method_names: List of methods to cache.
-            pagination_class: Class for paginating querysets.
-        """
+        # ── Step 5: Parse Meta → _meta ────────────────────────────────────────
+        meta_obj = namespace.get("Meta") or getattr(cls, "Meta", None)
+        raw_serializer = getattr(meta_obj, "serializer", None) if meta_obj else None
 
-        http_method_names = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
-        validator_class = None
-        filter_class = None
-        authentication_class = None
-        caching_class = None
-        caching_method_names = []
-        pagination_class = None
+        # Guard: Meta.serializer must be Serializer instance/subclass
+        if raw_serializer is not None:
+            from pydantic import BaseModel as PydanticBaseModel
+            if isinstance(raw_serializer, type):
+                if issubclass(raw_serializer, PydanticBaseModel):
+                    raise ConfigurationError(
+                        f"Meta.serializer on '{name}' must be a Serializer instance or subclass, "
+                        f"not a BaseModel subclass."
+                    )
+        serialiser_normalised = normalise_serializer(raw_serializer)
 
-    def _is_sa_model(self):
-        """
-        Check if this endpoint is a SQLAlchemy model (extends Base).
+        cls._meta = {  # type: ignore[attr-defined]
+            "authentication": getattr(meta_obj, "authentication", None) if meta_obj else None,
+            "filtering": getattr(meta_obj, "filtering", None) if meta_obj else None,
+            "pagination": getattr(meta_obj, "pagination", None) if meta_obj else None,
+            "serializer_normalised": serialiser_normalised,
+            "cache": getattr(meta_obj, "cache", None) if meta_obj else None,
+            "reflect": getattr(meta_obj, "reflect", False) if meta_obj else False,
+            "table": getattr(meta_obj, "table", None) if meta_obj else None,
+        }
+        cls._fields_info = fields_info  # type: ignore[attr-defined]
 
-        Returns:
-            bool: True if the endpoint is a SQLAlchemy model, False otherwise.
-        """
-        return hasattr(self.__class__, "__tablename__") and self.__class__.__tablename__ is not None
+        # ── Step 6: MRO scan for HttpMethod markers ───────────────────────────
+        from lightapi.methods import HttpMethod
 
-    def _get_columns(self):
-        """
-        Get column names safely regardless of whether we're a SQLAlchemy model.
+        allowed: set[str] = set()
+        for base in cls.__mro__:
+            if base is cls:
+                continue
+            http_method = getattr(base, "_http_method", None)
+            if http_method:
+                allowed.add(http_method)
+        cls._allowed_methods = allowed if allowed else set(_ALL_METHODS)  # type: ignore[attr-defined]
 
-        Returns:
-            list: List of column/attribute names for this endpoint.
-        """
-        if self._is_sa_model():
-            return [column.name for column in sql_inspect(self.__class__).columns]
+        # ── Step 7: Imperative SQLAlchemy mapping ─────────────────────────────
+        if reflect is True or reflect == "full" or reflect == "partial":
+            # Defer reflection until LightApi.register() when an engine is available.
+            cls._reflect_deferred = True  # type: ignore[attr-defined]
+            cls._reflect_partial_columns = columns if reflect == "partial" else []  # type: ignore[attr-defined]
         else:
-            return [attr for attr in dir(self) if not attr.startswith("_") and not callable(getattr(self, attr))]
-
-    def _setup(self, request, session):
-        """
-        Set up the endpoint for a request.
-
-        Args:
-            request: The HTTP request.
-            session: The database session.
-
-        Returns:
-            Response: Error response if setup fails, None otherwise.
-        """
-        self.request = request
-        self.session = session
-
-        # Handle authentication first
-        auth_response = self._setup_auth()
-        if auth_response:
-            return auth_response
-
-        self._setup_cache()
-        self._setup_filter()
-        self._setup_validator()
-        self._setup_pagination()
-
-        return None
-
-    def _setup_auth(self):
-        """
-        Set up authentication for the endpoint.
-
-        Returns:
-            Response: Authentication error response if authentication fails, None otherwise.
-        """
-        config = getattr(self, "Configuration", None)
-        if config and hasattr(config, "authentication_class") and config.authentication_class:
-            self.auth = config.authentication_class()
-            if not self.auth.authenticate(self.request):
-                return Response({"error": "not allowed"}, status_code=403)
-
-    def _setup_cache(self):
-        config = getattr(self, "Configuration", None)
-        if config and hasattr(config, "caching_class") and config.caching_class:
-            self.cache = config.caching_class()
-
-    def _setup_filter(self):
-        config = getattr(self, "Configuration", None)
-        if config and hasattr(config, "filter_class") and config.filter_class:
-            self.filter = config.filter_class()
-
-    def _setup_validator(self):
-        config = getattr(self, "Configuration", None)
-        if config and hasattr(config, "validator_class") and config.validator_class:
-            self.validator = config.validator_class()
-
-    def _setup_pagination(self):
-        config = getattr(self, "Configuration", None)
-        if config and hasattr(config, "pagination_class") and config.pagination_class:
-            self.paginator = config.pagination_class()
-
-    def get(self, request):
-        """
-        Handle GET requests.
-
-        Retrieves a list of objects from the database, applying filtering and pagination
-        if configured.
-
-        Args:
-            request: The HTTP request.
-
-        Returns:
-            tuple: A tuple containing the response data and status code.
-        """
-        query = self.session.query(self.__class__)
-
-        # Check for ID filter in query parameters
-        object_id = None
-        if hasattr(request, "query_params"):
-            object_id = request.query_params.get("id")
-
-        # Filter by ID if provided
-        if object_id:
-            query = query.filter_by(id=object_id)
-
-        if hasattr(self, "filter"):
-            query = self.filter.filter_queryset(query, request)
-
-        if hasattr(self, "paginator"):
-            results = self.paginator.paginate(query)
-        else:
-            results = query.all()
-
-        data = []
-        for obj in results:
-            item = {}
-            if self._is_sa_model():
-                for column in sql_inspect(obj.__class__).columns:
-                    item[column.name] = getattr(obj, column.name)
-            else:
-                for attr in self._get_columns():
-                    item[attr] = getattr(obj, attr)
-            data.append(item)
-
-        return {"results": data}, 200
-
-    def post(self, request):
-        """
-        Handle POST requests.
-
-        Creates a new object in the database using the request data.
-        Validates the data if a validator is configured.
-
-        Args:
-            request: The HTTP request.
-
-        Returns:
-            tuple: A tuple containing the response data and status code.
-        """
-        try:
-            data = getattr(request, "data", {})
-
-            if hasattr(self, "validator"):
-                validated_data = self.validator.validate(data)
-                data = validated_data
-
-            instance = self.__class__(**data)
-            self.session.add(instance)
-            self.session.commit()
-
-            result = {}
-            if self._is_sa_model():
-                for column in sql_inspect(instance.__class__).columns:
-                    result[column.name] = getattr(instance, column.name)
-            else:
-                for attr in self._get_columns():
-                    result[attr] = getattr(instance, attr)
-
-            return {"result": result}, 201
-        except Exception as e:
-            self.session.rollback()
-            return {"error": str(e)}, 400
-
-    def put(self, request):
-        """
-        Handle PUT requests.
-
-        Updates an existing object in the database using the request data.
-        Validates the data if a validator is configured.
-
-        Args:
-            request: The HTTP request.
-
-        Returns:
-            tuple: A tuple containing the response data and status code.
-        """
-        try:
-            # First try to get ID from path parameters
-            object_id = request.path_params.get("id")
-
-            # If not found, try query parameters
-            if not object_id and hasattr(request, "query_params"):
-                object_id = request.query_params.get("id")
-
-            if not object_id:
-                return {"error": "ID is required"}, 400
-
-            instance = self.session.query(self.__class__).filter_by(id=object_id).first()
-            if not instance:
-                return {"error": "Object not found"}, 404
-
-            data = getattr(request, "data", {})
-
-            if hasattr(self, "validator"):
-                validated_data = self.validator.validate(data)
-                data = validated_data
-
-            for field, value in data.items():
-                setattr(instance, field, value)
-
-            self.session.commit()
-
-            result = {}
-            if self._is_sa_model():
-                for column in sql_inspect(instance.__class__).columns:
-                    result[column.name] = getattr(instance, column.name)
-            else:
-                for attr in self._get_columns():
-                    result[attr] = getattr(instance, attr)
-
-            return {"result": result}, 200
-        except Exception as e:
-            self.session.rollback()
-            return {"error": str(e)}, 400
-
-    def delete(self, request):
-        """
-        Handle DELETE requests.
-
-        Deletes an object from the database.
-
-        Args:
-            request: The HTTP request.
-
-        Returns:
-            tuple: A tuple containing the response data and status code.
-        """
-        try:
-            # First try to get ID from path parameters
-            object_id = request.path_params.get("id")
-
-            # If not found, try query parameters
-            if not object_id and hasattr(request, "query_params"):
-                object_id = request.query_params.get("id")
-
-            if not object_id:
-                return {"error": "ID is required"}, 400
-
-            instance = self.session.query(self.__class__).filter_by(id=object_id).first()
-            if not instance:
-                return {"error": "Object not found"}, 404
-
-            self.session.delete(instance)
-            self.session.commit()
-
-            return {"result": "Object deleted"}, 204
-        except Exception as e:
-            self.session.rollback()
-            return {"error": str(e)}, 400
-
-    def patch(self, request):
-        """
-        Handle PATCH requests.
-
-        Partially updates an existing object in the database using the request data.
-        Validates the data if a validator is configured.
-
-        Args:
-            request: The HTTP request.
-
-        Returns:
-            tuple: A tuple containing the response data and status code.
-        """
-        try:
-            # First try to get ID from path parameters
-            object_id = request.path_params.get("id")
-
-            # If not found, try query parameters
-            if not object_id and hasattr(request, "query_params"):
-                object_id = request.query_params.get("id")
-
-            if not object_id:
-                return {"error": "ID is required"}, 400
-
-            instance = self.session.query(self.__class__).filter_by(id=object_id).first()
-            if not instance:
-                return {"error": "Object not found"}, 404
-
-            data = getattr(request, "data", {})
-
-            if hasattr(self, "validator"):
-                validated_data = self.validator.validate(data)
-                data = validated_data
-
-            for field, value in data.items():
-                setattr(instance, field, value)
-
-            self.session.commit()
-
-            result = {}
-            if self._is_sa_model():
-                for column in sql_inspect(instance.__class__).columns:
-                    result[column.name] = getattr(instance, column.name)
-            else:
-                for attr in self._get_columns():
-                    result[attr] = getattr(instance, attr)
-
-            return {"result": result}, 200
-        except Exception as e:
-            self.session.rollback()
-            return {"error": str(e)}, 400
-
-    def options(self, request):
-        """
-        Handle OPTIONS requests.
-
-        Returns the list of allowed HTTP methods for this endpoint.
-
-        Args:
-            request: The HTTP request.
-
-        Returns:
-            tuple: A tuple containing the response data and status code.
-        """
-        return {"allowed_methods": self.Configuration.http_method_names}, 200
-
-    def __getattr__(self, name):
-        """
-        Return NotImplemented for unspecified HTTP methods.
-
-        Args:
-            name (str): The name of the attribute being accessed.
-
-        Returns:
-            NotImplemented: If the method is not implemented.
-        """
-        if name.upper() in self.Configuration.http_method_names:
-            return lambda *args, **kwargs: ("Method not implemented", 501)
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+            cls._reflect_deferred = False  # type: ignore[attr-defined]
+            _map_imperatively(cls, name, all_columns=auto_cols + columns, meta_obj=meta_obj)
+
+    def __init__(cls, name: str, bases: tuple[type, ...], namespace: dict[str, Any], **kwargs: Any) -> None:
+        super().__init__(name, bases, namespace, **kwargs)
+
+
+def _map_imperatively(
+    cls: type,
+    name: str,
+    all_columns: list[Column],
+    meta_obj: Any,
+) -> None:
+    """Register the class as a SQLAlchemy mapped entity using the app-level registry."""
+    from lightapi._registry import get_registry_and_metadata
+    from pydantic.fields import FieldInfo
+
+    registry, metadata = get_registry_and_metadata()
+
+    table_name = (
+        getattr(meta_obj, "table", None)
+        or f"{name.lower()}s"
+    )
+
+    # Avoid double-mapping (e.g., when class is referenced from two routes)
+    try:
+        from sqlalchemy import inspect as sa_inspect
+        sa_inspect(cls)
+        cls._model_class = cls  # type: ignore[attr-defined]
+        return
+    except Exception:
+        pass
+
+    # Remove FieldInfo class attributes so SQLAlchemy can instrument them.
+    # We already saved them in cls._fields_info; restore as plain defaults after mapping.
+    stashed: dict[str, Any] = {}
+    for col in all_columns:
+        existing = cls.__dict__.get(col.name)
+        if isinstance(existing, FieldInfo):
+            stashed[col.name] = existing
+            try:
+                delattr(cls, col.name)
+            except AttributeError:
+                pass
+
+    if table_name in metadata.tables:
+        table = Table(table_name, metadata, *all_columns, extend_existing=True)
+    else:
+        table = Table(table_name, metadata, *all_columns)
+    registry.map_imperatively(cls, table)
+    cls._model_class = cls  # type: ignore[attr-defined]
+
+
+def _map_reflected(
+    cls: type,
+    name: str,
+    meta_obj: Any,
+    partial: bool,
+    extra_columns: list[Column] | None = None,
+) -> None:
+    """Map a RestEndpoint to an existing database table via reflection.
+
+    partial=False → pure reflection; no new columns added.
+    partial=True  → reflect existing table then add extra_columns from user annotations.
+    """
+    from lightapi._registry import get_engine, get_registry_and_metadata
+    from sqlalchemy import inspect as sa_inspect_engine
+
+    registry, metadata = get_registry_and_metadata()
+    engine = get_engine()
+
+    table_name = getattr(meta_obj, "table", None) or f"{name.lower()}s"
+
+    existing_inspector = sa_inspect_engine(engine)
+    if table_name not in existing_inspector.get_table_names():
+        raise ConfigurationError(
+            f"Meta.reflect is set on '{name}' but table '{table_name}' "
+            "does not exist in the database."
+        )
+
+    if table_name not in metadata.tables:
+        # Reflect the table into our metadata
+        from sqlalchemy import Table
+        table = Table(table_name, metadata, autoload_with=engine)
+    else:
+        table = metadata.tables[table_name]
+
+    if partial and extra_columns:
+        for col in extra_columns:
+            if col.name not in table.c:
+                table.append_column(col)
+
+    try:
+        from sqlalchemy import inspect as sa_inspect
+        sa_inspect(cls)
+        cls._model_class = cls  # type: ignore[attr-defined]
+        return
+    except Exception:
+        pass
+
+    registry.map_imperatively(cls, table)
+    cls._model_class = cls  # type: ignore[attr-defined]
 
 
 class Validator:
+    """Backward-compatibility stub. Use Pydantic Field constraints instead."""
+
+
+class RestEndpoint(metaclass=RestEndpointMeta):
+    """Base class for all LightAPI endpoints.
+
+    Subclasses declare fields as annotated class attributes using Field().
+    The metaclass auto-generates SQLAlchemy columns and Pydantic schemas.
     """
-    Base class for request data validation.
 
-    Provides a mechanism for validating and transforming request data
-    through per-field validation methods. Subclasses can implement
-    validate_<field_name> methods to validate and transform specific fields.
-    """
+    _model_class: type
+    _meta: dict[str, Any]
+    _allowed_methods: set[str]
+    _fields_info: dict[str, Any]
 
-    def validate(self, data):
-        """
-        Validate and transform request data.
+    def __init__(self, **kwargs: Any) -> None:
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
-        For each field in the data, looks for a validate_<field_name> method
-        and calls it to validate and transform the field value.
+    # ── CRUD helpers ──────────────────────────────────────────────────────────
 
-        Args:
-            data: The data to validate.
+    def _get_engine(self) -> Any:
+        from lightapi._registry import get_engine
+        return get_engine()
 
-        Returns:
-            dict: The validated and transformed data.
-        """
-        validated_data = {}
-        for field, value in data.items():
-            validate_method = getattr(self, f"validate_{field}", None)
-            if validate_method:
-                validated_data[field] = validate_method(value)
+    def _get_queryset(self, request: Request) -> Any:
+        cls = type(self)
+        qs_attr = cls.__dict__.get("queryset") or getattr(cls, "queryset", None)
+        if qs_attr is None:
+            return sa_select(cls._model_class)
+        if callable(qs_attr):
+            return qs_attr(self, request)
+        return qs_attr
+
+    def _run_filter_backends(self, request: Request, qs: Any) -> Any:
+        filtering = self._meta.get("filtering")
+        if not filtering or not filtering.backends:
+            return qs
+        for backend_cls in filtering.backends:
+            qs = backend_cls().filter_queryset(request, qs, self)
+        return qs
+
+    def _serialize_row(self, row: Any, method: str) -> dict[str, Any]:
+        cls = type(self)
+        d = _row_to_dict(row)
+        fields = resolve_fields(cls, method)
+        d = _apply_fields(d, fields)
+        schema = cls.__schema_read__
+        validated = schema.model_validate(d)
+        result = validated.model_dump(mode="json")
+        # Re-apply projection so Optional fields that aren't in the serializer
+        # list don't bleed through as null in the response.
+        if fields is not None:
+            result = {k: v for k, v in result.items() if k in fields}
+        return result
+
+    def list(self, request: Request) -> Response:
+        """Handle GET /{path} — return collection."""
+        from sqlalchemy.orm import Session
+
+        engine = self._get_engine()
+        cls = type(self)
+        pagination_cfg = self._meta.get("pagination")
+
+        with Session(engine) as session:
+            qs = self._get_queryset(request)
+            qs = self._run_filter_backends(request, qs)
+
+            if pagination_cfg:
+                from lightapi.pagination import CursorPaginator, PageNumberPaginator
+
+                if pagination_cfg.style == "cursor":
+                    pager = CursorPaginator()
+                    rows, next_cursor = pager.paginate(request, qs, session, pagination_cfg.page_size)
+                    results = [self._serialize_row(r, "GET") for r in rows]
+                    return JSONResponse(pager.wrap(results, next_cursor, None))
+                else:
+                    pager = PageNumberPaginator()
+                    page = int(request.query_params.get("page", 1))
+                    rows, total = pager.paginate(request, qs, session, pagination_cfg.page_size)
+                    results = [self._serialize_row(r, "GET") for r in rows]
+                    return JSONResponse(pager.wrap(request, results, total, page, pagination_cfg.page_size))
+
+            instances = session.execute(qs).scalars().all()
+            results = [self._serialize_row(inst, "GET") for inst in instances]
+            return JSONResponse({"results": results})
+
+    def retrieve(self, request: Request, pk: int) -> Response:
+        """Handle GET /{path}/{id}."""
+        from sqlalchemy.orm import Session
+
+        engine = self._get_engine()
+        cls = type(self)
+        with Session(engine) as session:
+            instance = session.execute(
+                sa_select(cls._model_class).where(cls._model_class.id == pk)
+            ).scalars().first()
+            if instance is None:
+                return JSONResponse({"detail": "not found"}, status_code=404)
+            return JSONResponse(self._serialize_row(instance, "GET"))
+
+    def create(self, data: dict[str, Any]) -> Response:
+        """Handle POST /{path} — validate input and insert row."""
+        from pydantic import ValidationError
+        from sqlalchemy.orm import Session
+
+        engine = self._get_engine()
+        cls = type(self)
+        try:
+            validated = cls.__schema_create__.model_validate(data)
+        except ValidationError as exc:
+            return JSONResponse({"detail": exc.errors()}, status_code=422)
+
+        with Session(engine) as session:
+            now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+            instance = cls._model_class(
+                **validated.model_dump(),
+                created_at=now,
+                updated_at=now,
+                version=1,
+            )
+            session.add(instance)
+            session.flush()          # executes INSERT, populates auto-increment id
+            session.refresh(instance)  # re-loads all columns (including DB-generated ones)
+            response_data = self._serialize_row(instance, "POST")
+            session.commit()
+            return JSONResponse(response_data, status_code=201)
+
+    def update(self, data: dict[str, Any], pk: int, partial: bool = False) -> Response:
+        """Handle PUT/PATCH /{path}/{id} with optimistic locking."""
+        from pydantic import ValidationError
+        from sqlalchemy.orm import Session
+
+        client_version = data.get("version")
+        if client_version is None:
+            return JSONResponse(
+                {"detail": [{"loc": ["version"], "msg": "Field required", "type": "missing"}]},
+                status_code=422,
+            )
+
+        engine = self._get_engine()
+        cls = type(self)
+
+        try:
+            if partial:
+                # Build a one-shot model where every field is Optional so that
+                # PATCH can supply any subset of fields without validation errors.
+                from typing import Optional as _Opt
+                from pydantic import create_model as _cm, ConfigDict as _CD
+                patch_fields: dict[str, Any] = {}
+                for fname, finfo in cls.__schema_create__.model_fields.items():
+                    ann = finfo.annotation
+                    patch_fields[fname] = (_Opt[ann], None)  # type: ignore[valid-type]
+                PatchSchema = _cm(
+                    f"{cls.__name__}PatchSchema",
+                    __config__=_CD(from_attributes=True),
+                    **patch_fields,
+                )
+                validated = PatchSchema.model_validate(data)
+                update_data = {
+                    k: v
+                    for k, v in validated.model_dump(exclude_unset=True).items()
+                    if k not in _AUTO_FIELDS and v is not None
+                }
             else:
-                validated_data[field] = value
-        return validated_data
+                validated = cls.__schema_create__.model_validate(data)
+                update_data = {
+                    k: v for k, v in validated.model_dump().items() if k not in _AUTO_FIELDS
+                }
+        except ValidationError as exc:
+            return JSONResponse({"detail": exc.errors()}, status_code=422)
+
+        update_data.pop("version", None)
+
+        with Session(engine) as session:
+            result = session.execute(
+                update(cls._model_class)
+                .where(
+                    cls._model_class.id == pk,
+                    cls._model_class.version == client_version,
+                )
+                .values(**update_data, version=client_version + 1,
+                        updated_at=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
+            )
+            if result.rowcount == 0:
+                exists = session.execute(
+                    sa_select(cls._model_class.id).where(cls._model_class.id == pk)
+                ).first()
+                session.rollback()
+                if not exists:
+                    return JSONResponse({"detail": "not found"}, status_code=404)
+                return JSONResponse({"detail": "version conflict"}, status_code=409)
+            # Re-fetch so all columns (including updated_at/version) are current
+            instance = session.execute(
+                sa_select(cls._model_class).where(cls._model_class.id == pk)
+            ).scalars().first()
+            response_data = self._serialize_row(instance, "PUT")
+            session.commit()
+            return JSONResponse(response_data)
+
+    def destroy(self, request: Request, pk: int) -> Response:
+        """Handle DELETE /{path}/{id}."""
+        from sqlalchemy.orm import Session
+
+        engine = self._get_engine()
+        cls = type(self)
+        with Session(engine) as session:
+            stmt = (
+                delete(cls._model_class)
+                .where(cls._model_class.id == pk)
+                .returning(cls._model_class.id)
+            )
+            result = session.execute(stmt).first()
+            if result is None:
+                return JSONResponse({"detail": "not found"}, status_code=404)
+            session.commit()
+            return Response(status_code=204)

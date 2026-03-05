@@ -1,8 +1,8 @@
-import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 import jwt
+from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from .config import config
@@ -121,3 +121,25 @@ class JWTAuthentication(BaseAuthentication):
             jwt.InvalidTokenError: If the token is invalid or expired.
         """
         return jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+
+
+class AllowAny:
+    """Permits all requests regardless of authentication state."""
+
+    def has_permission(self, request: Request) -> bool:
+        return True
+
+
+class IsAuthenticated:
+    """Permits requests with a valid JWT already decoded into request.state.user."""
+
+    def has_permission(self, request: Request) -> bool:
+        return getattr(request.state, "user", None) is not None
+
+
+class IsAdminUser:
+    """Permits requests whose JWT payload contains is_admin == True."""
+
+    def has_permission(self, request: Request) -> bool:
+        user = getattr(request.state, "user", None)
+        return isinstance(user, dict) and user.get("is_admin") is True

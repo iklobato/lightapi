@@ -1,3 +1,5 @@
+> **Note:** This document describes the v1 implementation. The v2 YAML configuration format uses the `endpoints:` key and class references. See [README.md](README.md) for details.
+
 # LightAPI Installation, Testing, and Validation Report
 
 ## Executive Summary

@@ -1,30 +1,53 @@
-from .auth import JWTAuthentication
-from .cache import RedisCache
-from .core import (
+"""LightAPI v2 public API."""
+from lightapi.auth import AllowAny, IsAdminUser, IsAuthenticated, JWTAuthentication
+from lightapi.cache import RedisCache
+from lightapi.config import Authentication, Cache, Filtering, Pagination, Serializer
+from lightapi.exceptions import ConfigurationError, SerializationError
+from lightapi.fields import Field
+from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
+from lightapi.lightapi import LightApi
+from lightapi.methods import HttpMethod
+from lightapi.rest import RestEndpoint
+from lightapi.schema import SchemaFactory
+
+# Backward-compatible re-exports from core.py
+from lightapi.core import (
     AuthenticationMiddleware,
     CORSMiddleware,
     Middleware,
     Response,
 )
-from .filters import ParameterFilter
-from .lightapi import LightApi
-from .models import Base
-from .pagination import Paginator
-from .rest import RestEndpoint, Validator
-from .swagger import SwaggerGenerator
 
 __all__ = [
+    # Core
     "LightApi",
-    "Response",
+    "RestEndpoint",
+    "Field",
+    "HttpMethod",
+    # Config
+    "Authentication",
+    "Cache",
+    "Filtering",
+    "Pagination",
+    "Serializer",
+    # Auth
+    "JWTAuthentication",
+    "AllowAny",
+    "IsAuthenticated",
+    "IsAdminUser",
+    # Filters
+    "FieldFilter",
+    "SearchFilter",
+    "OrderingFilter",
+    # Schema
+    "SchemaFactory",
+    # Middleware (backward-compat)
     "Middleware",
     "CORSMiddleware",
     "AuthenticationMiddleware",
-    "RestEndpoint",
-    "Validator",
-    "JWTAuthentication",
-    "Paginator",
-    "ParameterFilter",
+    "Response",
     "RedisCache",
-    "SwaggerGenerator",
-    "Base",
+    # Exceptions
+    "ConfigurationError",
+    "SerializationError",
 ]

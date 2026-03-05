@@ -1,90 +1,135 @@
+"""Tests for US3: Authentication and Permission classes."""
 import os
-import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-import time
-from unittest.mock import MagicMock
-
-import jwt
 import pytest
-from conftest import TEST_JWT_SECRET
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
+from starlette.testclient import TestClient
 
-from lightapi.auth import JWTAuthentication
+from lightapi import (
+    Authentication,
+    IsAdminUser,
+    IsAuthenticated,
+    JWTAuthentication,
+    LightApi,
+    RestEndpoint,
+)
+from lightapi.auth import AllowAny
+from lightapi.fields import Field as LField
 
 
-class TestJWTAuthentication:
-    def test_authenticate_valid_token(self):
-        auth = JWTAuthentication()
-        auth.secret_key = TEST_JWT_SECRET
+class SecretEndpoint(RestEndpoint):
+    content: str = LField(min_length=1)
 
-        # Create a valid token
-        payload = {"user_id": 1, "exp": time.time() + 3600}
-        token = jwt.encode(payload, TEST_JWT_SECRET, algorithm=auth.algorithm)
+    class Meta:
+        authentication = Authentication(backend=JWTAuthentication)
 
-        # Create mock request with token and state attribute
-        mock_request = MagicMock()
-        mock_request.headers = {"Authorization": f"Bearer {token}"}
-        mock_request.state = MagicMock()
 
-        result = auth.authenticate(mock_request)
+class AdminEndpoint(RestEndpoint):
+    value: str = LField(min_length=1)
 
-        assert result is True
-        assert hasattr(mock_request.state, "user")
-        assert mock_request.state.user["user_id"] == 1
+    class Meta:
+        authentication = Authentication(
+            backend=JWTAuthentication,
+            permission=IsAdminUser,
+        )
 
-    def test_authenticate_invalid_token(self):
-        auth = JWTAuthentication()
-        auth.secret_key = TEST_JWT_SECRET
 
-        # Create an invalid token
-        invalid_token = "invalid.token.string"
+class PublicEndpoint(RestEndpoint):
+    name: str = LField(min_length=1)
 
-        # Create mock request with invalid token
-        mock_request = MagicMock()
-        mock_request.headers = {"Authorization": f"Bearer {invalid_token}"}
 
-        result = auth.authenticate(mock_request)
+@pytest.fixture(scope="module")
+def jwt_secret(monkeypatch_session=None):
+    secret = "test-secret-key"
+    os.environ["LIGHTAPI_JWT_SECRET"] = secret
+    return secret
 
-        assert result is False
 
-    def test_authenticate_expired_token(self):
-        auth = JWTAuthentication()
-        auth.secret_key = TEST_JWT_SECRET
+@pytest.fixture(scope="module")
+def client(jwt_secret):
+    os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    app_instance = LightApi(engine=engine)
+    app_instance.register({
+        "/secrets": SecretEndpoint,
+        "/admin": AdminEndpoint,
+        "/public": PublicEndpoint,
+    })
+    return TestClient(app_instance.build_app())
 
-        # Create an expired token
-        payload = {"user_id": 1, "exp": time.time() - 3600}  # 1 hour in the past
-        token = jwt.encode(payload, TEST_JWT_SECRET, algorithm=auth.algorithm)
 
-        # Create mock request with expired token
-        mock_request = MagicMock()
-        mock_request.headers = {"Authorization": f"Bearer {token}"}
+def _make_token(payload: dict, secret: str = "test-secret-key") -> str:
+    import jwt
+    return jwt.encode(payload, secret, algorithm="HS256")
 
-        result = auth.authenticate(mock_request)
 
-        assert result is False
+class TestNoAuthRequired:
+    def test_public_get_no_token_200(self, client):
+        resp = client.get("/public")
+        assert resp.status_code == 200
 
-    def test_authenticate_no_token(self):
-        auth = JWTAuthentication()
-        auth.secret_key = TEST_JWT_SECRET
 
-        # Create mock request without token
-        mock_request = MagicMock()
-        mock_request.headers = {}
+class TestJWTAuth:
+    def test_missing_token_returns_401(self, client):
+        resp = client.get("/secrets")
+        assert resp.status_code == 401
 
-        result = auth.authenticate(mock_request)
+    def test_invalid_token_returns_401(self, client):
+        resp = client.get("/secrets", headers={"Authorization": "Bearer invalid.token.here"})
+        assert resp.status_code == 401
 
-        assert result is False
+    def test_valid_token_allows_access(self, client):
+        token = _make_token({"sub": "user1"})
+        resp = client.get("/secrets", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
 
-    def test_generate_token(self):
-        auth = JWTAuthentication()
-        auth.secret_key = TEST_JWT_SECRET
+    def test_expired_token_returns_401(self, client):
+        import time
+        token = _make_token({"sub": "user1", "exp": int(time.time()) - 10})
+        resp = client.get("/secrets", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 401
 
-        user_data = {"user_id": 1, "username": "testuser"}
-        token = auth.generate_token(user_data)
 
-        # Decode the token and verify its contents
-        decoded = jwt.decode(token, TEST_JWT_SECRET, algorithms=[auth.algorithm])
+class TestIsAdminUser:
+    def test_non_admin_returns_403(self, client):
+        token = _make_token({"sub": "user1", "is_admin": False})
+        resp = client.get("/admin", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 403
 
-        assert decoded["user_id"] == 1
-        assert decoded["username"] == "testuser"
-        assert "exp" in decoded
+    def test_admin_allowed(self, client):
+        token = _make_token({"sub": "admin", "is_admin": True})
+        resp = client.get("/admin", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+
+    def test_missing_is_admin_claim_returns_403(self, client):
+        token = _make_token({"sub": "user1"})
+        resp = client.get("/admin", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 403
+
+
+class TestPermissionClasses:
+    def test_allow_any_permits_all(self):
+        from types import SimpleNamespace
+        req = SimpleNamespace(state=SimpleNamespace(user=None))
+        assert AllowAny().has_permission(req) is True
+
+    def test_is_authenticated_requires_user(self):
+        from types import SimpleNamespace
+        req_no_user = SimpleNamespace(state=SimpleNamespace())
+        req_with_user = SimpleNamespace(state=SimpleNamespace(user={"sub": "u1"}))
+        assert IsAuthenticated().has_permission(req_no_user) is False
+        assert IsAuthenticated().has_permission(req_with_user) is True
+
+    def test_is_admin_requires_is_admin_true(self):
+        from types import SimpleNamespace
+        req_non_admin = SimpleNamespace(state=SimpleNamespace(user={"is_admin": False}))
+        req_admin = SimpleNamespace(state=SimpleNamespace(user={"is_admin": True}))
+        req_no_claim = SimpleNamespace(state=SimpleNamespace(user={"sub": "u"}))
+        assert IsAdminUser().has_permission(req_non_admin) is False
+        assert IsAdminUser().has_permission(req_admin) is True
+        assert IsAdminUser().has_permission(req_no_claim) is False

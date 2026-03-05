@@ -9,9 +9,9 @@ Get LightAPI up and running in your development environment. This guide covers i
 
 ## Requirements
 
-LightAPI requires Python 3.8 or higher and supports the following platforms:
+LightAPI requires Python 3.10 or higher and supports the following platforms:
 
-- **Python**: 3.8, 3.9, 3.10, 3.11, 3.12
+- **Python**: 3.10, 3.11, 3.12, 3.13
 - **Operating Systems**: Linux, macOS, Windows
 - **Databases**: SQLite, PostgreSQL, MySQL (via SQLAlchemy)
 
@@ -61,7 +61,7 @@ pip install lightapi
 LightAPI automatically installs these core dependencies:
 
 ```
-aiohttp>=3.8.0          # Async HTTP server
+# aiohttp removed in v2
 sqlalchemy>=1.4.0       # Database ORM
 pyyaml>=6.0             # YAML configuration support
 pydantic>=1.10.0        # Data validation

@@ -1,3 +1,7 @@
+> **Note:** This page describes the v1 API and has not yet been updated for v2. See the [README](../../README.md) for current documentation.
+
+> **Note:** This page describes the v1 API and has not yet been updated for v2. The v2 API is described in the [README](../../README.md).
+
 ---
 title: Data Pagination
 ---
