@@ -1,73 +1,87 @@
-> **Note:** This page describes the v1 API and has not yet been updated for v2. See the [README](../../README.md) for current documentation.
-
 ---
 title: Core API
 ---
 
-## LightApi
+# Core API Reference
 
-The `LightApi` class is the central application object that configures routes, middleware, and runs the server.
+> This page is a compact technical reference. See [Configuration Guide](../getting-started/configuration.md) and [API Reference — Core](../api-reference/core.md) for full documentation.
 
-### Initialization
+## `LightApi`
 
 ```python
-def __init__(
-    self,
-    database_url: str = "sqlite:///app.db",
-    swagger_title: str = "LightAPI Documentation",
-    swagger_version: str = "1.0.0",
-    swagger_description: str = "API automatic documentation",
-    enable_swagger: bool = True
-):
-    ...
+from lightapi import LightApi
 ```
 
-- `database_url` (str): SQLAlchemy database URL (e.g., `sqlite:///app.db`).
-- `swagger_title` (str): Title for the Swagger UI.
-- `swagger_version` (str): API version for the OpenAPI spec.
-- `swagger_description` (str): Description for the OpenAPI spec.
-- `enable_swagger` (bool): Mounts Swagger routes when `True`.
+### Constructor
 
-Upon initialization, `LightApi` sets up the database engine and session via `setup_database`, and registers OpenAPI routes if enabled.
+```python
+LightApi(
+    engine=None,
+    database_url: str | None = None,
+    cors_origins: list[str] | None = None,
+    middlewares: list[type] | None = None,
+)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `engine` | `Engine \| AsyncEngine` | SQLAlchemy engine (sync or async). |
+| `database_url` | `str \| None` | Creates a sync engine when no `engine` is provided. Falls back to `LIGHTAPI_DATABASE_URL`. |
+| `cors_origins` | `list[str] \| None` | CORS allowed origins. |
+| `middlewares` | `list[type] \| None` | `Middleware` subclasses applied to all requests. |
 
 ### Methods
 
-#### register(endpoints: Dict[str, Type[RestEndpoint]]) -> None
+#### `register(mapping: dict[str, type]) → None`
 
-Registers endpoint classes and mounts their routes.
+Register endpoint classes and create their database tables.
 
-- **Parameters:**
-  - `endpoints`: Mapping of URL prefixes to `RestEndpoint` subclasses.
+```python
+app.register({
+    "/users": UserEndpoint,
+    "/posts": PostEndpoint,
+})
+```
 
-Adds each endpoint's routes to the internal Starlette application and registers OpenAPI metadata when available.
+Raises `ConfigurationError` if a value is not a `RestEndpoint` subclass.
 
-Raises `TypeError` if a handler is not a subclass of `RestEndpoint`.
+#### `build_app() → Starlette`
 
-#### add_middleware(middleware_classes: List[Type[Middleware]]) -> None
+Return the underlying Starlette ASGI app without starting the server. Useful for testing.
 
-Adds application-wide middleware.
+#### `run(host, port, debug, reload) → None`
 
-- **Parameters:**
-  - `middleware_classes`: List of `Middleware` subclasses to apply globally.
+Start the Uvicorn server.
 
-#### run(host: str = "0.0.0.0", port: int = 8000, debug: bool = False) -> None
+```python
+app.run(host="0.0.0.0", port=8000, debug=False, reload=False)
+```
 
-Starts the server. This is the only supported way to start the application. Do not use external libraries to start the server directly.
+#### `from_config(config_path: str) → LightApi` (classmethod)
 
-- **Parameters:**
-  - `host`: Host address to bind (default: `"0.0.0.0"`).
-  - `port`: Port number (default: `8000`).
-  - `debug`: Toggle Starlette debug mode (default: `False`).
+Load a `lightapi.yaml` file, validate it with Pydantic v2, and return a configured instance.
+
+```python
+app = LightApi.from_config("lightapi.yaml")
+```
+
+Supports both declarative format (`database.url` + inline `fields`) and legacy format (`database_url` + `endpoints[].class`).
 
 ### Example
 
 ```python
-from lightapi import LightApi
-from app.endpoints import UserEndpoint
-from app.middleware import AuthMiddleware, TimingMiddleware
+from sqlalchemy import create_engine
+from lightapi import LightApi, RestEndpoint, Field
 
-app = LightApi(database_url="postgresql+asyncpg://user:pass@db/db")
-app.add_middleware([AuthMiddleware, TimingMiddleware])
-app.register({"/users": UserEndpoint})
-app.run(host="0.0.0.0", port=8000, debug=True)
+class ArticleEndpoint(RestEndpoint):
+    title: str = Field(min_length=1, max_length=255)
+    body: str
+
+engine = create_engine("sqlite:///articles.db")
+app = LightApi(
+    engine=engine,
+    cors_origins=["https://example.com"],
+)
+app.register({"/articles": ArticleEndpoint})
+app.run()
 ```

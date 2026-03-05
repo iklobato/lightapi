@@ -1,110 +1,149 @@
-> **Note:** This page describes the v1 API and has not yet been updated for v2. See the [README](../../README.md) for current documentation.
-
 ---
 title: Basic CRUD Examples
 ---
 
 # Basic CRUD Operations
 
-This example demonstrates basic Create, Read, Update, and Delete (CRUD) operations using a LightAPI-generated endpoint for an `Item` model.
+Full Create, Read, Update, and Delete operations on a simple `Item` resource.
 
-## Prerequisites
+## Setup
 
-Assuming you have an `Item` model registered at `/items`:
+```bash
+uv add lightapi
+```
+
+## Endpoint definition
 
 ```python
-# app/main.py
+# endpoints.py
+from typing import Optional
+from lightapi import RestEndpoint, Field
+
+class ItemEndpoint(RestEndpoint):
+    name:        str            = Field(min_length=1, max_length=200)
+    description: Optional[str] = None
+    price:       float          = Field(ge=0)
+    in_stock:    bool           = Field(default=True)
+```
+
+LightAPI auto-generates:
+
+- Table `items` with columns `id`, `name`, `description`, `price`, `in_stock`, `created_at`, `updated_at`, `version`
+- Routes: `GET /items`, `POST /items`, `GET /items/{id}`, `PUT /items/{id}`, `PATCH /items/{id}`, `DELETE /items/{id}`
+
+## Application wiring
+
+```python
+# main.py
+from sqlalchemy import create_engine
 from lightapi import LightApi
-from sqlalchemy import Column, Integer, String
-from lightapi.database import Base
+from endpoints import ItemEndpoint
 
-class Item(Base):
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True)
+engine = create_engine("sqlite:///items.db")
+app = LightApi(engine=engine)
+app.register({"/items": ItemEndpoint})
 
-app = LightApi()
-app.register({'/items': Item})
-app.run()
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
 ```
 
-## 1. Create an Item
+## CRUD walkthrough
+
+### Create
 
 ```bash
-curl -X POST http://localhost:8000/items/ \
-     -H 'Content-Type: application/json' \
-     -d '{"name":"Sample Item"}'
+curl -X POST http://localhost:8000/items \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Widget", "price": 9.99}'
 ```
 
-_Response (201 Created):_
 ```json
-{"id":1,"name":"Sample Item"}
+{"id": 1, "name": "Widget", "description": null, "price": 9.99, "in_stock": true, "version": 1, "created_at": "...", "updated_at": "..."}
 ```
 
-## 2. Read All Items
+### List
 
 ```bash
-curl http://localhost:8000/items/
+curl http://localhost:8000/items
 ```
 
-_Response (200 OK):_
 ```json
-[{"id":1,"name":"Sample Item"}]
+{"results": [{"id": 1, "name": "Widget", ...}]}
 ```
 
-## 3. Read a Single Item by ID
+### Retrieve
 
 ```bash
 curl http://localhost:8000/items/1
 ```
 
-_Response (200 OK):_
-```json
-{"id":1,"name":"Sample Item"}
-```
-
-## 4. Update an Item
+### Full update (PUT)
 
 ```bash
 curl -X PUT http://localhost:8000/items/1 \
-     -H 'Content-Type: application/json' \
-     -d '{"name":"Updated Item"}'
+  -H "Content-Type: application/json" \
+  -d '{"name": "Widget v2", "price": 12.99, "version": 1}'
 ```
 
-_Response (200 OK):_
-```json
-{"result":{"id":1,"name":"Updated Item"}}
+`version` is required on `PUT` and `PATCH` for optimistic locking. The response includes the incremented `version`.
+
+### Partial update (PATCH)
+
+```bash
+curl -X PATCH http://localhost:8000/items/1 \
+  -H "Content-Type: application/json" \
+  -d '{"price": 8.99, "version": 2}'
 ```
 
-## 5. Delete an Item
+### Delete
 
 ```bash
 curl -X DELETE http://localhost:8000/items/1
 ```
 
-_Response (204 No Content):_ (empty body)
+Returns `204 No Content`.
 
----
+## Validation errors
 
-## Python Client Example
+Sending an invalid payload returns `422 Unprocessable Entity`:
+
+```bash
+curl -X POST http://localhost:8000/items \
+  -H "Content-Type: application/json" \
+  -d '{"name": "", "price": -5}'
+```
+
+```json
+{
+  "detail": [
+    {"type": "string_too_short", "loc": ["name"], "msg": "String should have at least 1 character", ...},
+    {"type": "greater_than_equal", "loc": ["price"], "msg": "Input should be greater than or equal to 0", ...}
+  ]
+}
+```
+
+## Adding filtering and pagination
 
 ```python
-import requests
+from lightapi import (
+    RestEndpoint, Field, Filtering, Pagination,
+    FieldFilter, OrderingFilter,
+)
 
-base = 'http://localhost:8000/items'
+class ItemEndpoint(RestEndpoint):
+    name:     str   = Field(min_length=1, max_length=200)
+    price:    float = Field(ge=0)
+    in_stock: bool  = Field(default=True)
 
-# Create
-r = requests.post(base+'/', json={'name':'Hello'})
-print(r.json())
+    class Meta:
+        filtering = Filtering(
+            backends=[FieldFilter, OrderingFilter],
+            fields=["in_stock"],
+            ordering=["price", "name"],
+        )
+        pagination = Pagination(style="page_number", page_size=25)
+```
 
-# List
-r = requests.get(base+'/')
-print(r.json())
-
-# Update
-r = requests.put(base+'/1', json={'name':'New'})
-print(r.json())
-
-# Delete
-r = requests.delete(base+'/1')
-print(r.status_code)
+```bash
+GET /items?in_stock=true&ordering=-price&page=2
 ```

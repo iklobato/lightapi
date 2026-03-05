@@ -62,19 +62,20 @@ Raises `ConfigurationError` if `style` is not one of the valid values or `page_s
 
 | Param | Description |
 |-------|-------------|
-| `cursor` | Opaque cursor string from a previous `next_cursor`. Omit for the first page. |
+| `cursor` | Opaque cursor string from a previous response's `next` field. Omit for the first page. |
 | `page_size` | Override per request |
 
 ### Response envelope
 
 ```json
 {
-  "next_cursor": "eyJpZCI6IDIwfQ==",
+  "next": "eyJpZCI6IDIwfQ==",
+  "previous": null,
   "results": [ ... ]
 }
 ```
 
-The cursor encodes the last `id` seen. When `next_cursor` is `null`, there are no more pages.
+The cursor encodes the last `id` seen. When `next` is `null`, there are no more pages.
 
 ## Combining with filtering and ordering
 

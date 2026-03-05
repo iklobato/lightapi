@@ -1,53 +1,95 @@
-> **Note:** This page describes the v1 API and has not yet been updated for v2. See the [README](../../README.md) for current documentation.
-
 ---
 title: Middleware Reference
 ---
 
-## Middleware (lightapi.core.Middleware)
+# Middleware Reference
 
-The `Middleware` base class enables global request/response processing within LightAPI.
+> Compact reference. See [Advanced — Middleware](../advanced/middleware.md) for full documentation.
 
-### Class Definition
+## `Middleware` (`lightapi.core.Middleware`)
+
+Base class for request/response middleware.
 
 ```python
-class Middleware:
-    def process(self, request, response):
-        """
-        Called for each request both before and after endpoint handling.
+from starlette.requests import Request
+from starlette.responses import Response
+from lightapi.core import Middleware
 
-        Args:
-            request: The Starlette `Request` object.
-            response: The `Response` instance (None for pre-processing).
-
-        Returns:
-            - On pre-processing (`response` is None): return a `Response` to short-circuit handling, or None to continue.
-            - On post-processing: return a `Response` to modify the final output.
-        """
+class MyMiddleware(Middleware):
+    def process(
+        self, request: Request, response: Response | None
+    ) -> Response | None:
+        if response is None:
+            # Pre-processing — runs before the endpoint
+            # Return None to continue; return a Response to short-circuit
+            return None
+        # Post-processing — runs after the endpoint
         return response
 ```
 
-### Usage
+| Phase | `response` | Return |
+|-------|-----------|--------|
+| Pre (before endpoint) | `None` | `None` → continue; `Response` → short-circuit |
+| Post (after endpoint) | Endpoint's `Response` | Modified or original `Response` |
 
-1. Subclass `Middleware` and override `process`.
-2. Register with the application:
+### Async middleware
+
+```python
+from starlette.requests import Request
+from starlette.responses import Response
+from lightapi.core import Middleware
+
+class AsyncTimingMiddleware(Middleware):
+    async def process(
+        self, request: Request, response: Response | None
+    ) -> Response | None:
+        if response is None:
+            import time
+            request.state.start = time.time()
+            return None
+        elapsed = time.time() - request.state.start
+        response.headers["X-Response-Time"] = f"{elapsed:.3f}s"
+        return response
+```
+
+Sync and async middleware can coexist in the same `middlewares` list.
+
+### Registration
 
 ```python
 from lightapi import LightApi
-from lightapi.core import Middleware
 
-class ExampleMiddleware(Middleware):
-    def process(self, request, response):
-        # Pre-processing: response is None
-        if response is None:
-            request.state.start_time = time.time()
-            return None
-        # Post-processing: add header
-        response.headers['X-Time'] = str(time.time() - request.state.start_time)
-        return response
-
-app = LightApi()
-app.add_middleware([ExampleMiddleware])
+app = LightApi(
+    engine=engine,
+    middlewares=[AuthMiddleware, LoggingMiddleware],
+)
 ```
 
-Middleware is executed in the order registered for both incoming requests and outgoing responses.
+Pre-request: runs in **declaration order**.
+Post-request: runs in **reverse declaration order**.
+
+## `CORSMiddleware`
+
+Adds CORS headers to every response.
+
+```python
+from lightapi.core import CORSMiddleware
+
+app = LightApi(engine=engine, middlewares=[CORSMiddleware])
+```
+
+Use `cors_origins` on `LightApi` for the standard Starlette CORS middleware instead:
+
+```python
+app = LightApi(engine=engine, cors_origins=["https://example.com"])
+```
+
+## `AuthenticationMiddleware`
+
+Runs authentication for every request using a configurable backend class.
+
+```python
+from lightapi.core import AuthenticationMiddleware
+```
+
+For per-endpoint authentication, use `Meta.authentication` on `RestEndpoint` instead — it is more granular and the recommended approach.

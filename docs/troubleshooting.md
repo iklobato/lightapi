@@ -1,351 +1,256 @@
 ---
 title: Troubleshooting Guide
-description: Common issues and solutions for LightAPI
+description: Common issues and solutions for LightAPI v2
 ---
 
 # Troubleshooting Guide
 
-This guide covers common issues you might encounter when using LightAPI and their solutions.
-
 ## Runtime Errors
 
-### Content-Length Errors
+### `ConfigurationError` at startup
 
-**Error**: `RuntimeError: Response content longer than Content-Length`
+**Cause:** Invalid `RestEndpoint` or `LightApi` configuration detected before any request is served.
 
-**Cause**: This usually occurs when custom middleware modifies response content after Content-Length headers are set.
+**Common causes:**
 
-**Solutions**:
-1. Use built-in middleware instead of custom middleware when possible
-2. Avoid modifying response content in middleware post-processing
-3. Use the Response class consistently throughout your application
-
-```python
-# ✅ Good: Use built-in middleware
-from lightapi.core import CORSMiddleware
-
-app.add_middleware([CORSMiddleware])
-
-# ❌ Avoid: Custom middleware that modifies headers after content-length calculation
-class ProblematicMiddleware(Middleware):
-    def process(self, request, response):
-        response.headers['Custom-Header'] = 'value'  # This can cause issues
-        return response
-```
-
-### Memory View Type Errors
-
-**Error**: `TypeError: memoryview: a bytes-like object is required, not 'dict'`
-
-**Cause**: This occurs when response serialization is inconsistent, often with complex middleware stacks.
-
-**Solutions**:
-1. Use consistent response formats throughout your application
-2. Ensure proper JSON serialization in custom response handling
-3. Avoid mixing different response object types
+- Field annotation type not in the type map (use `str`, `int`, `float`, `bool`, `datetime`, `Decimal`, `UUID`)
+- `Meta.pagination` uses an invalid `style` value or `page_size < 1`
+- `Meta.cache` has `ttl < 1`
+- Async engine used without `lightapi[async]` installed
+- YAML `${VAR}` references an unset environment variable
 
 ```python
-# ✅ Good: Consistent response format
-def get(self, request):
-    return {'data': 'ok'}, 200
+# ❌ Wrong — list is not in the type map
+class BadEndpoint(RestEndpoint):
+    tags: list
 
-# ✅ Good: Use Response class consistently  
-def post(self, request):
-    return Response({'data': 'created'}, status_code=201)
+# ✅ Fix — use a supported type; store as JSON string if needed
+class GoodEndpoint(RestEndpoint):
+    tags: str = Field(default="")
 ```
 
-## Configuration Issues
+### `401 Unauthorized` on all requests
 
-### JWT Authentication Problems
+**Cause:** JWT authentication is enabled but the request is missing a valid token.
 
-**Error**: JWT validation fails or `401 Unauthorized` responses
-
-**Common Causes & Solutions**:
-
-1. **Missing JWT Secret**
-   ```bash
-   # Set the environment variable
-   export LIGHTAPI_JWT_SECRET="your-secret-key-here"
-   ```
-
-2. **Invalid Token Format**
-   ```python
-   # ✅ Correct token generation
-   import jwt
-   from datetime import datetime, timedelta
-   
-   payload = {
-       'user_id': 1,
-       'exp': datetime.utcnow() + timedelta(hours=1)
-   }
-   token = jwt.encode(payload, 'your-secret', algorithm='HS256')
-   ```
-
-3. **CORS Preflight Issues**
-   ```python
-   # ✅ Ensure OPTIONS requests are handled
-   class Configuration:
-       http_method_names = ['GET', 'POST', 'OPTIONS']  # Include OPTIONS
-   ```
-
-### Port Binding Issues
-
-**Error**: `[Errno 48] error while attempting to bind on address ('127.0.0.1', 8000): address already in use`
-
-**Solutions**:
-```bash
-# Find and kill processes using port 8000
-lsof -ti:8000 | xargs kill -9
-
-# Or use a different port
-export LIGHTAPI_PORT="8001"
-python your_app.py
-
-# Or specify port in code
-app.run(port=8001)
-```
-
-## Database Issues
-
-### SQLAlchemy Connection Problems
-
-**Error**: Database connection or table creation failures
-
-**Solutions**:
-1. **Check Database URL Format**
-   ```python
-   # ✅ Correct formats
-   "sqlite:///./app.db"                    # SQLite
-   "postgresql://user:pass@localhost/db"   # PostgreSQL  
-   "mysql://user:pass@localhost/db"        # MySQL
-   ```
-
-2. **Table Creation Issues**
-   ```python
-   # ✅ Ensure proper table creation
-   app = LightApi(database_url="sqlite:///app.db")
-   app.register({'/users': User})
-   
-   # Tables are created automatically when app.register() is called
-   ```
-
-## Middleware Issues
-
-### Middleware Order
-
-Middleware is processed in the order it's added. Authentication should generally come before CORS:
-
-```python
-# ✅ Correct order
-app.add_middleware([
-    AuthenticationMiddleware(JWTAuthentication),
-    CORSMiddleware
-])
-```
-
-### Custom Middleware Problems
-
-**Issue**: Custom middleware causing response serialization errors
-
-**Solutions**:
-1. **Implement Proper Pre/Post Processing**
-   ```python
-   class CustomMiddleware(Middleware):
-       def process(self, request, response):
-           if response is None:  # Pre-processing
-               # Modify request here
-               return None
-           
-           # Post-processing
-           # Avoid modifying response content/headers
-           return response
-   ```
-
-2. **Use Built-in Middleware When Possible**
-   ```python
-   # ✅ Prefer built-in middleware
-   from lightapi.core import CORSMiddleware, AuthenticationMiddleware
-   
-   app.add_middleware([
-       CORSMiddleware(allow_origins=['*']),
-       AuthenticationMiddleware(JWTAuthentication)
-   ])
-   ```
-
-## Caching Issues
-
-### Redis Connection Problems
-
-**Error**: Redis connection failures
-
-**Solutions**:
-1. **Check Redis Configuration**
-   ```bash
-   # Start Redis server
-   redis-server
-   
-   # Set environment variables
-   export LIGHTAPI_REDIS_HOST="localhost"
-   export LIGHTAPI_REDIS_PORT="6379"
-   ```
-
-2. **Verify Redis Connection**
-   ```python
-   import redis
-   r = redis.Redis(host='localhost', port=6379, decode_responses=True)
-   r.ping()  # Should return True
-   ```
-
-### Caching + Pagination Compatibility
-
-**Issue**: Using both caching and pagination causes serialization errors
-
-**Current Limitation**: These features have compatibility issues when used together.
-
-**Workarounds**:
-1. **Use Manual Caching**
-   ```python
-   def get(self, request):
-       cache_key = f"data_{request.query_params.get('page', 1)}"
-       # Implement manual cache logic
-   ```
-
-2. **Separate Layers**
-   ```python
-   # Use caching at application level, pagination at endpoint level
-   class CachedEndpoint(Base, RestEndpoint):
-       class Configuration:
-           caching_class = RedisCache  # No pagination here
-   
-   # Implement pagination in method
-   def get(self, request):
-       # Manual pagination logic
-   ```
-
-## Performance Issues
-
-### Slow Query Performance
-
-**Solutions**:
-1. **Use Proper Indexes**
-   ```python
-   from sqlalchemy import Index
-   
-   class User(Base, RestEndpoint):
-       email = Column(String, index=True)  # Add index
-       name = Column(String)
-       
-       __table_args__ = (
-           Index('idx_user_email_name', 'email', 'name'),
-       )
-   ```
-
-2. **Optimize Database Queries**
-   ```python
-   # Use select_related for efficient queries
-   # (Implementation depends on your specific ORM usage)
-   ```
-
-## Development Tips
-
-### Enable Debug Mode
-
-```python
-app = LightApi(debug=True)
-app.run(debug=True, reload=True)
-```
-
-### Logging Configuration
-
-```python
-import logging
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-```
-
-### Environment Variables Reference
-
-```bash
-# Core Configuration
-LIGHTAPI_DEBUG=True
-LIGHTAPI_HOST=0.0.0.0
-LIGHTAPI_PORT=8000
-
-# Database
-LIGHTAPI_DATABASE_URL=sqlite:///app.db
-
-# Authentication
-LIGHTAPI_JWT_SECRET=your-secret-key
-LIGHTAPI_JWT_ALGORITHM=HS256
-
-# Caching
-LIGHTAPI_REDIS_HOST=localhost
-LIGHTAPI_REDIS_PORT=6379
-LIGHTAPI_REDIS_DB=0
-
-# CORS
-LIGHTAPI_CORS_ORIGINS=["*"]
-LIGHTAPI_CORS_ALLOW_CREDENTIALS=True
-
-# Swagger
-LIGHTAPI_SWAGGER_TITLE="My API"
-LIGHTAPI_SWAGGER_VERSION="1.0.0"
-LIGHTAPI_ENABLE_SWAGGER=True
-```
-
-## Getting Help
-
-If you encounter issues not covered in this guide:
-
-1. **Check the Examples**: Look at `examples/user_goal_example.py` for comprehensive usage patterns
-2. **Review Test Cases**: The `tests/` directory contains extensive test cases showing proper usage
-3. **Enable Debug Logging**: Use debug mode to get more detailed error information
-4. **Isolate the Issue**: Create a minimal reproduction case
-
-## Common Patterns
-
-### Complete Working Example
-
-Here's a minimal but complete example that avoids common pitfalls:
+1. Ensure `LIGHTAPI_JWT_SECRET` is set and matches the secret used to sign tokens.
+2. Send `Authorization: Bearer <token>` with every request.
+3. Generate a token:
 
 ```python
 import os
-from lightapi import LightApi, RestEndpoint
-from lightapi.core import CORSMiddleware
+os.environ["LIGHTAPI_JWT_SECRET"] = "your-secret"
 from lightapi.auth import JWTAuthentication
-from sqlalchemy import Column, Integer, String
-
-# Set environment variables
-os.environ['LIGHTAPI_JWT_SECRET'] = 'test-secret-key-123'
-
-class User(Base, RestEndpoint):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100))
-    email = Column(String(255))
-    
-    class Configuration:
-        http_method_names = ['GET', 'POST', 'OPTIONS']
-        authentication_class = JWTAuthentication
-
-# Create app with proper configuration
-app = LightApi(
-    database_url="sqlite:///app.db",
-    debug=True
-)
-
-# Add middleware in correct order
-app.add_middleware([CORSMiddleware])
-
-# Register endpoints
-app.register({'/users': User})
-
-if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8000, debug=True)
+auth = JWTAuthentication()
+token = auth.generate_token({"sub": "1", "is_admin": False})
+print(token)
 ```
 
-This example follows all best practices and avoids the common issues documented above. 
+### `422 Unprocessable Entity`
+
+Pydantic validation failed. Check the response body for the specific failing field:
+
+```json
+{
+  "detail": [
+    {"type": "string_too_short", "loc": ["name"], "msg": "String should have at least 1 character", ...}
+  ]
+}
+```
+
+### `405 Method Not Allowed`
+
+The endpoint was registered with `HttpMethod` mixins that exclude the attempted verb:
+
+```python
+# Only GET is allowed — POST returns 405
+class ReadOnlyEndpoint(RestEndpoint, HttpMethod.GET):
+    title: str
+```
+
+Remove the mixin restriction or add the required method mixin.
+
+## Configuration Issues
+
+### JWT secret not configured
+
+```
+ValueError: JWT secret key not configured. Set LIGHTAPI_JWT_SECRET environment variable.
+```
+
+```bash
+export LIGHTAPI_JWT_SECRET="$(openssl rand -hex 32)"
+```
+
+### Port already in use
+
+```bash
+lsof -ti:8000 | xargs kill -9
+# or use a different port
+app.run(port=8001)
+```
+
+### CORS preflight blocked
+
+Pass allowed origins to `LightApi`:
+
+```python
+app = LightApi(engine=engine, cors_origins=["https://myapp.com", "http://localhost:3000"])
+```
+
+Use `["*"]` for development only.
+
+## Database Issues
+
+### Table does not exist (`Meta.reflect`)
+
+```
+ConfigurationError: Meta.reflect is set on 'MyEndpoint' but table 'myendpoints' does not exist.
+```
+
+Specify the correct table name:
+
+```python
+class MyEndpoint(RestEndpoint):
+    class Meta:
+        reflect = True
+        table = "correct_table_name"
+```
+
+### SQLAlchemy URL format
+
+```python
+# SQLite
+"sqlite:///app.db"
+"sqlite:///./app.db"
+
+# PostgreSQL (sync)
+"postgresql+psycopg2://user:pass@localhost:5432/mydb"
+
+# PostgreSQL (async)
+"postgresql+asyncpg://user:pass@localhost:5432/mydb"
+
+# MySQL
+"mysql+pymysql://user:pass@localhost:3306/mydb"
+```
+
+### Async engine without async extras
+
+```
+ConfigurationError: Async SQLAlchemy is not installed. Run: uv add "lightapi[async]"
+```
+
+```bash
+uv add "lightapi[async]"
+```
+
+## Middleware Issues
+
+### Middleware registration
+
+Register middleware via `LightApi`, not `app.add_middleware()` (which does not exist in v2):
+
+```python
+# ✅ v2 — pass to constructor
+from lightapi import LightApi
+from lightapi.core import Middleware
+
+class MyMiddleware(Middleware):
+    def process(self, request, response):
+        return response
+
+app = LightApi(engine=engine, middlewares=[MyMiddleware])
+```
+
+### Middleware `process()` signature
+
+The `process` method takes **two** arguments: `request` and `response`. `response` is `None` during pre-processing:
+
+```python
+class MyMiddleware(Middleware):
+    def process(self, request, response):
+        if response is None:
+            # pre-processing
+            return None
+        # post-processing
+        return response
+```
+
+## Caching Issues
+
+### Redis unreachable
+
+LightAPI emits a `RuntimeWarning` if Redis cannot be reached at startup and silently disables caching. Set `LIGHTAPI_REDIS_URL` to the correct URL:
+
+```bash
+export LIGHTAPI_REDIS_URL="redis://localhost:6379/0"
+redis-server   # ensure Redis is running
+```
+
+Verify:
+
+```python
+import redis
+r = redis.from_url("redis://localhost:6379/0")
+print(r.ping())  # True
+```
+
+## Performance Tips
+
+### Indexes
+
+Declare indexes on frequently queried columns:
+
+```python
+class UserEndpoint(RestEndpoint):
+    email:    str = Field(unique=True, index=True)
+    username: str = Field(index=True)
+```
+
+### Use async for high-concurrency workloads
+
+```python
+from sqlalchemy.ext.asyncio import create_async_engine
+
+engine = create_async_engine("postgresql+asyncpg://user:pass@localhost/mydb")
+app = LightApi(engine=engine)
+```
+
+### Filtering instead of post-processing
+
+Use `Meta.filtering` rather than filtering results in Python — let the database do the work.
+
+## Environment Variables Reference
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LIGHTAPI_DATABASE_URL` | Database URL when no engine is given | `sqlite:///app.db` |
+| `LIGHTAPI_JWT_SECRET` | JWT signing secret | — (required) |
+| `LIGHTAPI_REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` |
+
+## Minimal working example
+
+```python
+import os
+from sqlalchemy import create_engine
+from lightapi import LightApi, RestEndpoint, Field, Authentication, JWTAuthentication, IsAuthenticated
+
+os.environ["LIGHTAPI_JWT_SECRET"] = "dev-secret"
+
+class ItemEndpoint(RestEndpoint):
+    name:  str   = Field(min_length=1)
+    price: float = Field(ge=0)
+
+    class Meta:
+        authentication = Authentication(
+            backend=JWTAuthentication,
+            permission=IsAuthenticated,
+        )
+
+engine = create_engine("sqlite:///app.db")
+app = LightApi(engine=engine, cors_origins=["*"])
+app.register({"/items": ItemEndpoint})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
+```

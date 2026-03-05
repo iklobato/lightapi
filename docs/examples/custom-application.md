@@ -2,80 +2,128 @@
 title: Custom Application Example
 ---
 
-This example demonstrates building a fully custom LightAPI application by composing the core classes:
+# Custom Application
+
+A complete example composing multiple LightAPI features: authentication, filtering, pagination, caching, and middleware.
+
+## Endpoint with all features
 
 ```python
-import time
-from lightapi import LightApi, Middleware
-from lightapi.auth import JWTAuthentication
-from lightapi.cache import RedisCache
-from lightapi.filters import ParameterFilter
-from lightapi.pagination import Paginator
-from lightapi.rest import RestEndpoint, Validator, Response
+from typing import Optional
+from sqlalchemy import create_engine
+from lightapi import (
+    LightApi, RestEndpoint, Field,
+    Authentication, JWTAuthentication, IsAuthenticated, AllowAny,
+    Filtering, FieldFilter, SearchFilter, OrderingFilter,
+    Pagination, Serializer, Cache,
+)
+from lightapi.core import Middleware
+from starlette.requests import Request
+from starlette.responses import Response
 
-# 1. Custom Middleware for Logging and Timing
-class LoggingMiddleware(Middleware):
-    def process(self, request, response):
-        # Pre-request: log method and URL
+# ── Middleware ────────────────────────────────────────────────────────────────
+
+class RequestIdMiddleware(Middleware):
+    import uuid
+
+    def process(self, request: Request, response: Response | None) -> Response | None:
         if response is None:
-            request.start_time = time.time()
-            print(f"[Request] {request.method} {request.url}")
+            import uuid
+            request.state.request_id = str(uuid.uuid4())
             return None
-        # Post-response: log status and elapsed time
-        elapsed = time.time() - request.start_time
-        print(f"[Response] {response.status_code} completed in {elapsed:.3f}s")
+        response.headers["X-Request-ID"] = getattr(request.state, "request_id", "")
         return response
 
-# 2. Custom Validator to enforce field rules
-class ItemValidator(Validator):
-    def validate_name(self, value: str) -> str:
-        if not value or len(value) < 3:
-            raise ValueError("Item name must be at least 3 characters")
-        return value.strip()
 
-# 3. Define a custom RestEndpoint using all pluggable features
-class ItemEndpoint(Base, RestEndpoint):
-    tablename = 'items'
+# ── Endpoint ──────────────────────────────────────────────────────────────────
 
-    class Configuration:
-        authentication_class = JWTAuthentication
-        caching_class = RedisCache
-        caching_method_names = ['get']
-        filter_class = ParameterFilter
-        pagination_class = Paginator
-        validator_class = ItemValidator
+class ItemEndpoint(RestEndpoint):
+    name:        str            = Field(min_length=1, max_length=200)
+    description: Optional[str] = Field(None, max_length=2000)
+    price:       float          = Field(ge=0)
+    category:    str            = Field(max_length=50)
+    active:      bool           = Field(default=True)
 
-    # Override POST to wrap default behavior in a Response
-    async def post(self, request):
-        body, status = await super().post(request)
-        return Response({ 'created': body['result'] }, status_code=status)
+    class Meta:
+        authentication = Authentication(
+            backend=JWTAuthentication,
+            permission={
+                "GET":    AllowAny,
+                "POST":   IsAuthenticated,
+                "PUT":    IsAuthenticated,
+                "PATCH":  IsAuthenticated,
+                "DELETE": IsAuthenticated,
+            },
+        )
+        filtering = Filtering(
+            backends=[FieldFilter, SearchFilter, OrderingFilter],
+            fields=["category", "active"],
+            search=["name", "description"],
+            ordering=["price", "name", "created_at"],
+        )
+        pagination = Pagination(style="page_number", page_size=25)
+        serializer = Serializer(
+            read=["id", "name", "price", "category", "active", "created_at"],
+        )
+        cache = Cache(ttl=60)
 
-# 4. Assemble the application
+
+# ── Application ───────────────────────────────────────────────────────────────
+
+engine = create_engine("sqlite:///custom.db")
+
 app = LightApi(
-    database_url='sqlite+aiosqlite:///./app.db',
-    enable_swagger=True,
-    swagger_title='Custom App API',
-    swagger_version='1.0.0',
-    swagger_description='Demo of custom LightAPI application'
+    engine=engine,
+    cors_origins=["https://myapp.com"],
+    middlewares=[RequestIdMiddleware],
 )
 
-# 5. Register middleware and endpoints
-app.add_middleware([LoggingMiddleware])
-app.register({ '/items': ItemEndpoint })
+app.register({"/items": ItemEndpoint})
 
-# 6. Run the server
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000, debug=True, reload=True)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
 ```
 
-### Key integrations
+## Testing it
 
-- **JWTAuthentication**: Secures all `/items` requests.  Issue tokens via `JWTAuthentication.generate_token({...})`.
-- **RedisCache**: Caches GET responses to reduce database load.
-- **ParameterFilter + Paginator**: Enables query-param filtering and pagination automatically.
-- **ItemValidator**: Validates the `name` field on POST/PUT operations.
-- **LoggingMiddleware**: Logs each request and response timing.
-- **Response**: Builds response with custom status and payload.
-- **LightApi**: Configured to serve Swagger UI and OpenAPI schema at `/api/docs` and `/openapi.json`.
+```bash
+export LIGHTAPI_JWT_SECRET="dev-secret"
+python main.py
+```
 
-With this setup, your `/items` endpoint is authenticated, cached, filterable, paginated, validated, logged, and documented—all with minimal boilerplate. 
+```bash
+# Public GET — no token needed
+curl http://localhost:8000/items
+
+# Authenticated POST — requires JWT
+TOKEN=$(python -c "
+from lightapi.auth import JWTAuthentication
+import os; os.environ['LIGHTAPI_JWT_SECRET']='dev-secret'
+auth = JWTAuthentication()
+print(auth.generate_token({'sub': '1', 'is_admin': False}))
+")
+
+curl -X POST http://localhost:8000/items \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Widget", "price": 9.99, "category": "tools"}'
+
+# Filter + paginate
+curl "http://localhost:8000/items?category=tools&active=true&ordering=-price&page=1"
+
+# Search
+curl "http://localhost:8000/items?search=widget"
+```
+
+## Async variant
+
+Replace the engine with an async one — no other changes needed:
+
+```python
+from sqlalchemy.ext.asyncio import create_async_engine
+
+engine = create_async_engine("postgresql+asyncpg://user:pass@localhost/mydb")
+app = LightApi(engine=engine, middlewares=[RequestIdMiddleware])
+```
+
+Install: `uv add "lightapi[async]"`

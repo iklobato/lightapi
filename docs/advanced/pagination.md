@@ -21,9 +21,8 @@ class PostEndpoint(RestEndpoint):
 ```
 
 ```bash
-GET /posts             # → page 1, 20 items
-GET /posts?page=2      # → page 2, 20 items
-GET /posts?page_size=5 # → page 1, 5 items
+GET /posts        # → page 1, 20 items
+GET /posts?page=2 # → page 2, 20 items
 ```
 
 ## `Pagination` constructor
@@ -37,7 +36,7 @@ Pagination(
 
 | Parameter | Values | Description |
 |-----------|--------|-------------|
-| `style` | `"page_number"` | Offset-based pagination with `?page=` and `?page_size=` params. |
+| `style` | `"page_number"` | Offset-based pagination with `?page=` param. |
 | `style` | `"cursor"` | Cursor-based pagination — efficient for large, append-only datasets. |
 | `page_size` | integer ≥ 1 | Default number of items per page. |
 
@@ -59,7 +58,6 @@ Pagination(
 | Param | Default | Description |
 |-------|---------|-------------|
 | `page` | `1` | Page number (1-indexed). |
-| `page_size` | Meta value | Override the page size for this request. |
 
 ### Example
 
@@ -76,7 +74,7 @@ class ArticleEndpoint(RestEndpoint):
 ```
 
 ```bash
-GET /articles?published=true&page=2&page_size=5
+GET /articles?published=true&page=2
 ```
 
 ## Cursor Pagination
@@ -87,17 +85,19 @@ Cursor pagination uses an opaque cursor instead of page numbers. It is more effi
 
 ```json
 {
-  "next_cursor": "eyJpZCI6IDEwfQ==",
+  "next": "eyJpZCI6IDEwfQ==",
+  "previous": null,
   "results": [...]
 }
 ```
+
+When `next` is `null`, there are no more pages.
 
 ### Query parameters
 
 | Param | Description |
 |-------|-------------|
-| `cursor` | Opaque cursor from a previous response's `next_cursor`. Omit for the first page. |
-| `page_size` | Number of items (overrides Meta default). |
+| `cursor` | Opaque cursor from a previous response's `next` field. Omit for the first page. |
 
 ### Example
 
