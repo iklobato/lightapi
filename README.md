@@ -480,18 +480,55 @@ class ExtendedEndpoint(RestEndpoint):
 
 ### YAML Configuration
 
-Boot `LightApi` from a YAML file:
+Boot `LightApi` from a YAML file using `LightApi.from_config()`. Two formats are
+supported — pick whichever fits your project.
+
+#### Declarative format (recommended)
+
+Define endpoints, fields, and all `Meta` options directly in YAML. No Python
+`RestEndpoint` classes required.
 
 ```yaml
 # lightapi.yaml
-database_url: "${DATABASE_URL}"   # env var substitution
+database:
+  url: "${DATABASE_URL}"        # ${VAR} env-var substitution
+
 cors_origins:
   - "https://myapp.com"
+
+# Global defaults applied to every endpoint unless overridden
+defaults:
+  authentication:
+    backend: JWTAuthentication
+    permission: IsAuthenticated
+  pagination:
+    style: page_number
+    page_size: 20
+
+middleware:
+  - CORSMiddleware
+
 endpoints:
-  - path: /products
-    class: myapp.endpoints.ProductEndpoint
-  - path: /orders
-    class: myapp.endpoints.OrderEndpoint
+  - route: /products
+    fields:
+      name:        { type: str, max_length: 200 }
+      price:       { type: float }
+      in_stock:    { type: bool, default: true }
+    meta:
+      methods: [GET, POST, PUT, DELETE]
+      filtering:
+        fields:   [in_stock]
+        ordering: [price]
+
+  - route: /orders
+    fields:
+      reference: { type: str }
+      total:     { type: float }
+    meta:
+      methods: [GET, POST]
+      # Override the global default for this endpoint only
+      authentication:
+        permission: AllowAny
 ```
 
 ```python
@@ -501,7 +538,44 @@ app = LightApi.from_config("lightapi.yaml")
 app.run()
 ```
 
-**Precedence (highest to lowest):** `LightApi(kwarg)` > environment variable > YAML file > framework default.
+#### Legacy format (existing classes)
+
+Point to pre-existing `RestEndpoint` subclasses by dotted import path:
+
+```yaml
+# lightapi.yaml
+database_url: "${DATABASE_URL}"
+cors_origins:
+  - "https://myapp.com"
+endpoints:
+  - path: /products
+    class: myapp.endpoints.ProductEndpoint
+  - path: /orders
+    class: myapp.endpoints.OrderEndpoint
+```
+
+#### YAML field reference
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `database.url` | string | SQLAlchemy URL (nested form). Supports `${VAR}`. |
+| `database_url` | string | SQLAlchemy URL (legacy flat form). Supports `${VAR}`. |
+| `cors_origins` | list | CORS allowed origins. |
+| `defaults.authentication` | object | `backend` + `permission` applied to every endpoint. |
+| `defaults.pagination` | object | `style` + `page_size` applied to every endpoint. |
+| `middleware` | list | Class names or dotted paths resolved at startup. |
+| `endpoints[].route` | string | URL prefix (declarative format). |
+| `endpoints[].fields` | object | Inline field definitions — `type`, constraints, `optional`. |
+| `endpoints[].meta.methods` | list or dict | HTTP methods to enable; dict form allows per-method auth. |
+| `endpoints[].meta.authentication` | object | Overrides `defaults.authentication` for this endpoint. |
+| `endpoints[].meta.filtering` | object | `fields`, `search`, `ordering` lists. |
+| `endpoints[].meta.pagination` | object | `style` + `page_size` for this endpoint. |
+| `endpoints[].reflect` | bool | Reflect an existing table — no fields needed. |
+| `endpoints[].path` | string | URL prefix (legacy format). |
+| `endpoints[].class` | string | Dotted import path to a `RestEndpoint` subclass (legacy). |
+
+Validation is performed by Pydantic v2 at load time. Any schema error raises a
+`ConfigurationError` with a precise message pointing to the offending field.
 
 ---
 

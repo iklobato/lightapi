@@ -67,7 +67,41 @@ Starts the Uvicorn server.
 app = LightApi.from_config("lightapi.yaml")
 ```
 
-Bootstraps a `LightApi` instance from a YAML file. See [Configuration](../getting-started/configuration.md) for the YAML schema.
+Bootstraps a `LightApi` instance from a YAML file. The YAML document is parsed
+and validated by Pydantic v2 — any schema error raises `ConfigurationError` with
+a precise message before the server starts.
+
+Two formats are accepted:
+
+- **Declarative** (`database.url` + `endpoints[].route` + `endpoints[].fields`):
+  endpoints are generated dynamically; no `RestEndpoint` subclasses needed.
+- **Legacy** (`database_url` + `endpoints[].path` + `endpoints[].class`):
+  loads existing `RestEndpoint` subclasses by dotted import path.
+
+```yaml
+# declarative
+database:
+  url: "${DATABASE_URL}"
+defaults:
+  authentication: { backend: JWTAuthentication, permission: IsAuthenticated }
+endpoints:
+  - route: /items
+    fields:
+      name:  { type: str }
+      price: { type: float }
+    meta:
+      methods: [GET, POST, PUT, DELETE]
+```
+
+```yaml
+# legacy
+database_url: "${DATABASE_URL}"
+endpoints:
+  - path: /items
+    class: myapp.endpoints.ItemEndpoint
+```
+
+See [Configuration Guide](../getting-started/configuration.md) for the complete schema reference including all `defaults`, `meta`, `filtering`, `pagination`, and per-method auth options.
 
 ## `Middleware`
 

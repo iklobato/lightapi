@@ -436,31 +436,44 @@ gunicorn -c gunicorn.conf.py app:app
 ### Production Security Checklist
 
 ```yaml
-# production.yaml - Security-focused configuration
-database_url: "${DATABASE_URL}"
-swagger_title: "Production API"
-enable_swagger: false  # ✅ Disabled in production
-debug: false          # ✅ Disabled in production
+# production.yaml
+database:
+  url: "${DATABASE_URL}"
 
-# Security headers
-security:
-  cors_origins: 
-    - "https://yourdomain.com"
-    - "https://www.yourdomain.com"
-  cors_allow_credentials: true
-  cors_max_age: 86400
+cors_origins:
+  - "https://yourdomain.com"
+  - "https://www.yourdomain.com"
 
-# Rate limiting
-rate_limiting:
-  enabled: true
-  requests_per_minute: 60
-  requests_per_hour: 1000
+defaults:
+  authentication:
+    backend: JWTAuthentication
+    permission: IsAuthenticated
+  pagination:
+    style: page_number
+    page_size: 50
 
-tables:
-  - name: users
-    crud: [get, patch]  # ✅ Limited operations in production
-  - name: posts
-    crud: [get, post, patch]
+middleware:
+  - CORSMiddleware
+  - AuthenticationMiddleware
+
+endpoints:
+  - route: /users
+    fields:
+      username: { type: str, min_length: 3 }
+      email:    { type: str }
+    meta:
+      methods:
+        GET:    { authentication: { permission: IsAuthenticated } }
+        PATCH:  { authentication: { permission: IsAuthenticated } }
+      authentication:
+        backend: JWTAuthentication
+
+  - route: /posts
+    fields:
+      title:   { type: str, max_length: 255 }
+      content: { type: str }
+    meta:
+      methods: [GET, POST, PATCH]
 ```
 
 ### Environment Security

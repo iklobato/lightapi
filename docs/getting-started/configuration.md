@@ -63,11 +63,76 @@ asgi_app = app.build_app()
 
 ## YAML Configuration
 
-Use `LightApi.from_config()` to bootstrap from a YAML file:
+Use `LightApi.from_config()` to bootstrap from a YAML file. The YAML schema is
+validated by Pydantic v2 at load time, so any typo or missing field produces a
+clear `ConfigurationError` message rather than a cryptic runtime crash.
+
+Two formats are supported:
+
+### Declarative format (recommended)
+
+Define every endpoint — fields, HTTP methods, auth, filtering, pagination — entirely
+in YAML. No `RestEndpoint` subclasses required.
 
 ```yaml
 # lightapi.yaml
-database_url: "${DATABASE_URL}"   # supports ${ENV_VAR} substitution
+database:
+  url: "${DATABASE_URL}"           # ${VAR} env-var substitution
+
+cors_origins:
+  - "https://myapp.com"
+
+# Defaults applied to every endpoint unless overridden
+defaults:
+  authentication:
+    backend: JWTAuthentication
+    permission: IsAuthenticated
+  pagination:
+    style: page_number
+    page_size: 20
+
+middleware:
+  - CORSMiddleware
+
+endpoints:
+  - route: /users
+    fields:
+      username: { type: str, min_length: 3, max_length: 150 }
+      email:    { type: str }
+      is_admin: { type: bool, default: false, optional: true }
+    meta:
+      methods: [GET, POST, PUT, DELETE]
+      filtering:
+        fields:   [is_admin]
+        search:   [username, email]
+        ordering: [username]
+
+  - route: /posts
+    fields:
+      title:     { type: str, max_length: 255 }
+      published: { type: bool, default: false }
+    meta:
+      methods: [GET, POST]
+      authentication:
+        permission: AllowAny    # override the global default for this endpoint
+      pagination:
+        page_size: 10
+```
+
+```python
+from lightapi import LightApi
+
+app = LightApi.from_config("lightapi.yaml")
+app.run()
+```
+
+### Legacy format (existing classes)
+
+If you already have `RestEndpoint` subclasses, point to them by dotted import path:
+
+```yaml
+# lightapi.yaml
+database_url: "${DATABASE_URL}"
 cors_origins:
   - "https://myapp.com"
 
@@ -78,28 +143,74 @@ endpoints:
     class: myapp.endpoints.PostEndpoint
 ```
 
-```python
-from lightapi import LightApi
-
-app = LightApi.from_config("lightapi.yaml")
-app.run()
-```
-
-### YAML fields
+### YAML schema reference
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `database_url` | string | SQLAlchemy database URL. Supports `${VAR}` env substitution. |
+| `database.url` | string | SQLAlchemy URL (nested form). Supports `${VAR}` substitution. |
+| `database_url` | string | SQLAlchemy URL (legacy flat form). Supports `${VAR}` substitution. |
 | `cors_origins` | list | CORS allowed origins. |
-| `endpoints` | list | Each entry has `path` (URL prefix) and `class` (dotted import path). |
+| `defaults.authentication.backend` | string | Auth backend class name (e.g. `JWTAuthentication`). |
+| `defaults.authentication.permission` | string | Permission class name (e.g. `IsAuthenticated`). |
+| `defaults.pagination.style` | string | `page_number` or `cursor`. |
+| `defaults.pagination.page_size` | int | Rows per page. |
+| `middleware` | list | Class names or dotted import paths resolved at startup. |
+| `endpoints[].route` | string | URL prefix — declarative format. |
+| `endpoints[].fields` | object | Inline field definitions (see below). |
+| `endpoints[].meta.methods` | list or dict | HTTP verbs to enable. Dict form allows per-method auth. |
+| `endpoints[].meta.authentication` | object | Overrides `defaults.authentication` for this endpoint. |
+| `endpoints[].meta.filtering` | object | `fields`, `search`, `ordering` lists. Backends are auto-selected. |
+| `endpoints[].meta.pagination` | object | `style` + `page_size` for this endpoint. |
+| `endpoints[].reflect` | bool | Reflect an existing table instead of creating one. |
+| `endpoints[].path` | string | URL prefix — legacy format. |
+| `endpoints[].class` | string | Dotted import path to a `RestEndpoint` subclass — legacy format. |
+
+#### Field definition keys
+
+Each key under `endpoints[].fields` maps a column name to:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `type` | string | `str`, `int`, `float`, `bool`, `datetime`, `Decimal` |
+| `optional` | bool | Whether the field is `Optional` (default `false`). |
+| `default` | any | Default value passed to `Field()`. |
+| `min_length` / `max_length` | int | String length constraints. |
+| `gt` / `ge` / `lt` / `le` | number | Numeric comparison constraints. |
+| `pattern` | string | Regex pattern for strings. |
+| `index` | bool | Create a database index. |
+| `unique` | bool | Add a UNIQUE constraint. |
 
 ### Environment variable substitution
 
+Any `${VAR}` placeholder in a URL field is replaced with the matching environment
+variable at load time. A missing variable raises `ConfigurationError` immediately:
+
 ```yaml
-database_url: "${DATABASE_URL}"
+database:
+  url: "${DATABASE_URL}"
 ```
 
-If `DATABASE_URL` is not set at runtime, LightAPI raises a `ConfigurationError` with a clear message.
+### Per-method authentication
+
+Use the dict form of `methods` to set different permission classes per HTTP verb:
+
+```yaml
+endpoints:
+  - route: /articles
+    fields:
+      title:   { type: str }
+      content: { type: str }
+    meta:
+      methods:
+        GET:
+          authentication: { permission: AllowAny }
+        POST:
+          authentication: { permission: IsAuthenticated }
+        DELETE:
+          authentication: { permission: IsAdminUser }
+      authentication:
+        backend: JWTAuthentication   # shared backend for all methods
+```
 
 ## Async engine
 

@@ -4,12 +4,10 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
-import os
 import warnings
 from typing import Any
 
 import uvicorn
-import yaml
 from sqlalchemy import create_engine
 from starlette.applications import Starlette
 from starlette.background import BackgroundTasks
@@ -62,6 +60,7 @@ class LightApi:
             self._async = False
 
         self._routes: list[Route] = []
+        self._endpoint_map: dict[str, type] = {}
         self._middlewares: list[type] = middlewares or []
         self._cors_origins: list[str] = cors_origins or []
 
@@ -121,6 +120,7 @@ class LightApi:
             )
             self._routes.append(collection_route)
             self._routes.append(detail_route)
+            self._endpoint_map[path] = cls
 
     def _make_collection_handler(self, cls: type) -> Any:
         app_middlewares = self._middlewares
@@ -294,35 +294,15 @@ class LightApi:
 
     @classmethod
     def from_config(cls, config_path: str) -> "LightApi":
-        """Create a LightApi instance from a ``lightapi.yaml`` file."""
-        with open(config_path) as fh:
-            raw = yaml.safe_load(fh)
+        """Create a LightApi instance from a ``lightapi.yaml`` file.
 
-        db_url: str = raw.get("database_url", "")
-        if db_url.startswith("${") and db_url.endswith("}"):
-            env_var = db_url[2:-1]
-            db_url = os.environ.get(env_var, "")
-            if not db_url:
-                raise ConfigurationError(
-                    f"Environment variable '{env_var}' is not set (required by lightapi.yaml)."
-                )
-
-        cors = raw.get("cors_origins", [])
-        instance = cls(database_url=db_url, cors_origins=cors)
-
-        endpoints_cfg: list[dict[str, Any]] = raw.get("endpoints", [])
-        mapping: dict[str, type] = {}
-        for entry in endpoints_cfg:
-            path = entry["path"]
-            module_path, class_name = entry["class"].rsplit(".", 1)
-            mod = importlib.import_module(module_path)
-            endpoint_cls = getattr(mod, class_name)
-            mapping[path] = endpoint_cls
-
-        if mapping:
-            instance.register(mapping)
-
-        return instance
+        Supports both the legacy format (``database_url`` + ``endpoints[].class``)
+        and the new declarative format (``database.url``, inline ``fields``,
+        ``defaults``, ``middleware``).  Parsing and validation is handled by
+        :mod:`lightapi.yaml_loader` using Pydantic v2 models.
+        """
+        from lightapi.yaml_loader import load_config
+        return load_config(cls, config_path)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Internal helpers

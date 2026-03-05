@@ -81,16 +81,32 @@ curl -X DELETE http://localhost:8000/books/1
 
 ## Method 2: YAML Configuration
 
-Configure endpoints without Python code using a YAML file that points to your `RestEndpoint` classes.
+LightAPI supports two YAML styles. The **declarative format** lets you define
+fields and `Meta` options entirely in YAML — no Python classes needed:
 
 ```yaml
 # lightapi.yaml
-database_url: "${DATABASE_URL}"   # env var substitution
+database:
+  url: "${DATABASE_URL}"    # ${VAR} env-var substitution
 cors_origins:
   - "http://localhost:3000"
+
+defaults:
+  pagination:
+    style: page_number
+    page_size: 25
+
 endpoints:
-  - path: /books
-    class: myapp.endpoints.BookEndpoint
+  - route: /books
+    fields:
+      title:  { type: str, max_length: 255 }
+      author: { type: str }
+      year:   { type: int, optional: true }
+    meta:
+      methods: [GET, POST, PUT, DELETE]
+      filtering:
+        fields:   [author]
+        ordering: [year, title]
 ```
 
 ```python
@@ -99,6 +115,17 @@ from lightapi import LightApi
 app = LightApi.from_config("lightapi.yaml")
 app.run()
 ```
+
+The **legacy format** is also supported if you already have `RestEndpoint` classes:
+
+```yaml
+database_url: "${DATABASE_URL}"
+endpoints:
+  - path: /books
+    class: myapp.endpoints.BookEndpoint
+```
+
+See the [Configuration Guide](configuration.md) for the full YAML schema reference.
 
 ---
 

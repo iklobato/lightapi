@@ -156,7 +156,14 @@ engine = create_engine(os.environ["DATABASE_URL"])
 app = LightApi(engine=engine)
 ```
 
-Or in YAML:
+Or in YAML (declarative format):
+
+```yaml
+database:
+  url: "${DATABASE_URL}"
+```
+
+Legacy flat form also works:
 
 ```yaml
 database_url: "${DATABASE_URL}"

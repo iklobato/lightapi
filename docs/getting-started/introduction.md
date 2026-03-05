@@ -102,19 +102,41 @@ When an `AsyncEngine` is detected, every built-in CRUD operation automatically u
 
 ## YAML Bootstrap
 
-For zero-code setups against an existing database, use `LightApi.from_config()`:
+`LightApi.from_config()` loads a YAML file validated by Pydantic v2 and returns
+a fully configured `LightApi` instance. Two formats are supported.
+
+**Declarative format** — define fields and `Meta` options directly in YAML, no
+Python `RestEndpoint` classes required:
 
 ```yaml
 # lightapi.yaml
-database_url: "${DATABASE_URL}"
+database:
+  url: "${DATABASE_URL}"      # ${VAR} env substitution
+
 cors_origins:
   - "https://myapp.com"
 
+defaults:
+  authentication:
+    backend: JWTAuthentication
+    permission: IsAuthenticated
+
 endpoints:
-  - path: /users
-    class: myapp.endpoints.UserEndpoint
-  - path: /posts
-    class: myapp.endpoints.PostEndpoint
+  - route: /users
+    fields:
+      username: { type: str, min_length: 3 }
+      email:    { type: str }
+    meta:
+      methods: [GET, POST, PUT, DELETE]
+
+  - route: /posts
+    fields:
+      title:   { type: str }
+      content: { type: str }
+    meta:
+      methods: [GET, POST]
+      authentication:
+        permission: AllowAny   # override the global default
 ```
 
 ```python
@@ -123,6 +145,19 @@ from lightapi import LightApi
 app = LightApi.from_config("lightapi.yaml")
 app.run()
 ```
+
+**Legacy format** — point to existing `RestEndpoint` classes by dotted path:
+
+```yaml
+database_url: "${DATABASE_URL}"
+endpoints:
+  - path: /users
+    class: myapp.endpoints.UserEndpoint
+  - path: /posts
+    class: myapp.endpoints.PostEndpoint
+```
+
+See [Configuration](configuration.md) for the complete schema reference.
 
 ## Stack
 
