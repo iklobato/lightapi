@@ -1,169 +1,83 @@
-# Caching Reference
+---
+title: Cache API Reference
+description: Cache and RedisCache classes in LightAPI v2
+---
 
-The Caching module provides Redis-based caching capabilities for improved performance in LightAPI applications.
+# Cache API Reference
 
-## Cache Configuration
-
-### Basic Setup
-
-```python
-from lightapi.cache import Cache
-
-cache = Cache('redis://localhost:6379/0')
-```
-
-### Advanced Configuration
+## `Cache`
 
 ```python
-cache = Cache(
-    'redis://localhost:6379/0',
-    prefix='myapp:',
-    default_timeout=3600,
-    serializer='json'
+from lightapi import Cache
+
+Cache(
+    ttl: int,                        # seconds — required
+    vary_on: list[str] | None = None,
 )
 ```
 
-## Basic Operations
-
-### Setting Values
+Enables response caching for `GET` list and detail endpoints. Configured via `Meta.cache`:
 
 ```python
-# Basic set
-cache.set('key', 'value')
+from lightapi import RestEndpoint, Cache
 
-# Set with timeout
-cache.set('key', 'value', timeout=300)  # 5 minutes
+class ProductEndpoint(RestEndpoint):
+    name: str
+    price: float
 
-# Set multiple values
-cache.set_many({
-    'key1': 'value1',
-    'key2': 'value2'
-})
+    class Meta:
+        cache = Cache(ttl=300)
 ```
 
-### Getting Values
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `ttl` | `int` | Cache lifetime in seconds. Must be ≥ 1. |
+| `vary_on` | `list[str] \| None` | Query parameter names included in the cache key. |
+
+Raises `ConfigurationError` if `ttl < 1`.
+
+## `RedisCache`
 
 ```python
-# Get single value
-value = cache.get('key')
+from lightapi import RedisCache
 
-# Get with default
-value = cache.get('key', default='default_value')
-
-# Get multiple values
-values = cache.get_many(['key1', 'key2'])
+RedisCache(
+    host: str = "localhost",
+    port: int = 6379,
+    db: int = 0,
+)
 ```
 
-### Deleting Values
+The built-in Redis cache backend. Serializes cached values as JSON.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `host` | `"localhost"` | Redis server hostname |
+| `port` | `6379` | Redis server port |
+| `db` | `0` | Redis database index |
+
+## `BaseCache`
+
+Base class for custom cache backends:
 
 ```python
-# Delete single key
-cache.delete('key')
+from lightapi.cache import BaseCache
+from typing import Any, Dict, Optional
 
-# Delete multiple keys
-cache.delete_many(['key1', 'key2'])
+class MyCache(BaseCache):
+    def get(self, key: str) -> Optional[Dict[str, Any]]:
+        ...
 
-# Clear all keys
-cache.clear()
+    def set(self, key: str, value: Dict[str, Any], timeout: int = 300) -> bool:
+        ...
 ```
 
-## Decorators
+## Cache key
 
-### Function Caching
+The default cache key includes the endpoint class name and the full request URL (path + query string). When `vary_on` is set, only the listed query parameters are included in the key.
 
-```python
-from lightapi.cache import cached
+## Notes
 
-@cached(timeout=300)
-def expensive_operation():
-    # ... perform expensive operation ...
-    return result
-```
-
-### Method Caching
-
-```python
-class UserService:
-    @cached(timeout=300)
-    def get_user_data(self, user_id):
-        # ... fetch user data ...
-        return data
-```
-
-## Advanced Features
-
-### Pattern-based Operations
-
-```python
-# Delete all keys matching pattern
-cache.delete_pattern('user:*')
-
-# Get all keys matching pattern
-keys = cache.keys('user:*')
-```
-
-### Cache Tags
-
-```python
-# Set with tags
-cache.set('user:1', data, tags=['users'])
-
-# Invalidate by tag
-cache.invalidate_tags(['users'])
-```
-
-## Examples
-
-### Complete Caching Setup
-
-```python
-from lightapi import LightAPI
-from lightapi.cache import Cache, cached
-
-# Initialize app and cache
-app = LightAPI()
-cache = Cache('redis://localhost:6379/0')
-
-# Cache endpoint response
-@app.route('/users')
-@cached(timeout=300)
-def get_users():
-    users = User.query.all()
-    return {'users': [user.to_dict() for user in users]}
-
-# Cache with dynamic key
-@app.route('/user/<id>')
-@cached(key_prefix='user:{id}')
-def get_user(id):
-    user = User.query.get(id)
-    return user.to_dict()
-
-# Manual cache management
-@app.route('/update-user/<id>', methods=['POST'])
-def update_user(id):
-    user = User.query.get(id)
-    user.update(request.json)
-    db.session.commit()
-    
-    # Invalidate cache
-    cache.delete(f'user:{id}')
-    cache.invalidate_tags(['users'])
-    
-    return {'message': 'User updated'}
-```
-
-## Best Practices
-
-1. Use appropriate timeout values
-2. Implement cache invalidation strategy
-3. Use cache tags for related data
-4. Monitor cache memory usage
-5. Handle cache failures gracefully
-
-## See Also
-
-- [Core API](core.md) - Core framework functionality
-- [REST API](rest.md) - REST endpoint implementation
-- [Database](database.md) - Database integration
-
-> **Note:** Only GET, POST, PUT, PATCH, DELETE HTTP verbs are supported. OPTIONS and HEAD are not available. Required fields must be NOT NULL in the schema. Constraint violations (NOT NULL, UNIQUE, FK) return 409. 
+- Caching applies to `GET` requests only.
+- Write operations (`POST`, `PUT`, `PATCH`, `DELETE`) do **not** automatically invalidate cached entries.
+- Use a short `ttl` or implement manual Redis key invalidation for consistency.

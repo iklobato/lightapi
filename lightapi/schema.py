@@ -155,6 +155,8 @@ class SchemaFactory:
             __config__=ConfigDict(from_attributes=True, extra="allow"),
             **read_fields,
         )
+        schema_create.model_rebuild()
+        schema_read.model_rebuild()
         return schema_create, schema_read
 
 

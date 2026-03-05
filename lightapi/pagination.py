@@ -3,11 +3,14 @@ from __future__ import annotations
 import base64
 import json
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.requests import Request
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def encode_cursor(last_id: int) -> str:
@@ -34,6 +37,21 @@ class PageNumberPaginator:
         total: int = session.execute(count_stmt).scalar_one()
         rows = session.execute(qs.limit(page_size).offset(offset)).scalars().all()
         return rows, total
+
+    async def paginate_async(
+        self,
+        request: Request,
+        qs: Any,
+        session: AsyncSession,
+        page_size: int,
+    ) -> tuple[list[Any], int]:
+        """Async mirror of paginate(); uses await session.execute()."""
+        page = max(1, int(request.query_params.get("page", 1)))
+        offset = (page - 1) * page_size
+        count_stmt = select(func.count()).select_from(qs.subquery())
+        total: int = (await session.execute(count_stmt)).scalar_one()
+        rows = (await session.execute(qs.limit(page_size).offset(offset))).scalars().all()
+        return list(rows), total
 
     def wrap(
         self,
@@ -93,7 +111,36 @@ class CursorPaginator:
             last_row_id = getattr(last_obj, "id", None)
             if last_row_id is not None:
                 next_cursor = encode_cursor(last_row_id)
-        return rows, next_cursor
+        return list(rows), next_cursor
+
+    async def paginate_async(
+        self,
+        request: Request,
+        qs: Any,
+        session: AsyncSession,
+        page_size: int,
+    ) -> tuple[list[Any], str | None]:
+        """Async mirror of paginate(); uses await session.execute()."""
+        cursor_str = request.query_params.get("cursor")
+        if cursor_str:
+            try:
+                last_id = decode_cursor(cursor_str)
+                entity = qs.columns_clause_froms[0] if hasattr(qs, "columns_clause_froms") else None
+                id_col = None
+                if entity is not None:
+                    id_col = entity.c.get("id")
+                if id_col is not None:
+                    qs = qs.where(id_col > last_id)
+            except Exception:
+                pass
+        rows = (await session.execute(qs.order_by("id").limit(page_size))).scalars().all()
+        next_cursor = None
+        if len(rows) == page_size:
+            last_obj = rows[-1]
+            last_row_id = getattr(last_obj, "id", None)
+            if last_row_id is not None:
+                next_cursor = encode_cursor(last_row_id)
+        return list(rows), next_cursor
 
     def wrap(
         self,

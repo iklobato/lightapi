@@ -1,14 +1,18 @@
 """LightApi — application entry point."""
 from __future__ import annotations
 
+import asyncio
+import importlib
 import logging
 import os
+import warnings
 from typing import Any
 
 import uvicorn
 import yaml
 from sqlalchemy import create_engine
 from starlette.applications import Starlette
+from starlette.background import BackgroundTasks
 from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -50,6 +54,13 @@ class LightApi:
         self._engine = engine
         set_engine(engine)
 
+        # Detect async engine — drives session strategy and startup validation
+        try:
+            from sqlalchemy.ext.asyncio import AsyncEngine
+            self._async: bool = isinstance(engine, AsyncEngine)
+        except ImportError:
+            self._async = False
+
         self._routes: list[Route] = []
         self._middlewares: list[type] = middlewares or []
         self._cors_origins: list[str] = cors_origins or []
@@ -73,6 +84,16 @@ class LightApi:
                     f"register() value for '{path}' must be a RestEndpoint subclass, "
                     f"got {cls!r}."
                 )
+            # Warn if endpoint defines async queryset but engine is sync
+            if not self._async:
+                qs = cls.__dict__.get("queryset") or getattr(cls, "queryset", None)
+                if qs is not None and asyncio.iscoroutinefunction(qs):
+                    warnings.warn(
+                        f"'{cls.__name__}.queryset' is async but engine is sync; "
+                        "sync path will be used.",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
             # Perform deferred reflection now that an engine is available
             if getattr(cls, "_reflect_deferred", False):
                 from lightapi.rest import _map_reflected
@@ -103,10 +124,14 @@ class LightApi:
 
     def _make_collection_handler(self, cls: type) -> Any:
         app_middlewares = self._middlewares
+        is_async = self._async
 
         async def handler(request: Request) -> Response:
             endpoint = cls()
-            pre_result = _run_pre_middlewares(app_middlewares, request)
+            endpoint._background = BackgroundTasks()
+            endpoint._current_request = request
+
+            pre_result = await _run_pre_middlewares(app_middlewares, request)
             if pre_result is not None:
                 return pre_result
 
@@ -115,10 +140,22 @@ class LightApi:
                 return auth_result
 
             if request.method == "GET":
-                response = _maybe_cached(cls, request, lambda: endpoint.list(request))
+                get_override = getattr(cls, "get", None)
+                if get_override and asyncio.iscoroutinefunction(get_override):
+                    response = await get_override(endpoint, request)
+                elif is_async:
+                    response = await endpoint._list_async(request)
+                else:
+                    response = _maybe_cached(cls, request, lambda: endpoint.list(request))
             elif request.method == "POST":
                 data = await _read_body(request)
-                response = endpoint.create(data)
+                post_override = getattr(cls, "post", None)
+                if post_override and asyncio.iscoroutinefunction(post_override):
+                    response = await post_override(endpoint, request)
+                elif is_async:
+                    response = await endpoint._create_async(data)
+                else:
+                    response = endpoint.create(data)
             else:
                 allowed = ", ".join(sorted(cls._allowed_methods & {"GET", "POST"}))
                 response = JSONResponse(
@@ -126,19 +163,29 @@ class LightApi:
                     status_code=405,
                     headers={"Allow": allowed},
                 )
-            _maybe_invalidate_cache(cls, request)
-            return _run_post_middlewares(app_middlewares, request, response)
+
+            if not is_async:
+                _maybe_invalidate_cache(cls, request)
+
+            if endpoint._background.tasks:
+                response.background = endpoint._background
+
+            return await _run_post_middlewares(app_middlewares, request, response)
 
         handler.__name__ = f"{cls.__name__}_collection"
         return handler
 
     def _make_detail_handler(self, cls: type) -> Any:
         app_middlewares = self._middlewares
+        is_async = self._async
 
         async def handler(request: Request) -> Response:
             pk: int = request.path_params["id"]
             endpoint = cls()
-            pre_result = _run_pre_middlewares(app_middlewares, request)
+            endpoint._background = BackgroundTasks()
+            endpoint._current_request = request
+
+            pre_result = await _run_pre_middlewares(app_middlewares, request)
             if pre_result is not None:
                 return pre_result
 
@@ -147,12 +194,31 @@ class LightApi:
                 return auth_result
 
             if request.method == "GET":
-                response = _maybe_cached(cls, request, lambda: endpoint.retrieve(request, pk))
+                get_override = getattr(cls, "get", None)
+                if get_override and asyncio.iscoroutinefunction(get_override):
+                    response = await get_override(endpoint, request)
+                elif is_async:
+                    response = await endpoint._retrieve_async(request, pk)
+                else:
+                    response = _maybe_cached(cls, request, lambda: endpoint.retrieve(request, pk))
             elif request.method in {"PUT", "PATCH"}:
                 data = await _read_body(request)
-                response = endpoint.update(data, pk, partial=request.method == "PATCH")
+                partial = request.method == "PATCH"
+                put_override = getattr(cls, "put" if not partial else "patch", None)
+                if put_override and asyncio.iscoroutinefunction(put_override):
+                    response = await put_override(endpoint, request)
+                elif is_async:
+                    response = await endpoint._update_async(data, pk, partial=partial)
+                else:
+                    response = endpoint.update(data, pk, partial=partial)
             elif request.method == "DELETE":
-                response = endpoint.destroy(request, pk)
+                delete_override = getattr(cls, "delete", None)
+                if delete_override and asyncio.iscoroutinefunction(delete_override):
+                    response = await delete_override(endpoint, request)
+                elif is_async:
+                    response = await endpoint._destroy_async(request, pk)
+                else:
+                    response = endpoint.destroy(request, pk)
             else:
                 allowed = ", ".join(
                     sorted(cls._allowed_methods & {"GET", "PUT", "PATCH", "DELETE"})
@@ -162,8 +228,14 @@ class LightApi:
                     status_code=405,
                     headers={"Allow": allowed},
                 )
-            _maybe_invalidate_cache(cls, request)
-            return _run_post_middlewares(app_middlewares, request, response)
+
+            if not is_async:
+                _maybe_invalidate_cache(cls, request)
+
+            if endpoint._background.tasks:
+                response.background = endpoint._background
+
+            return await _run_post_middlewares(app_middlewares, request, response)
 
         handler.__name__ = f"{cls.__name__}_detail"
         return handler
@@ -180,10 +252,13 @@ class LightApi:
         reload: bool = False,
     ) -> None:
         """Create tables, build the Starlette ASGI app and start uvicorn."""
+        if self._async:
+            _validate_async_dependencies(self._engine)
         self._create_tables()
         self._check_cache_connections()
 
-        app = Starlette(debug=debug, routes=self._routes)
+        on_startup = [self._async_create_tables] if self._async else []
+        app = Starlette(debug=debug, routes=self._routes, on_startup=on_startup)
 
         if self._cors_origins:
             app.add_middleware(
@@ -206,9 +281,12 @@ class LightApi:
         """Build and return the Starlette ASGI app without starting the server.
 
         Useful for testing with ``httpx.AsyncClient`` or ``starlette.testclient.TestClient``.
+        For async engines, table creation is deferred to the Starlette on_startup handler
+        so it runs inside the correct event loop (not a throwaway thread loop).
         """
         self._create_tables()
-        return Starlette(routes=self._routes)
+        on_startup = [self._async_create_tables] if self._async else []
+        return Starlette(routes=self._routes, on_startup=on_startup)
 
     # ─────────────────────────────────────────────────────────────────────────
     # YAML factory
@@ -254,7 +332,36 @@ class LightApi:
     def _create_tables(self) -> None:
         _, metadata = get_registry_and_metadata()
         try:
-            metadata.create_all(bind=self._engine)
+            if self._async:
+                # For async engines, table creation must run inside the same event loop
+                # that will serve requests (uvicorn's loop), so we defer it to on_startup
+                # unless we are already inside a running loop (pytest-asyncio).
+                try:
+                    asyncio.get_running_loop()
+                    # Inside a running loop — create tables directly here (test context).
+                    async def _create_inside_loop() -> None:
+                        async with self._engine.begin() as conn:
+                            await conn.run_sync(metadata.create_all)
+
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                        pool.submit(asyncio.run, _create_inside_loop()).result()
+                except RuntimeError:
+                    # No running loop; registration is deferred to the on_startup handler
+                    # that build_app() adds. Nothing to do here.
+                    pass
+            else:
+                metadata.create_all(bind=self._engine)
+                logger.info("Tables created/verified against %s", self._engine.url)
+        except Exception as exc:
+            logger.warning("Table creation warning: %s", exc)
+
+    async def _async_create_tables(self) -> None:
+        """Called on server startup; creates tables inside the running event loop."""
+        _, metadata = get_registry_and_metadata()
+        try:
+            async with self._engine.begin() as conn:
+                await conn.run_sync(metadata.create_all)
             logger.info("Tables created/verified against %s", self._engine.url)
         except Exception as exc:
             logger.warning("Table creation warning: %s", exc)
@@ -262,7 +369,7 @@ class LightApi:
     def _check_cache_connections(self) -> None:
         """Emit RuntimeWarning if any endpoint has cache configured but Redis is unreachable."""
         import warnings
-        from lightapi.rest import RestEndpoint
+
 
         checked = False
         for route in self._routes:
@@ -286,6 +393,28 @@ class LightApi:
 # ─────────────────────────────────────────────────────────────────────────────
 # Handler utilities
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def _validate_async_dependencies(engine: Any) -> None:
+    """Raise ConfigurationError if async SQLAlchemy extras or dialect driver are missing."""
+    try:
+        importlib.import_module("sqlalchemy.ext.asyncio")
+    except ImportError:
+        raise ConfigurationError(
+            "AsyncEngine supplied but 'sqlalchemy[asyncio]' is not installed. "
+            "Install with: uv add 'sqlalchemy[asyncio]'"
+        )
+    dialect = engine.url.get_dialect().name
+    driver_map = {"postgresql": "asyncpg", "sqlite": "aiosqlite", "mysql": "aiomysql"}
+    driver = driver_map.get(dialect)
+    if driver:
+        try:
+            importlib.import_module(driver)
+        except ImportError:
+            raise ConfigurationError(
+                f"Async driver for '{dialect}' is not installed. "
+                f"Install with: uv add {driver}"
+            )
 
 
 async def _read_body(request: Request) -> dict[str, Any]:
@@ -320,21 +449,31 @@ def _check_auth(cls: type, request: Request) -> Response | None:
     return None
 
 
-def _run_pre_middlewares(
+async def _run_pre_middlewares(
     middlewares: list[type], request: Request
 ) -> Response | None:
+    """Run pre-request middleware; supports both sync and async process() methods."""
     for mw_cls in middlewares:
-        result = mw_cls().process(request, None)
+        mw = mw_cls()
+        if asyncio.iscoroutinefunction(mw.process):
+            result = await mw.process(request, None)
+        else:
+            result = mw.process(request, None)
         if result is not None:
             return result
     return None
 
 
-def _run_post_middlewares(
+async def _run_post_middlewares(
     middlewares: list[type], request: Request, response: Response
 ) -> Response:
+    """Run post-response middleware in reverse order; supports sync and async process()."""
     for mw_cls in reversed(middlewares):
-        result = mw_cls().process(request, response)
+        mw = mw_cls()
+        if asyncio.iscoroutinefunction(mw.process):
+            result = await mw.process(request, response)
+        else:
+            result = mw.process(request, response)
         if result is not None:
             response = result
     return response

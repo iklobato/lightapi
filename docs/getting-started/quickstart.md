@@ -115,11 +115,58 @@ Every `RestEndpoint` automatically gets these columns — no need to declare the
 
 ---
 
+---
+
+## Async Quick Start (PostgreSQL)
+
+Swap `create_engine` for `create_async_engine` — everything else is unchanged:
+
+```bash
+uv add "lightapi[async]"
+```
+
+```python
+# main_async.py
+from typing import Optional
+from sqlalchemy.ext.asyncio import create_async_engine
+from starlette.requests import Request
+from lightapi import LightApi, RestEndpoint, Field
+from lightapi.auth import AllowAny
+from lightapi.config import Authentication
+
+class BookEndpoint(RestEndpoint):
+    title: str = Field(min_length=1)
+    author: str = Field(min_length=1)
+    year: Optional[int] = None
+
+    class Meta:
+        authentication = Authentication(permission=AllowAny)
+
+    async def queryset(self, request: Request):
+        from sqlalchemy import select
+        return select(type(self)._model_class)
+
+engine = create_async_engine(
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/mydb"
+)
+app = LightApi(engine=engine)
+app.register({"/books": BookEndpoint})
+
+if __name__ == "__main__":
+    app.run()
+```
+
+The API surface is identical — the same `curl` commands work unchanged.
+
+See [Async Support](../advanced/async.md) for background tasks, async middleware, and testing.
+
+---
+
 ## What's next?
 
+- [Async Support](../advanced/async.md) — async engine, queryset, background tasks
 - [Authentication](../advanced/authentication.md) — JWT + permission classes
 - [Filtering & Ordering](../advanced/filtering.md) — `Meta.filtering`
 - [Pagination](../advanced/pagination.md) — page-number and cursor styles
-- [Serializer](../advanced/serializer.md) — per-verb field projection
-- [Middleware](../advanced/middleware.md) — `Middleware.process(request, response)`
+- [Middleware](../advanced/middleware.md) — sync and async `Middleware.process`
 - [Caching](../advanced/caching.md) — `Meta.cache = Cache(ttl=N)`

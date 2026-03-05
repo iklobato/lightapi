@@ -1,226 +1,139 @@
-# Validation Reference
+---
+title: Validation API Reference
+description: Pydantic v2 field validation and schema generation in LightAPI v2
+---
 
-The Validation module provides powerful tools for validating request data and model fields in LightAPI.
+# Validation API Reference
 
-## Request Validation
+LightAPI v2 uses **Pydantic v2** for all request body validation. There is no separate validator class — constraints are declared directly on field annotations.
 
-### Basic Validation
+## How validation works
+
+1. On `POST`, `PUT`, or `PATCH`, LightAPI parses the request body as JSON.
+2. It validates the data against the auto-generated Pydantic write schema.
+3. On failure, it returns `422 Unprocessable Entity` with the Pydantic error detail.
+4. On success, it proceeds with the database operation.
+
+## Declaring constraints
 
 ```python
-from lightapi.validation import validate_request
-from lightapi.models import Model, Field
+from typing import Optional
+from decimal import Decimal
+from lightapi import RestEndpoint, Field
 
-class UserCreate(Model):
-    name: str = Field(min_length=2, max_length=50)
-    email: str = Field(format='email')
-    age: int = Field(ge=0, optional=True)
-
-@app.route('/users', methods=['POST'])
-def create_user(request):
-    data = validate_request(request, UserCreate)
-    # data is now validated and type-converted
-    user = User(**data)
-    user.save()
-    return user.dict(), 201
+class ProductEndpoint(RestEndpoint):
+    name: str = Field(min_length=1, max_length=100)
+    price: Decimal = Field(gt=0, decimal_places=2)
+    stock: int = Field(ge=0, default=0)
+    email: Optional[str] = Field(None, pattern=r"^[^@]+@[^@]+\.[^@]+$")
 ```
 
-### Query Parameter Validation
+All [Pydantic v2 field constraints](https://docs.pydantic.dev/latest/concepts/fields/) work directly.
 
-```python
-from lightapi.validation import validate_query
-from lightapi.models import Model, Field
+## Error response format
 
-class UserQuery(Model):
-    page: int = Field(ge=1, default=1)
-    limit: int = Field(ge=1, le=100, default=10)
-    search: str = Field(optional=True)
-
-@app.route('/users')
-def list_users(request):
-    query = validate_query(request, UserQuery)
-    # query contains validated parameters
-    users = User.query.paginate(query.page, query.limit)
-    return {'users': users}
-```
-
-## Field Validation
-
-### Built-in Validators
-
-```python
-from lightapi.models import Field
-
-class Product(Model):
-    name: str = Field(
-        min_length=1,
-        max_length=100,
-        pattern=r'^[A-Za-z0-9\s\-]+$'
-    )
-    price: float = Field(
-        gt=0,
-        le=10000
-    )
-    category: str = Field(
-        choices=['electronics', 'clothing', 'books']
-    )
-    in_stock: bool = Field(default=True)
-```
-
-### Custom Validators
-
-```python
-from lightapi.models import validator
-
-class User(Model):
-    username: str = Field()
-    password: str = Field()
-    
-    @validator('username')
-    def validate_username(cls, value):
-        if not value.isalnum():
-            raise ValueError('Username must be alphanumeric')
-        return value
-
-    @validator('password')
-    def validate_password(cls, value):
-        if len(value) < 8:
-            raise ValueError('Password must be at least 8 characters')
-        if not any(c.isupper() for c in value):
-            raise ValueError('Password must contain uppercase letter')
-        if not any(c.isdigit() for c in value):
-            raise ValueError('Password must contain a number')
-        return value
-```
-
-## Validation Errors
-
-### Error Handling
-
-```python
-from lightapi.exceptions import ValidationError
-
-@app.route('/users', methods=['POST'])
-def create_user(request):
-    try:
-        data = validate_request(request, UserCreate)
-        user = User(**data)
-        user.save()
-        return user.dict(), 201
-    except ValidationError as e:
-        return {
-            'error': 'VALIDATION_ERROR',
-            'message': str(e),
-            'fields': e.fields
-        }, 400
-```
-
-### Error Format
-
-```python
+```json
 {
-    "error": "VALIDATION_ERROR",
-    "message": "Invalid input data",
-    "fields": {
-        "email": ["Invalid email format"],
-        "age": ["Must be greater than or equal to 0"]
+  "detail": [
+    {
+      "type": "string_too_short",
+      "loc": ["name"],
+      "msg": "String should have at least 1 character",
+      "input": "",
+      "ctx": {"min_length": 1}
+    },
+    {
+      "type": "greater_than",
+      "loc": ["price"],
+      "msg": "Input should be greater than 0",
+      "input": -5.0,
+      "ctx": {"gt": 0}
     }
+  ]
 }
 ```
 
-## Advanced Validation
+## Read vs. write schemas
 
-### Nested Validation
+LightAPI generates two Pydantic schemas per endpoint:
 
-```python
-class Address(Model):
-    street: str = Field()
-    city: str = Field()
-    country: str = Field()
+| Schema | Fields included | Used for |
+|--------|----------------|----------|
+| Write (create) | All declared fields with their constraints | `POST` / `PUT` / `PATCH` validation |
+| Read | All columns including auto-injected ones | Response serialisation |
 
-class User(Model):
-    name: str = Field()
-    email: str = Field(format='email')
-    address: Address
-```
-
-### List Validation
+Control which fields appear using `Meta.serializer`:
 
 ```python
-class Order(Model):
-    items: List[OrderItem] = Field(min_items=1)
-    total: float = Field(gt=0)
+from lightapi import RestEndpoint, Serializer
 
-class OrderItem(Model):
-    product_id: int = Field(gt=0)
-    quantity: int = Field(gt=0)
-    price: float = Field(gt=0)
+class UserEndpoint(RestEndpoint):
+    username: str
+    email: str
+    hashed_password: str
+
+    class Meta:
+        serializer = Serializer(
+            read=["id", "username", "email", "created_at"],
+            write=["username", "email", "hashed_password"],
+        )
 ```
 
-## Examples
-
-### Complete Validation Example
+## `Serializer`
 
 ```python
-from lightapi import LightAPI
-from lightapi.models import Model, Field, validator
-from lightapi.validation import validate_request
-from lightapi.exceptions import ValidationError
+from lightapi import Serializer
 
-app = LightAPI()
-
-class UserCreate(Model):
-    username: str = Field(
-        min_length=3,
-        max_length=50,
-        pattern=r'^[a-zA-Z0-9_]+$'
-    )
-    email: str = Field(format='email')
-    password: str = Field(min_length=8)
-    age: int = Field(ge=0, le=120, optional=True)
-    roles: List[str] = Field(
-        default=['user'],
-        choices=['user', 'admin', 'moderator']
-    )
-
-    @validator('username')
-    def validate_username(cls, value):
-        if not value.isalnum():
-            raise ValueError('Username must be alphanumeric')
-        return value
-
-    @validator('password')
-    def validate_password(cls, value):
-        if not any(c.isupper() for c in value):
-            raise ValueError('Password must contain uppercase letter')
-        if not any(c.isdigit() for c in value):
-            raise ValueError('Password must contain a number')
-        return value
-
-@app.route('/users', methods=['POST'])
-def create_user(request):
-    try:
-        data = validate_request(request, UserCreate)
-        user = User(**data)
-        user.save()
-        return user.dict(), 201
-    except ValidationError as e:
-        return {
-            'error': 'VALIDATION_ERROR',
-            'message': str(e),
-            'fields': e.fields
-        }, 400
+Serializer(
+    fields: list[str] | None = None,  # unified read+write whitelist
+    read: list[str] | None = None,    # read-only whitelist
+    write: list[str] | None = None,   # write-only whitelist
+)
 ```
 
-## Best Practices
+`fields` and `read`/`write` are mutually exclusive — passing both raises `ConfigurationError`.
 
-1. Validate all user input
-2. Use appropriate validation rules
-3. Provide clear error messages
-4. Handle validation errors gracefully
-5. Use type hints for better IDE support
+## Custom validation via method overrides
 
-## See Also
+For domain-level validation that goes beyond field constraints, override the HTTP method:
 
-- [Models](models.md) - Data model definitions
-- [REST API](rest.md) - REST endpoint implementation
-- [Exceptions](exceptions.md) - Error handling 
+```python
+import json
+from starlette.responses import JSONResponse
+from lightapi import RestEndpoint
+
+class OrderEndpoint(RestEndpoint):
+    item_id: int
+    quantity: int
+
+    async def post(self, request):
+        data = json.loads(await request.body())
+        # Custom domain rule
+        if data.get("quantity", 0) > 1000:
+            return JSONResponse(
+                {"detail": "Quantity cannot exceed 1000"},
+                status_code=422,
+            )
+        return await self._create_async(data)
+```
+
+## Optimistic locking validation
+
+`PUT` and `PATCH` requests must include the current `version` value. The framework validates it against the database row:
+
+- If `version` matches: update succeeds, `version` is incremented.
+- If `version` is missing or mismatched: returns `409 Conflict`.
+- If the record is not found: returns `404 Not Found`.
+
+## `SchemaFactory` (internal)
+
+LightAPI uses `SchemaFactory` to programmatically create Pydantic models from SQLAlchemy column metadata. You do not need to interact with it directly, but it is available for advanced use:
+
+```python
+from lightapi import SchemaFactory
+
+schema = SchemaFactory.create_schema(
+    name="MyModel",
+    columns={"title": (str, ...)},
+)
+```

@@ -1,10 +1,15 @@
 """RestEndpointMeta metaclass and RestEndpoint base class."""
 from __future__ import annotations
 
+import asyncio
 import datetime
+from collections.abc import Callable
 from decimal import Decimal
-from typing import Any, get_args, get_origin
+from typing import TYPE_CHECKING, Any, get_args, get_origin
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from starlette.background import BackgroundTasks
 
 from sqlalchemy import (
     Boolean,
@@ -12,16 +17,15 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
-    Index,
     Integer,
     Numeric,
     String,
     Table,
-    UniqueConstraint,
     delete,
-    insert,
-    select as sa_select,
     update,
+)
+from sqlalchemy import (
+    select as sa_select,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
@@ -33,7 +37,7 @@ except ImportError:
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from lightapi.exceptions import ConfigurationError, SerializationError
+from lightapi.exceptions import ConfigurationError
 from lightapi.schema import (
     SchemaFactory,
     _apply_fields,
@@ -100,8 +104,8 @@ class RestEndpointMeta(type):
     def _process(cls: type, name: str, namespace: dict[str, Any]) -> None:
         import typing as _typing
 
-        from lightapi.fields import _LIGHTAPI_KWARGS
         from pydantic.fields import FieldInfo
+
 
         # ── Step 1: Collect annotations ──────────────────────────────────────
         # Use get_type_hints() so that PEP-563 string annotations (from
@@ -208,7 +212,6 @@ class RestEndpointMeta(type):
         cls._fields_info = fields_info  # type: ignore[attr-defined]
 
         # ── Step 6: MRO scan for HttpMethod markers ───────────────────────────
-        from lightapi.methods import HttpMethod
 
         allowed: set[str] = set()
         for base in cls.__mro__:
@@ -239,8 +242,9 @@ def _map_imperatively(
     meta_obj: Any,
 ) -> None:
     """Register the class as a SQLAlchemy mapped entity using the app-level registry."""
-    from lightapi._registry import get_registry_and_metadata
     from pydantic.fields import FieldInfo
+
+    from lightapi._registry import get_registry_and_metadata
 
     registry, metadata = get_registry_and_metadata()
 
@@ -289,28 +293,66 @@ def _map_reflected(
 
     partial=False → pure reflection; no new columns added.
     partial=True  → reflect existing table then add extra_columns from user annotations.
+    Supports both sync and async engines.
     """
+    from sqlalchemy import Table
+
     from lightapi._registry import get_engine, get_registry_and_metadata
-    from sqlalchemy import inspect as sa_inspect_engine
 
     registry, metadata = get_registry_and_metadata()
     engine = get_engine()
 
-    table_name = getattr(meta_obj, "table", None) or f"{name.lower()}s"
+    table_name = getattr(meta_obj, "table", None) or getattr(meta_obj, "table_name", None) or f"{name.lower()}s"
 
-    existing_inspector = sa_inspect_engine(engine)
-    if table_name not in existing_inspector.get_table_names():
-        raise ConfigurationError(
-            f"Meta.reflect is set on '{name}' but table '{table_name}' "
-            "does not exist in the database."
-        )
+    # Detect AsyncEngine and use run_sync for reflection
+    try:
+        from sqlalchemy.ext.asyncio import AsyncEngine as _AE
+        _is_async = isinstance(engine, _AE)
+    except ImportError:
+        _is_async = False
+
+    if _is_async:
+        # Reflect using conn.run_sync; must be driven from a sync context.
+        def _do_reflect_sync(conn: Any) -> list[str]:
+            from sqlalchemy import inspect as _insp
+            return _insp(conn).get_table_names()
+
+        def _do_reflect_table(conn: Any) -> None:
+            metadata.reflect(bind=conn, only=[table_name])
+
+        async def _async_reflect() -> list[str]:
+            async with engine.connect() as conn:
+                names = await conn.run_sync(_do_reflect_sync)
+                if table_name not in metadata.tables:
+                    await conn.run_sync(_do_reflect_table)
+                return names
+
+        try:
+            asyncio.get_running_loop()
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                table_names = pool.submit(asyncio.run, _async_reflect()).result()
+        except RuntimeError:
+            table_names = asyncio.run(_async_reflect())
+    else:
+        from sqlalchemy import inspect as sa_inspect_engine
+        existing_inspector = sa_inspect_engine(engine)
+        table_names = existing_inspector.get_table_names()
+        if table_name not in table_names:
+            raise ConfigurationError(
+                f"Meta.reflect is set on '{name}' but table '{table_name}' "
+                "does not exist in the database."
+            )
+        if table_name not in metadata.tables:
+            table = Table(table_name, metadata, autoload_with=engine)
 
     if table_name not in metadata.tables:
-        # Reflect the table into our metadata
-        from sqlalchemy import Table
-        table = Table(table_name, metadata, autoload_with=engine)
-    else:
-        table = metadata.tables[table_name]
+        raise ConfigurationError(
+            f"Meta.reflect is set on '{name}' but table '{table_name}' "
+            "could not be reflected."
+        )
+
+    table = metadata.tables[table_name]
 
     if partial and extra_columns:
         for col in extra_columns:
@@ -346,14 +388,32 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     _fields_info: dict[str, Any]
 
     def __init__(self, **kwargs: Any) -> None:
+        self._background: BackgroundTasks | None = None
+        self._current_request: Request | None = None
         for k, v in kwargs.items():
             setattr(self, k, v)
+
+    # ── Background task support ───────────────────────────────────────────────
+
+    def background(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
+        """Schedule fn as a fire-and-forget background task for the current request."""
+        if self._background is None:
+            raise RuntimeError("background() called outside request handler")
+        self._background.add_task(fn, *args, **kwargs)
 
     # ── CRUD helpers ──────────────────────────────────────────────────────────
 
     def _get_engine(self) -> Any:
         from lightapi._registry import get_engine
-        return get_engine()
+        engine = get_engine()
+        # Sync callers use the sync engine; if an AsyncEngine was registered, unwrap it.
+        try:
+            from sqlalchemy.ext.asyncio import AsyncEngine as _AE
+            if isinstance(engine, _AE):
+                return engine.sync_engine
+        except ImportError:
+            pass
+        return engine
 
     def _get_queryset(self, request: Request) -> Any:
         cls = type(self)
@@ -391,7 +451,6 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         from sqlalchemy.orm import Session
 
         engine = self._get_engine()
-        cls = type(self)
         pagination_cfg = self._meta.get("pagination")
 
         with Session(engine) as session:
@@ -478,7 +537,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                 # Build a one-shot model where every field is Optional so that
                 # PATCH can supply any subset of fields without validation errors.
                 from typing import Optional as _Opt
-                from pydantic import create_model as _cm, ConfigDict as _CD
+
+                from pydantic import ConfigDict as _CD
+                from pydantic import create_model as _cm
                 patch_fields: dict[str, Any] = {}
                 for fname, finfo in cls.__schema_create__.model_fields.items():
                     ann = finfo.annotation
@@ -546,4 +607,202 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             if result is None:
                 return JSONResponse({"detail": "not found"}, status_code=404)
             session.commit()
+            return Response(status_code=204)
+
+    # ── Async queryset resolver ───────────────────────────────────────────────
+
+    async def _get_queryset_async(self, request: Request) -> Any:
+        """Resolve queryset; await if it is a coroutine function."""
+        cls = type(self)
+        qs_attr = cls.__dict__.get("queryset") or getattr(cls, "queryset", None)
+        if qs_attr is None:
+            return sa_select(cls._model_class)
+        if asyncio.iscoroutinefunction(qs_attr):
+            result = await qs_attr(self, request)
+            return result
+        if callable(qs_attr):
+            return qs_attr(self, request)
+        return qs_attr
+
+    def _get_async_engine(self) -> Any:
+        """Return the raw (AsyncEngine) engine for async session creation."""
+        from lightapi._registry import get_engine
+        return get_engine()
+
+    # ── Async CRUD ────────────────────────────────────────────────────────────
+
+    async def _list_async(self, request: Request) -> Response:
+        """Async mirror of list(); uses AsyncSession."""
+        from lightapi.session import get_async_session
+
+        engine = self._get_async_engine()
+        pagination_cfg = self._meta.get("pagination")
+
+        async with get_async_session(engine) as session:
+            qs = await self._get_queryset_async(request)
+            qs = self._run_filter_backends(request, qs)
+
+            if pagination_cfg:
+                from lightapi.pagination import CursorPaginator, PageNumberPaginator
+
+                if pagination_cfg.style == "cursor":
+                    pager = CursorPaginator()
+                    rows, next_cursor = await pager.paginate_async(
+                        request, qs, session, pagination_cfg.page_size
+                    )
+                    results = [self._serialize_row(r, "GET") for r in rows]
+                    return JSONResponse(pager.wrap(results, next_cursor, None))
+                else:
+                    pager = PageNumberPaginator()
+                    page = int(request.query_params.get("page", 1))
+                    rows, total = await pager.paginate_async(
+                        request, qs, session, pagination_cfg.page_size
+                    )
+                    results = [self._serialize_row(r, "GET") for r in rows]
+                    return JSONResponse(
+                        pager.wrap(request, results, total, page, pagination_cfg.page_size)
+                    )
+
+            instances = (await session.execute(qs)).scalars().all()
+            results = [self._serialize_row(inst, "GET") for inst in instances]
+            return JSONResponse({"results": results})
+
+    async def _retrieve_async(self, request: Request, pk: int) -> Response:
+        """Async mirror of retrieve(); uses AsyncSession."""
+        from lightapi.session import get_async_session
+
+        engine = self._get_async_engine()
+        cls = type(self)
+        async with get_async_session(engine) as session:
+            instance = (
+                await session.execute(
+                    sa_select(cls._model_class).where(cls._model_class.id == pk)
+                )
+            ).scalars().first()
+            if instance is None:
+                return JSONResponse({"detail": "not found"}, status_code=404)
+            return JSONResponse(self._serialize_row(instance, "GET"))
+
+    async def _create_async(self, data: dict[str, Any]) -> Response:
+        """Async mirror of create(); ORM-style insert with flush/refresh."""
+        from pydantic import ValidationError
+
+        from lightapi.session import get_async_session
+
+        engine = self._get_async_engine()
+        cls = type(self)
+        try:
+            validated = cls.__schema_create__.model_validate(data)
+        except ValidationError as exc:
+            return JSONResponse({"detail": exc.errors()}, status_code=422)
+
+        async with get_async_session(engine) as session:
+            now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+            instance = cls._model_class(
+                **validated.model_dump(),
+                created_at=now,
+                updated_at=now,
+                version=1,
+            )
+            session.add(instance)
+            await session.flush()
+            await session.refresh(instance)
+            response_data = self._serialize_row(instance, "POST")
+            return JSONResponse(response_data, status_code=201)
+
+    async def _update_async(
+        self, data: dict[str, Any], pk: int, partial: bool = False
+    ) -> Response:
+        """Async mirror of update() with optimistic locking."""
+        from pydantic import ValidationError
+
+        from lightapi.session import get_async_session
+
+        client_version = data.get("version")
+        if client_version is None:
+            return JSONResponse(
+                {"detail": [{"loc": ["version"], "msg": "Field required", "type": "missing"}]},
+                status_code=422,
+            )
+
+        engine = self._get_async_engine()
+        cls = type(self)
+
+        try:
+            if partial:
+                from typing import Optional as _Opt
+
+                from pydantic import ConfigDict as _CD
+                from pydantic import create_model as _cm
+                patch_fields: dict[str, Any] = {}
+                for fname, finfo in cls.__schema_create__.model_fields.items():
+                    ann = finfo.annotation
+                    patch_fields[fname] = (_Opt[ann], None)  # type: ignore[valid-type]
+                PatchSchema = _cm(
+                    f"{cls.__name__}PatchSchema",
+                    __config__=_CD(from_attributes=True),
+                    **patch_fields,
+                )
+                validated = PatchSchema.model_validate(data)
+                update_data = {
+                    k: v
+                    for k, v in validated.model_dump(exclude_unset=True).items()
+                    if k not in _AUTO_FIELDS and v is not None
+                }
+            else:
+                validated = cls.__schema_create__.model_validate(data)
+                update_data = {
+                    k: v for k, v in validated.model_dump().items() if k not in _AUTO_FIELDS
+                }
+        except ValidationError as exc:
+            return JSONResponse({"detail": exc.errors()}, status_code=422)
+
+        update_data.pop("version", None)
+
+        async with get_async_session(engine) as session:
+            result = await session.execute(
+                update(cls._model_class)
+                .where(
+                    cls._model_class.id == pk,
+                    cls._model_class.version == client_version,
+                )
+                .values(
+                    **update_data,
+                    version=client_version + 1,
+                    updated_at=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
+                )
+            )
+            if result.rowcount == 0:
+                exists = (
+                    await session.execute(
+                        sa_select(cls._model_class.id).where(cls._model_class.id == pk)
+                    )
+                ).first()
+                await session.rollback()
+                if not exists:
+                    return JSONResponse({"detail": "not found"}, status_code=404)
+                return JSONResponse({"detail": "version conflict"}, status_code=409)
+            instance = (
+                await session.execute(
+                    sa_select(cls._model_class).where(cls._model_class.id == pk)
+                )
+            ).scalars().first()
+            response_data = self._serialize_row(instance, "PUT")
+            return JSONResponse(response_data)
+
+    async def _destroy_async(self, request: Request, pk: int) -> Response:
+        """Async mirror of destroy()."""
+        from lightapi.session import get_async_session
+
+        engine = self._get_async_engine()
+        cls = type(self)
+        async with get_async_session(engine) as session:
+            stmt = (
+                delete(cls._model_class)
+                .where(cls._model_class.id == pk)
+                .returning(cls._model_class.id)
+            )
+            result = (await session.execute(stmt)).first()
+            if result is None:
+                return JSONResponse({"detail": "not found"}, status_code=404)
             return Response(status_code=204)

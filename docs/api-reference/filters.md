@@ -1,145 +1,132 @@
-> **Note:** This page describes the v1 API and has not yet been updated for v2. See the [README](../../README.md) for current documentation.
-
-> **Note:** This page describes the v1 API and has not yet been updated for v2. The v2 API is described in the [README](../../README.md).
+---
+title: Filters API Reference
+description: Built-in filter backends and BaseFilter interface
+---
 
 # Filters API Reference
 
-This document provides comprehensive reference for LightAPI's filtering system, including built-in filter classes and how to create custom filters.
-
 ## Overview
 
-LightAPI's filtering system allows you to add query parameters to filter database results. The system is designed to be:
+Filtering is enabled via `Meta.filtering` on a `RestEndpoint`:
 
-- **Flexible**: Support multiple filter types and operators
-- **Secure**: Automatic parameter validation and sanitization
-- **Extensible**: Easy to create custom filter classes
-- **Performant**: Generates efficient SQL queries
+```python
+from lightapi import RestEndpoint, Filtering, FieldFilter, SearchFilter, OrderingFilter
 
-## Base Classes
+class ArticleEndpoint(RestEndpoint):
+    title: str
+    published: bool
 
-### BaseFilter
+    class Meta:
+        filtering = Filtering(
+            backends=[FieldFilter, SearchFilter, OrderingFilter],
+            fields=["published"],
+            search=["title"],
+            ordering=["title", "created_at"],
+        )
+```
 
-The foundation class for all filters.
+## `Filtering`
+
+```python
+Filtering(
+    backends: list[type] | None = None,
+    fields: list[str] | None = None,
+    search: list[str] | None = None,
+    ordering: list[str] | None = None,
+)
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `backends` | Filter backend classes applied in order to every list query. |
+| `fields` | Column names allowed for `FieldFilter` exact-match. |
+| `search` | Column names searched by `SearchFilter`. |
+| `ordering` | Column names allowed for `OrderingFilter`. |
+
+## Built-in backends
+
+### `FieldFilter`
+
+Applies exact `WHERE col = value` for query parameters in `fields`.
+
+```
+GET /articles?published=true&category=tech
+```
+
+**Type coercion**: string query parameter values are automatically converted to the correct Python type (`bool`, `int`, `float`) based on the SQLAlchemy column type. This prevents type errors with strict databases like PostgreSQL.
+
+**Class:** `lightapi.filters.FieldFilter`
+
+### `SearchFilter`
+
+Applies case-insensitive `ILIKE '%value%'` across all `search` columns when `?search=` is present.
+
+```
+GET /articles?search=async+python
+# WHERE title ILIKE '%async python%' OR body ILIKE '%async python%'
+```
+
+**Class:** `lightapi.filters.SearchFilter`
+
+### `OrderingFilter`
+
+Applies `ORDER BY col ASC` or `ORDER BY col DESC` (prefix `-`) via `?ordering=`.
+
+```
+GET /articles?ordering=-created_at,title
+```
+
+Multiple fields can be comma-separated. Only fields listed in `ordering` are allowed; unknown fields are silently ignored.
+
+**Class:** `lightapi.filters.OrderingFilter`
+
+## Reserved parameters
+
+The following query parameter names are never treated as field filters:
+
+`page`, `page_size`, `cursor`, `search`, `ordering`
+
+## `BaseFilter`
+
+Implement this abstract base class to create custom filter backends:
 
 ```python
 from lightapi.filters import BaseFilter
+from starlette.requests import Request
 
-class BaseFilter:
-    def filter_queryset(self, queryset, request):
-        """
-        Filter a SQLAlchemy queryset based on request parameters.
-        
-        Args:
-            queryset: SQLAlchemy Query object
-            request: HTTP request object with query_params
-            
-        Returns:
-            SQLAlchemy Query object with filters applied
-        """
+class DateRangeFilter(BaseFilter):
+    def filter_queryset(self, request: Request, queryset, view) -> Any:
+        after = request.query_params.get("after")
+        before = request.query_params.get("before")
+        cls = type(view)
+        if after:
+            queryset = queryset.where(cls._model_class.created_at >= after)
+        if before:
+            queryset = queryset.where(cls._model_class.created_at <= before)
         return queryset
 ```
 
-**Usage:**
-```python
-class CustomFilter(BaseFilter):
-    def filter_queryset(self, queryset, request):
-        # Implement your filtering logic
-        return queryset
-```
-
-### ParameterFilter
-
-Built-in filter that applies exact matches for query parameters.
+Register it in `Meta.filtering`:
 
 ```python
-from lightapi.filters import ParameterFilter
+class EventEndpoint(RestEndpoint):
+    name: str
 
-class ParameterFilter(BaseFilter):
-    def filter_queryset(self, queryset, request):
-        """
-        Apply filters based on query parameters that match model fields.
-        
-        Automatically filters by:
-        - Exact field matches (e.g., ?category=electronics)
-        - Model attributes that exist in query parameters
-        """
+    class Meta:
+        filtering = Filtering(
+            backends=[FieldFilter, DateRangeFilter, OrderingFilter],
+            fields=[],
+            ordering=["created_at"],
+        )
 ```
 
-## Built-in Filter Classes
+## `_coerce_filter_value` (internal)
 
-### ParameterFilter
-
-Provides automatic filtering based on query parameters.
-
-#### Configuration
+LightAPI calls this automatically for `FieldFilter` to coerce string query params to the column's Python type. You can use it in custom backends:
 
 ```python
+from lightapi.filters import _coerce_filter_value
 
-class Product(Base, RestEndpoint):
-    __tablename__ = 'products'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100))
-    category = Column(String(50))
-    price = Column(Float)
-    
-    class Configuration:
-        filter_class = ParameterFilter
+coerced = _coerce_filter_value(column_attribute, "true")   # → True (bool)
+coerced = _coerce_filter_value(column_attribute, "42")     # → 42 (int)
 ```
-
-#### Supported Parameters
-
-- **Field Matching**: `?category=electronics` filters by exact category match
-- **Multiple Fields**: `?category=electronics&price=99.99` combines filters
-- **Automatic Type Conversion**: Converts string parameters to appropriate types
-
-#### Example Usage
-
-```bash
-# Filter by category
-GET /products?category=electronics
-
-# Filter by multiple fields
-GET /products?category=electronics&active=true
-
-# Combine with pagination
-GET /products?category=electronics&page=1&limit=10
-```
-
-## Custom Filter Examples
-
-### Advanced Parameter Filter
-
-```python
-from lightapi.filters import ParameterFilter
-from sqlalchemy import and_, or_
-
-class AdvancedParameterFilter(ParameterFilter):
-    def filter_queryset(self, queryset, request):
-        # Apply base parameter filtering
-        queryset = super().filter_queryset(queryset, request)
-        
-        params = request.query_params
-        entity = queryset.column_descriptions[0]['entity']
-        
-        # Price range filtering
-        min_price = params.get('min_price')
-        max_price = params.get('max_price')
-        
-        if min_price:
-            try:
-                queryset = queryset.filter(entity.price >= float(min_price))
-            except (ValueError, TypeError):
-                pass
-        
-        if max_price:
-            try:
-                queryset = queryset.filter(entity.price <= float(max_price))
-            except (ValueError, TypeError):
-                pass
-        
-        # Text search across multiple fields
-        search = params.get('search')
-        if search:
-            search_filter = or_(
-                entity.name.ilike(f'

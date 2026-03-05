@@ -2,13 +2,6 @@
 from lightapi.auth import AllowAny, IsAdminUser, IsAuthenticated, JWTAuthentication
 from lightapi.cache import RedisCache
 from lightapi.config import Authentication, Cache, Filtering, Pagination, Serializer
-from lightapi.exceptions import ConfigurationError, SerializationError
-from lightapi.fields import Field
-from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
-from lightapi.lightapi import LightApi
-from lightapi.methods import HttpMethod
-from lightapi.rest import RestEndpoint
-from lightapi.schema import SchemaFactory
 
 # Backward-compatible re-exports from core.py
 from lightapi.core import (
@@ -17,6 +10,14 @@ from lightapi.core import (
     Middleware,
     Response,
 )
+from lightapi.exceptions import ConfigurationError, SerializationError
+from lightapi.fields import Field
+from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
+from lightapi.lightapi import LightApi
+from lightapi.methods import HttpMethod
+from lightapi.rest import RestEndpoint
+from lightapi.schema import SchemaFactory
+from lightapi.session import get_async_session, get_sync_session  # noqa: E402
 
 __all__ = [
     # Core
@@ -50,4 +51,7 @@ __all__ = [
     # Exceptions
     "ConfigurationError",
     "SerializationError",
+    # Session helpers
+    "get_sync_session",
+    "get_async_session",
 ]

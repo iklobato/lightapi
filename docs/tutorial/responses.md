@@ -1,93 +1,132 @@
 ---
 title: Working with Responses
+description: Response types and patterns in LightAPI v2 method overrides
 ---
 
-LightAPI makes it easy to return HTTP responses from your endpoints with flexible JSON and custom response types.
+# Working with Responses
 
-## 1. Default JSON Responses
+LightAPI's built-in CRUD methods return Starlette `Response` objects. When overriding methods, you can return any Starlette response or use the built-in helpers.
 
-By default, any Python `dict`, list, or sequence returned from a handler is automatically converted into a JSON response with status code 200:
+## Built-in CRUD returns
+
+The built-in helpers (`self.create`, `self._create_async`, etc.) return a `starlette.responses.Response`:
+
+| Operation | Status |
+|-----------|--------|
+| `list` / `_list_async` | `200 OK` |
+| `retrieve` / `_retrieve_async` | `200 OK` |
+| `create` / `_create_async` | `201 Created` |
+| `update` / `_update_async` | `200 OK` |
+| `destroy` / `_destroy_async` | `204 No Content` |
+
+## Returning JSON responses
+
+Use `starlette.responses.JSONResponse` for custom responses:
 
 ```python
-async def get(self, request):
-    return {"message": "Hello, World!"}
+from starlette.responses import JSONResponse
+from lightapi import RestEndpoint
+
+class OrderEndpoint(RestEndpoint):
+    item: str
+    quantity: int
+
+    async def post(self, request):
+        data = await request.json()
+        if data.get("quantity", 0) > 100:
+            return JSONResponse(
+                {"detail": "Quantity cannot exceed 100"},
+                status_code=422,
+            )
+        return await self._create_async(data)
 ```
 
-For methods that return `(body, status_code)` tuples, LightAPI sets both the JSON body and the HTTP status:
+## Using `Response` from lightapi
 
-```python
-async def post(self, request):
-    data = request.data
-    # ... create object ...
-    return {"result": created_obj}, 201
-```
-
-## 2. Using the `Response` Class
-
-You can also use the imported `Response` class for more control over headers, media type, and status:
+`lightapi.Response` is re-exported from `lightapi.core` for backward compatibility:
 
 ```python
 from lightapi import Response
 
-async def delete(self, request):
-    # ... delete logic ...
-    return Response({"detail": "Deleted"}, status_code=204, headers={"X-Deleted": "true"})
+class MyEndpoint(RestEndpoint):
+    name: str
+
+    def get(self, request):
+        return Response({"message": "Hello"}, status_code=200)
 ```
 
-## 3. Custom Headers
-
-When using `Response`, you can include custom headers directly:
+## Error responses
 
 ```python
-return Response(
-    {"message": "Created"}, 
-    status_code=201, 
-    headers={"Location": f"/items/{item.id}"}
+from starlette.responses import JSONResponse
+
+# 404 Not Found
+return JSONResponse({"detail": "Not found"}, status_code=404)
+
+# 422 Validation error
+return JSONResponse({"detail": "Invalid input"}, status_code=422)
+
+# 409 Conflict
+return JSONResponse({"detail": "Already exists"}, status_code=409)
+```
+
+## Starlette response types
+
+Since LightAPI produces a plain Starlette app, any Starlette response type works:
+
+```python
+from starlette.responses import (
+    JSONResponse,
+    PlainTextResponse,
+    FileResponse,
+    StreamingResponse,
+    RedirectResponse,
 )
+
+async def get(self, request):
+    return PlainTextResponse("OK")
+
+async def download(self, request):
+    return FileResponse("/path/to/file.csv")
 ```
 
-## 4. Error Responses
+## Background tasks
 
-LightAPI's `Response` and default handlers can generate error JSON:
+Use `self.background(fn, *args, **kwargs)` to schedule work after the response is sent:
 
 ```python
-# Return a 404 Not Found
-return {"error": "Item not found"}, 404
+def notify_team(item_id: int) -> None:
+    print(f"New order #{item_id} created")
 
-# Return a 400 Bad Request with detailed message
-return Response({"detail": "Invalid input"}, status_code=400)
+class OrderEndpoint(RestEndpoint):
+    item: str
+
+    async def post(self, request):
+        data = await request.json()
+        response = await self._create_async(data)
+        if response.status_code == 201:
+            import json
+            body = json.loads(response.body)
+            self.background(notify_team, body["id"])
+        return response
 ```
 
-Unallowed HTTP methods automatically return a 405 Method Not Allowed with a JSON body indicating the error.
+See [Async Support — Background Tasks](../advanced/async.md#background-tasks) for details.
 
-## 5. Advanced Response Types
+## Testing responses
 
-Since LightAPI is built on Starlette, you can import and return any Starlette response directly for specialized use cases, such as:
-
-- `PlainTextResponse` for text data
-- `FileResponse` for serving files
-- `StreamingResponse` for streaming content
+When testing with `httpx.AsyncClient`:
 
 ```python
-from starlette.responses import FileResponse
+import pytest
+from httpx import AsyncClient, ASGITransport
+from lightapi import LightApi
 
-async def get_file(self, request):
-    return FileResponse("/path/to/file.zip")
+@pytest.mark.asyncio
+async def test_create():
+    # ... build app ...
+    async with AsyncClient(transport=ASGITransport(app=starlette_app), base_url="http://test") as client:
+        resp = await client.post("/orders", json={"item": "Widget", "quantity": 5})
+    assert resp.status_code == 201
+    assert resp.json()["item"] == "Widget"
 ```
-
-## 6. Working with Responses in Tests
-
-When testing endpoints that return `Response` objects, you can access the original content via the `body` property:
-
-```python
-# In your test
-response = endpoint.get(request)
-assert response.body['message'] == 'Success'  # Access original Python dict
-```
-
-The `Response.body` property returns:
-- The original Python object (dict, list, etc.) when accessed in tests
-- Attempts to decode JSON data from bytes when necessary
-- Falls back to the raw body when decoding fails
-
-This makes it easier to write assertions in tests without having to manually decode JSON.

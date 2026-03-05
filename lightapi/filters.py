@@ -20,6 +20,25 @@ class BaseFilter:
         return queryset
 
 
+def _coerce_filter_value(col: Any, value: str) -> Any:
+    """Coerce a query-string value to match the column's Python type."""
+    try:
+        from sqlalchemy import Boolean, Integer, Numeric, Float
+        col_type = col.property.columns[0].type if hasattr(col, "property") else None
+        if col_type is None:
+            # InstrumentedAttribute from mapped class
+            col_type = getattr(col, "type", None)
+        if isinstance(col_type, Boolean):
+            return value.lower() in ("1", "true", "yes", "on")
+        if isinstance(col_type, Integer):
+            return int(value)
+        if isinstance(col_type, (Numeric, Float)):
+            return float(value)
+    except Exception:
+        pass
+    return value
+
+
 class FieldFilter(BaseFilter):
     """Exact-match filter on whitelisted fields declared in Meta.filtering.fields."""
 
@@ -35,7 +54,8 @@ class FieldFilter(BaseFilter):
                 continue
             col = getattr(cls._model_class, param, None)
             if col is not None:
-                queryset = queryset.where(col == value)
+                coerced = _coerce_filter_value(col, value)
+                queryset = queryset.where(col == coerced)
         return queryset
 
 

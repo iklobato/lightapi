@@ -1,773 +1,246 @@
-> **Note:** This page describes the v1 API and has not yet been updated for v2. See the [README](../../README.md) for current documentation.
+---
+title: REST API Reference
+description: RestEndpoint class, Meta configuration, and async CRUD helpers
+---
 
 # REST API Reference
 
-The REST module provides the `RestEndpoint` class, which is the foundation for building REST APIs in LightAPI. It combines SQLAlchemy models with HTTP endpoint logic.
-
-## RestEndpoint
-
-::: lightapi.rest.RestEndpoint
-
-The base class for creating REST API endpoints. RestEndpoint automatically provides full CRUD functionality and can be customized through configuration and method overrides.
-
-### Basic Usage
-
-```python
-from sqlalchemy import Column, Integer, String, Boolean
-from lightapi import RestEndpoint, register_model_class
-
-
-class User(Base, RestEndpoint):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False)
-    email = Column(String(100), unique=True, nullable=False)
-    is_active = Column(Boolean, default=True)
-```
-
-This automatically creates endpoints for:
-- `GET /users` - List all users
-- `GET /users?id=123` - Get user by ID
-- `POST /users` - Create a new user
-- `PUT /users` - Update a user
-- `DELETE /users` - Delete a user
-- `PATCH /users` - Partial update
-- `OPTIONS /users` - Get allowed methods
-
-### Configuration Class
-
-The `Configuration` inner class allows you to customize endpoint behavior:
-
-```python
-class User(Base, RestEndpoint):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100))
-    email = Column(String(100))
-    
-    class Configuration:
-        http_method_names = ['GET', 'POST', 'PUT', 'DELETE']
-        validator_class = UserValidator
-        filter_class = UserFilter
-        authentication_class = JWTAuthentication
-        caching_class = RedisCache
-        caching_method_names = ['GET']
-        pagination_class = UserPaginator
-```
-
-#### Configuration Options
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `http_method_names` | `List[str]` | Allowed HTTP methods |
-| `validator_class` | `Validator` | Request validation class |
-| `filter_class` | `BaseFilter` | Query filtering class |
-| `authentication_class` | `BaseAuthentication` | Authentication class |
-| `caching_class` | `BaseCache` | Caching implementation |
-| `caching_method_names` | `List[str]` | Methods to cache |
-| `pagination_class` | `Paginator` | Pagination implementation |
+`RestEndpoint` is the single building block of every LightAPI application. A subclass simultaneously acts as the **SQLAlchemy ORM model**, the **Pydantic v2 schema**, and the **HTTP endpoint handler**.
 
 ---
 
-## HTTP Method Handlers
-
-### GET Method
-
-Retrieves resources from the database with automatic filtering and pagination.
+## `RestEndpoint`
 
 ```python
-class User(Base, RestEndpoint):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100))
-    email = Column(String(100))
-    role = Column(String(50))
-    
-    def get(self, request):
-        # Default implementation with custom logic
-        query = self.session.query(self.__class__)
-        
-        # Check for ID filter in query parameters
-        object_id = request.query_params.get("id")
-        if object_id:
-            query = query.filter_by(id=object_id)
-            
-        # Apply custom filtering
-        role = request.query_params.get("role")
-        if role:
-            query = query.filter_by(role=role)
-            
-        # Apply configured filters
-        if hasattr(self, 'filter'):
-            query = self.filter.filter_queryset(query, request)
-            
-        # Apply pagination
-        if hasattr(self, 'paginator'):
-            results = self.paginator.paginate(query)
-        else:
-            results = query.all()
-            
-        return [result.as_dict() for result in results], 200
+from lightapi import RestEndpoint, Field
 ```
 
-#### URL Query Parameters
-
-- `id` - Filter by specific ID
-- Any model field name - Filter by exact match
-- Custom parameters handled by filter classes
-
-#### Examples
-
-```bash
-# Get all users
-GET /users
-
-# Get specific user
-GET /users?id=123
-
-# Filter by role
-GET /users?role=admin
-
-# Multiple filters
-GET /users?role=admin&is_active=true
-```
-
-### POST Method
-
-Creates new resources in the database.
+### Declaring Fields
 
 ```python
-class User(Base, RestEndpoint):
-    def post(self, request):
-        data = getattr(request, 'data', {})
-        
-        # Validation (if configured)
-        if hasattr(self, 'validator'):
-            validation_result = self.validator.validate(data)
-            if not validation_result.get('valid', True):
-                return Response(
-                    {"error": "Validation failed", "details": validation_result['errors']},
-                    status_code=400
-                )
-        
-        # Create new instance
-        instance = self.__class__(**data)
-        self.session.add(instance)
-        
-        try:
-            self.session.commit()
-            return instance.as_dict(), 201
-        except Exception as e:
-            self.session.rollback()
-            return Response({"error": "Failed to create resource"}, status_code=400)
+from typing import Optional
+from decimal import Decimal
+from lightapi import RestEndpoint, Field
+
+class ProductEndpoint(RestEndpoint):
+    name:        str            = Field(min_length=1, max_length=200)
+    price:       Decimal        = Field(ge=0, decimal_places=2)
+    category:    str            = Field(min_length=1)
+    description: Optional[str] = None
+    in_stock:    bool           = Field(default=True)
+    supplier_id: int            = Field(foreign_key="suppliers.id")
 ```
 
-#### Request Body
+**Python type → SQLAlchemy column mapping:**
 
-```json
-{
-    "name": "John Doe",
-    "email": "john@example.com",
-    "role": "user"
-}
-```
+| Python annotation | Column type | Nullable |
+|---|---|---|
+| `str` | `VARCHAR` | No |
+| `Optional[str]` | `VARCHAR` | Yes |
+| `int` | `INTEGER` | No |
+| `Optional[int]` | `INTEGER` | Yes |
+| `float` | `FLOAT` | No |
+| `bool` | `BOOLEAN` | No |
+| `datetime` | `DATETIME` | No |
+| `Decimal` | `NUMERIC(scale=N)` | No |
+| `UUID` | `UUID` | No |
 
-#### Response
+**LightAPI-specific `Field()` kwargs** (passed in `json_schema_extra`):
 
-```json
-{
-    "id": 123,
-    "name": "John Doe", 
-    "email": "john@example.com",
-    "role": "user",
-    "created_at": "2023-12-01T10:00:00Z"
-}
-```
+| Kwarg | Effect |
+|---|---|
+| `foreign_key="table.col"` | Adds `ForeignKey` constraint |
+| `unique=True` | Adds `UNIQUE` constraint |
+| `index=True` | Adds a database index |
+| `exclude=True` | Field is excluded from DB and schema entirely |
+| `decimal_places=N` | Sets `Numeric(scale=N)` (for `Decimal` fields) |
 
-### PUT Method
+### Auto-injected Columns
 
-Updates existing resources (full update).
+Every `RestEndpoint` subclass automatically receives these columns:
+
+| Column | Type | Value |
+|---|---|---|
+| `id` | `Integer` PK | autoincrement |
+| `created_at` | `DateTime` | `utcnow` on insert |
+| `updated_at` | `DateTime` | `utcnow` on insert and update |
+| `version` | `Integer` | `1` on insert; incremented on `PUT`/`PATCH` |
+
+These are excluded from create/update input schemas but always included in responses.
+
+---
+
+## `Meta` Inner Class
 
 ```python
-class User(Base, RestEndpoint):
-    def put(self, request):
-        data = getattr(request, 'data', {})
-        object_id = data.get('id')
-        
-        if not object_id:
-            return Response({"error": "ID is required for update"}, status_code=400)
-            
-        # Find existing instance
-        instance = self.session.query(self.__class__).filter_by(id=object_id).first()
-        if not instance:
-            return Response({"error": "Resource not found"}, status_code=404)
-            
-        # Validation
-        if hasattr(self, 'validator'):
-            validation_result = self.validator.validate(data)
-            if not validation_result.get('valid', True):
-                return Response(
-                    {"error": "Validation failed", "details": validation_result['errors']},
-                    status_code=400
-                )
-        
-        # Update all fields
-        for key, value in data.items():
-            if hasattr(instance, key):
-                setattr(instance, key, value)
-        
-        try:
-            self.session.commit()
-            return instance.as_dict(), 200
-        except Exception as e:
-            self.session.rollback()
-            return Response({"error": "Failed to update resource"}, status_code=400)
-```
-
-### DELETE Method
-
-Deletes resources from the database.
-
-```python
-class User(Base, RestEndpoint):
-    def delete(self, request):
-        data = getattr(request, 'data', {})
-        object_id = data.get('id')
-        
-        if not object_id:
-            return Response({"error": "ID is required for deletion"}, status_code=400)
-            
-        instance = self.session.query(self.__class__).filter_by(id=object_id).first()
-        if not instance:
-            return Response({"error": "Resource not found"}, status_code=404)
-            
-        self.session.delete(instance)
-        
-        try:
-            self.session.commit()
-            return {"message": "Resource deleted successfully"}, 200
-        except Exception as e:
-            self.session.rollback()
-            return Response({"error": "Failed to delete resource"}, status_code=400)
-```
-
-### PATCH Method
-
-Performs partial updates on resources.
-
-```python
-class User(Base, RestEndpoint):
-    def patch(self, request):
-        data = getattr(request, 'data', {})
-        object_id = data.get('id')
-        
-        if not object_id:
-            return Response({"error": "ID is required for update"}, status_code=400)
-            
-        instance = self.session.query(self.__class__).filter_by(id=object_id).first()
-        if not instance:
-            return Response({"error": "Resource not found"}, status_code=404)
-            
-        # Update only provided fields
-        for key, value in data.items():
-            if key != 'id' and hasattr(instance, key):
-                setattr(instance, key, value)
-        
-        try:
-            self.session.commit()
-            return instance.as_dict(), 200
-        except Exception as e:
-            self.session.rollback()
-            return Response({"error": "Failed to update resource"}, status_code=400)
-```
-
-### OPTIONS Method
-
-Returns allowed HTTP methods for CORS support.
-
-```python
-class User(Base, RestEndpoint):
-    def options(self, request):
-        allowed_methods = getattr(
-            self.Configuration, 
-            'http_method_names', 
-            ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
-        )
-        return {
-            "allowed_methods": allowed_methods,
-            "description": "User management endpoint"
-        }, 200
+class MyEndpoint(RestEndpoint):
+    class Meta:
+        authentication = Authentication(backend=..., permission=...)
+        filtering      = Filtering(backends=[...], fields=[...], search=[...], ordering=[...])
+        pagination     = Pagination(style="page_number"|"cursor", page_size=20)
+        serializer     = Serializer(fields=[...]) | Serializer(read=[...], write=[...])
+        cache          = Cache(ttl=60)
+        reflect        = False | True | "partial"
+        table          = "custom_table_name"
+        table_name     = "custom_table_name"   # alias for table
 ```
 
 ---
 
-## Advanced Examples
+## Sync CRUD Methods
 
-### Authentication Protected Endpoint
+Override these methods to customise sync behaviour. Used when a sync engine is passed (or when the override is `def`, not `async def`, even on an async engine app):
 
-```python
-from lightapi.auth import JWTAuthentication
-
-class ProtectedUser(Base, RestEndpoint):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100))
-    email = Column(String(100))
-    
-    class Configuration:
-        authentication_class = JWTAuthentication
-        http_method_names = ['GET', 'POST', 'PUT', 'DELETE']
-    
-    def get(self, request):
-        # Access authenticated user
-        current_user = request.state.user
-        user_id = current_user.get('user_id')
-        
-        # Only return current user's data
-        user = self.session.query(self.__class__).filter_by(id=user_id).first()
-        if user:
-            return user.as_dict(), 200
-        return Response({"error": "User not found"}, status_code=404)
-```
-
-### Validated Endpoint
-
-```python
-from lightapi.rest import Validator
-
-class UserValidator(Validator):
-    def validate(self, data):
-        errors = {}
-        
-        if not data.get('name'):
-            errors['name'] = 'Name is required'
-        
-        if not data.get('email'):
-            errors['email'] = 'Email is required'
-        elif '@' not in data['email']:
-            errors['email'] = 'Invalid email format'
-            
-        return {
-            'valid': len(errors) == 0,
-            'errors': errors
-        }
-
-class ValidatedUser(Base, RestEndpoint):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100))
-    email = Column(String(100))
-    
-    class Configuration:
-        validator_class = UserValidator
-```
-
-### Cached Endpoint
-
-```python
-from lightapi.cache import RedisCache
-
-class CachedUser(Base, RestEndpoint):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100))
-    email = Column(String(100))
-    
-    class Configuration:
-        caching_class = RedisCache
-        caching_method_names = ['GET']
-    
-    # GET responses are automatically cached
-    # Cache key includes URL and query parameters
-    # Default cache timeout: 300 seconds
-```
-
-### Filtered and Paginated Endpoint
-
-```python
-from lightapi.filters import ParameterFilter
-from lightapi.pagination import Paginator
-
-class CustomPaginator(Paginator):
-    limit = 20
-    offset = 0
-    
-    def get_limit(self):
-        # Get limit from query parameter
-        limit = self.request.query_params.get('limit', self.limit)
-        return min(int(limit), 100)  # Max 100 items
-    
-    def get_offset(self):
-        page = int(self.request.query_params.get('page', 1))
-        return (page - 1) * self.get_limit()
-
-class FilteredUser(Base, RestEndpoint):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100))
-    email = Column(String(100))
-    role = Column(String(50))
-    
-    class Configuration:
-        filter_class = ParameterFilter
-        pagination_class = CustomPaginator
-```
-
-### Custom Business Logic
-
-```python
-class BusinessUser(Base, RestEndpoint):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100))
-    email = Column(String(100))
-    role = Column(String(50))
-    last_login = Column(DateTime)
-    
-    def get(self, request):
-        # Custom GET logic
-        if request.query_params.get('active_only') == 'true':
-            # Return only users who logged in recently
-            cutoff_date = datetime.now() - timedelta(days=30)
-            query = self.session.query(self.__class__).filter(
-                self.__class__.last_login >= cutoff_date
-            )
-        else:
-            query = self.session.query(self.__class__)
-            
-        results = query.all()
-        return [user.as_dict() for user in results], 200
-    
-    def post(self, request):
-        # Custom creation logic
-        data = getattr(request, 'data', {})
-        
-        # Check for duplicate email
-        existing = self.session.query(self.__class__).filter_by(
-            email=data.get('email')
-        ).first()
-        
-        if existing:
-            return Response(
-                {"error": "Email already exists"}, 
-                status_code=409
-            )
-        
-        # Set default role
-        if 'role' not in data:
-            data['role'] = 'user'
-            
-        # Call parent implementation
-        return super().post(request)
-```
+| Method | Signature | Default behaviour |
+|---|---|---|
+| `queryset` | `(self, request)` | `select(cls._model_class)` |
+| `list` | `(self, request)` | Paginated `SELECT *` |
+| `retrieve` | `(self, request, pk)` | `SELECT WHERE id=pk` |
+| `create` | `(self, data)` | `INSERT RETURNING` |
+| `update` | `(self, data, pk, partial)` | Optimistic-lock `UPDATE` |
+| `destroy` | `(self, request, pk)` | `DELETE WHERE id=pk` |
 
 ---
 
-## Non-Database Endpoints
+## Async CRUD Helpers
 
-You can create endpoints that don't interact with the database:
+When an `AsyncEngine` is passed to `LightApi`, LightAPI dispatches through these internal async methods. You can call them directly from `async def` overrides:
 
-```python
-class HealthCheckEndpoint(Base, RestEndpoint):
-    __abstract__ = True  # Not a database model
-    
-    def get(self, request):
-        return {
-            "status": "healthy",
-            "timestamp": datetime.now().isoformat(),
-            "version": "1.0.0"
-        }, 200
+| Helper | Return | Description |
+|---|---|---|
+| `await self._list_async(request)` | `JSONResponse` | Paginated list with filter/ordering |
+| `await self._retrieve_async(request, pk)` | `JSONResponse` / 404 | Single row |
+| `await self._create_async(data: dict)` | `JSONResponse(201)` | INSERT + flush + refresh |
+| `await self._update_async(data, pk, partial=False)` | `JSONResponse` / 409 / 404 | Optimistic-lock UPDATE |
+| `await self._destroy_async(request, pk)` | `Response(204)` / 404 | DELETE |
+| `self.background(fn, *args, **kwargs)` | `None` | Schedule a post-response task |
 
-class StatisticsEndpoint(Base, RestEndpoint):
-    __abstract__ = True
-    
-    class Configuration:
-        authentication_class = JWTAuthentication
-        http_method_names = ['GET']
-
-    def get(self, request):
-        # Complex analytics logic
-        return {
-            "total_users": 1000,
-            "active_users": 850,
-            "new_signups_today": 25
-        }, 200
-```
-
----
-
-## Validator
-
-::: lightapi.rest.Validator
-
-Base class for request data validation.
-
-### Basic Validator
+### Example: Async Override with Background Task
 
 ```python
-from lightapi.rest import Validator
-
-class UserValidator(Validator):
-    def validate(self, data):
-        errors = {}
-        
-        # Required fields
-        if not data.get('name'):
-            errors['name'] = 'Name is required'
-            
-        if not data.get('email'):
-            errors['email'] = 'Email is required'
-        elif not self._is_valid_email(data['email']):
-            errors['email'] = 'Invalid email format'
-            
-        # Optional field validation
-        if data.get('age') and data['age'] < 18:
-            errors['age'] = 'Age must be 18 or older'
-            
-        return {
-            'valid': len(errors) == 0,
-            'errors': errors
-        }
-    
-    def _is_valid_email(self, email):
-        return '@' in email and '.' in email.split('@')[1]
-```
-
-### Advanced Validator
-
-```python
-import re
-from datetime import datetime
-
-class AdvancedUserValidator(Validator):
-    def validate(self, data):
-        errors = {}
-        
-        # Name validation
-        name = data.get('name', '').strip()
-        if not name:
-            errors['name'] = 'Name is required'
-        elif len(name) < 2:
-            errors['name'] = 'Name must be at least 2 characters'
-        elif len(name) > 100:
-            errors['name'] = 'Name must be less than 100 characters'
-            
-        # Email validation
-        email = data.get('email', '').strip().lower()
-        if not email:
-            errors['email'] = 'Email is required'
-        elif not self._is_valid_email(email):
-            errors['email'] = 'Invalid email format'
-        elif len(email) > 255:
-            errors['email'] = 'Email is too long'
-            
-        # Password validation (for creation)
-        if 'password' in data:
-            password = data['password']
-            if len(password) < 8:
-                errors['password'] = 'Password must be at least 8 characters'
-            elif not re.search(r'[A-Z]', password):
-                errors['password'] = 'Password must contain uppercase letter'
-            elif not re.search(r'[0-9]', password):
-                errors['password'] = 'Password must contain a number'
-                
-        # Date validation
-        if data.get('birth_date'):
-            try:
-                birth_date = datetime.fromisoformat(data['birth_date'])
-                if birth_date > datetime.now():
-                    errors['birth_date'] = 'Birth date cannot be in the future'
-            except ValueError:
-                errors['birth_date'] = 'Invalid date format'
-                
-        return {
-            'valid': len(errors) == 0,
-            'errors': errors,
-            'cleaned_data': {
-                'name': name,
-                'email': email,
-                **{k: v for k, v in data.items() if k not in ['name', 'email']}
-            }
-        }
-    
-    def _is_valid_email(self, email):
-        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        return bool(re.match(pattern, email))
-```
-
----
-
-## Error Handling
-
-### Built-in Error Responses
-
-RestEndpoint provides standard HTTP error responses:
-
-```python
-# 400 Bad Request
-{
-    "error": "Validation failed",
-    "details": {"field": "error message"}
-}
-
-# 401 Unauthorized (with authentication)
-{"error": "Authentication failed"}
-
-# 404 Not Found
-{"error": "Resource not found"}
-
-# 405 Method Not Allowed
-{"error": "Method PATCH not allowed"}
-
-# 409 Conflict
-{"error": "Resource already exists"}
-
-# 500 Internal Server Error
-{"error": "Internal server error"}
-```
-
-### Custom Error Handling
-
-```python
-class RobustEndpoint(Base, RestEndpoint):
-    __tablename__ = 'items'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100))
-
-    def get(self, request):
-        try:
-            return super().get(request)
-        except ValueError as e:
-            return Response(
-                {"error": f"Invalid request: {str(e)}"}, 
-                status_code=400
-            )
-        except PermissionError as e:
-            return Response(
-                {"error": "Access denied"}, 
-                status_code=403
-            )
-        except Exception as e:
-            # Log error for debugging
-            print(f"Unexpected error: {e}")
-            return Response(
-                {"error": "Something went wrong"}, 
-                status_code=500
-            )
-```
-
----
-
-## Best Practices
-
-### 1. Use Configuration Classes
-
-```python
-class User(Base, RestEndpoint):
-    class Configuration:
-        # Be explicit about allowed methods
-        http_method_names = ['GET', 'POST', 'PUT', 'DELETE']
-        
-        # Add authentication for sensitive endpoints
-        authentication_class = JWTAuthentication
-        
-        # Add validation for data integrity
-        validator_class = UserValidator
-        
-        # Add caching for read-heavy endpoints
-        caching_class = RedisCache
-        caching_method_names = ['GET']
-```
-
-### 2. Override Methods Judiciously
-
-```python
-class User(Base, RestEndpoint):
-    def get(self, request):
-        # Add business logic while preserving functionality
-        base_query = self.session.query(self.__class__)
-        
-        # Apply custom filters
-        if request.query_params.get('include_inactive') != 'true':
-            base_query = base_query.filter_by(is_active=True)
-            
-        # Use built-in filtering and pagination
-        if hasattr(self, 'filter'):
-            base_query = self.filter.filter_queryset(base_query, request)
-            
-        if hasattr(self, 'paginator'):
-            results = self.paginator.paginate(base_query)
-        else:
-            results = base_query.all()
-            
-        return [r.as_dict() for r in results], 200
-```
-
-### 3. Handle Errors Gracefully
-
-```python
-class User(Base, RestEndpoint):
-    def post(self, request):
-        try:
-            return super().post(request)
-        except IntegrityError as e:
-            self.session.rollback()
-            if 'UNIQUE constraint failed' in str(e):
-                return Response(
-                    {"error": "User with this email already exists"}, 
-                    status_code=409
-                )
-            return Response(
-                {"error": "Database constraint violation"}, 
-                status_code=400
-            )
-```
-
-### 4. Use Type Hints
-
-```python
-from typing import Dict, Any, Tuple
+import json
 from starlette.requests import Request
+from starlette.responses import Response
+from lightapi import RestEndpoint, Field
 
-class User(Base, RestEndpoint):
-    def get(self, request: Request) -> Tuple[Dict[str, Any], int]:
-        # Implementation with proper type hints
-        pass
+async def on_create(item_id: int) -> None:
+    ...   # send notification, write audit log
+
+class OrderEndpoint(RestEndpoint):
+    amount: float = Field(ge=0)
+
+    async def post(self, request: Request) -> Response:
+        data = json.loads(await request.body())
+        resp = await self._create_async(data)
+        if resp.status_code == 201:
+            self.background(on_create, json.loads(resp.body)["id"])
+        return resp
 ```
 
-## See Also
+---
 
-- [Core API](core.md) - Core framework functionality
-- [Models](models.md) - Data models and schemas
-- [Filtering](filters.md) - Advanced filtering options
-- [Pagination](pagination.md) - Pagination configuration 
+## HTTP Method Overrides
 
-- Only GET, POST, PUT, PATCH, DELETE HTTP verbs are supported. OPTIONS and HEAD are not available.
-- All required fields must be defined as NOT NULL in your database schema for correct enforcement.
-- The API will return 409 Conflict if you attempt to create or update a record missing a NOT NULL field, or violating a UNIQUE or FOREIGN KEY constraint. 
-
-To start your API, always use `api.run(host, port)`. Do not use external libraries or 'app = api.app' to start the server directly. 
-
-## Custom Endpoint Registration with route_patterns
-
-When registering custom (non-model) endpoints, you must specify the intended REST path(s) using the `route_patterns` attribute. Fallback to class names is not supported for custom endpoints.
+Define `get`, `post`, `put`, `patch`, or `delete` as either sync or async — LightAPI detects and dispatches accordingly:
 
 ```python
-class HelloWorldEndpoint(Base, RestEndpoint):
-    route_patterns = ["/hello"]
-    def get(self, request):
-        return {"message": "Hello, World!"}
+class MyEndpoint(RestEndpoint):
+    name: str = Field(min_length=1)
 
-app.register(HelloWorldEndpoint)
+    # Sync override
+    def get(self, request):
+        return self.list(request)
+
+    # Async override — detected via asyncio.iscoroutinefunction
+    async def post(self, request):
+        import json
+        return await self._create_async(json.loads(await request.body()))
 ```
 
-> See the mega example for a comprehensive demonstration of registering multiple endpoints with custom paths. 
+---
+
+## HttpMethod Mixins
+
+Restrict which HTTP verbs are available:
+
+```python
+from lightapi import RestEndpoint, HttpMethod, Field
+
+class ReadOnlyEndpoint(RestEndpoint, HttpMethod.GET):
+    name: str = Field(min_length=1)
+
+class CreateOnlyEndpoint(RestEndpoint, HttpMethod.POST):
+    name: str = Field(min_length=1)
+
+class FullCRUDEndpoint(
+    RestEndpoint,
+    HttpMethod.GET, HttpMethod.POST,
+    HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE,
+):
+    name: str = Field(min_length=1)
+```
+
+Unregistered methods return `405 Method Not Allowed` with an `Allow` header listing the registered verbs.
+
+---
+
+## Class Attributes
+
+| Attribute | Type | Description |
+|---|---|---|
+| `_model_class` | `type` | SQLAlchemy-mapped class |
+| `_meta` | `dict` | Parsed `Meta` configuration |
+| `_allowed_methods` | `set[str]` | Registered HTTP verbs |
+| `__schema_create__` | Pydantic model | Input schema for POST/PUT/PATCH |
+| `__schema_read__` | Pydantic model | Output schema for GET responses |
+| `_background` | `BackgroundTasks \| None` | Starlette BackgroundTasks (set per-request) |
+| `_current_request` | `Request \| None` | Current request (set per-request) |
+
+---
+
+## Error Responses
+
+| Scenario | Status | Body |
+|---|---|---|
+| Validation failure | `422` | `{"detail": [...pydantic errors...]}` |
+| Not found | `404` | `{"detail": "not found"}` |
+| Optimistic lock conflict | `409` | `{"detail": "version conflict"}` |
+| Auth failure | `401` | `{"detail": "Authentication credentials invalid."}` |
+| Permission denied | `403` | `{"detail": "You do not have permission to perform this action."}` |
+| Method not registered | `405` | `{"detail": "Method Not Allowed. Allowed: GET, POST"}` |
+
+---
+
+## Session Helpers
+
+Exported from `lightapi` for use outside of endpoint methods:
+
+```python
+from lightapi import get_sync_session, get_async_session
+```
+
+### `get_sync_session(engine)`
+
+Context manager; commits on clean exit, rolls back on exception.
+
+```python
+from sqlalchemy import create_engine, select
+from lightapi import get_sync_session
+
+engine = create_engine("sqlite:///app.db")
+with get_sync_session(engine) as session:
+    rows = session.execute(select(MyModel)).scalars().all()
+```
+
+### `get_async_session(engine)`
+
+Async context manager; `await commit` on clean exit, `await rollback` on exception.
+
+```python
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from lightapi import get_async_session
+
+engine = create_async_engine("postgresql+asyncpg://...")
+async with get_async_session(engine) as session:
+    rows = (await session.execute(select(MyModel))).scalars().all()
+```

@@ -29,15 +29,23 @@ Built on **Starlette + Uvicorn**, validated by **Pydantic v2**, persisted via **
 - **CORS** — `LightApi(cors_origins=[...])`
 
 ### Querying
-- **Filter backends** — `FieldFilter` (exact), `SearchFilter` (LIKE), `OrderingFilter`
+- **Filter backends** — `FieldFilter` (exact match with type coercion), `SearchFilter` (LIKE), `OrderingFilter`
 - **Pagination** — page-number or cursor (keyset) styles via `Meta.pagination`
 - **Custom queryset** — override `queryset(self, request)` to scope the base query
+
+### Async I/O (opt-in)
+- **Single engine swap** — pass `create_async_engine(...)` instead of `create_engine(...)` to activate full async I/O
+- **Async queryset** — `async def queryset` is detected and awaited automatically
+- **Async method overrides** — `async def post/get/put/patch/delete` coexist with sync overrides on the same app
+- **Background tasks** — `self.background(fn, *args)` schedules post-response fire-and-forget tasks
+- **Mixed middleware** — `async def process` and `def process` middleware coexist in the same stack
+- **Async reflection** — `Meta.reflect = True` works with `AsyncEngine` via `conn.run_sync`
 
 ### Developer Experience
 - **Redis caching** — `Meta.cache = Cache(ttl=60)` caches `GET` responses; writes auto-invalidate
 - **HttpMethod mixins** — `class MyEp(RestEndpoint, HttpMethod.GET, HttpMethod.POST)` for explicit verb control
 - **Serializer** — `Meta.serializer = Serializer(read=[...], write=[...])` for per-verb field projection
-- **Middleware** — `Middleware.process(request, response)` with short-circuit support
+- **Middleware** — `Middleware.process(request, response)` — sync or async — with short-circuit support
 - **Database reflection** — map existing tables with `Meta.reflect = True | "partial"`
 - **YAML config** — `LightApi.from_config("lightapi.yaml")`
 
@@ -45,25 +53,51 @@ Built on **Starlette + Uvicorn**, validated by **Pydantic v2**, persisted via **
 
 ## Quick Start
 
-```bash
-uv pip install lightapi   # or: pip install lightapi
-```
+=== "Sync (SQLite)"
 
-```python
-from sqlalchemy import create_engine
-from lightapi import LightApi, RestEndpoint, Field
-from typing import Optional
+    ```bash
+    uv add lightapi
+    ```
 
-class BookEndpoint(RestEndpoint):
-    title: str = Field(min_length=1)
-    author: str = Field(min_length=1)
-    year: Optional[int] = None
+    ```python
+    from sqlalchemy import create_engine
+    from lightapi import LightApi, RestEndpoint, Field
+    from typing import Optional
 
-engine = create_engine("sqlite:///books.db")
-app = LightApi(engine=engine)
-app.register({"/books": BookEndpoint})
-app.run()
-```
+    class BookEndpoint(RestEndpoint):
+        title: str = Field(min_length=1)
+        author: str = Field(min_length=1)
+        year: Optional[int] = None
+
+    engine = create_engine("sqlite:///books.db")
+    app = LightApi(engine=engine)
+    app.register({"/books": BookEndpoint})
+    app.run()
+    ```
+
+=== "Async (PostgreSQL)"
+
+    ```bash
+    uv add "lightapi[async]"
+    ```
+
+    ```python
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from lightapi import LightApi, RestEndpoint, Field
+    from typing import Optional
+
+    class BookEndpoint(RestEndpoint):
+        title: str = Field(min_length=1)
+        author: str = Field(min_length=1)
+        year: Optional[int] = None
+
+    engine = create_async_engine(
+        "postgresql+asyncpg://user:pass@localhost/mydb"
+    )
+    app = LightApi(engine=engine)
+    app.register({"/books": BookEndpoint})
+    app.run()
+    ```
 
 See the [Quickstart Guide](getting-started/quickstart.md) for full `curl` examples.
 
@@ -81,11 +115,13 @@ See the [Quickstart Guide](getting-started/quickstart.md) for full `curl` exampl
 - [Authentication & Permissions](advanced/authentication.md)
 - [Filtering & Ordering](advanced/filtering.md)
 - [Pagination](advanced/pagination.md)
-- [Serializer](advanced/serializer.md)
 - [Middleware](advanced/middleware.md)
 - [Caching](advanced/caching.md)
-- [Database Reflection](advanced/reflection.md)
-- [YAML Configuration](advanced/yaml.md)
+- [Database Reflection](api-reference/database.md)
+- [YAML Configuration](getting-started/configuration.md)
+
+### Async Support
+- [Async Overview](advanced/async.md)
 
 ### Reference
 - [API Reference](api-reference/rest.md)
@@ -100,3 +136,9 @@ See the [Quickstart Guide](getting-started/quickstart.md) for full `curl` exampl
 - SQLAlchemy **2.x**
 - Pydantic **v2**
 - Starlette + Uvicorn
+
+**Async extras** (`lightapi[async]`):
+
+- `sqlalchemy[asyncio]`
+- `asyncpg` (PostgreSQL) or `aiosqlite` (SQLite)
+- `greenlet`

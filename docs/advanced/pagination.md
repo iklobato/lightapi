@@ -1,70 +1,154 @@
-> **Note:** This page describes the v1 API and has not yet been updated for v2. See the [README](../../README.md) for current documentation.
-
-> **Note:** This page describes the v1 API and has not yet been updated for v2. The v2 API is described in the [README](../../README.md).
-
 ---
-title: Data Pagination
+title: Pagination
+description: Page-number and cursor-based pagination for list endpoints
 ---
 
-LightAPI includes a built-in pagination utility via the `Paginator` class. You can plug this into any `RestEndpoint` to limit and offset large querysets.
+# Pagination
 
-## 1. Enabling Pagination
+LightAPI supports two pagination styles, configured via `Meta.pagination`. Pagination is applied automatically to `GET` list responses.
 
-Add `pagination_class` to your endpoint's `Configuration`:
-
-```python
-from lightapi.rest import RestEndpoint
-from lightapi.pagination import Paginator
-
-class ItemEndpoint(Base, RestEndpoint):
-    class Configuration:
-        pagination_class = Paginator
-
-    async def get(self, request):
-        # Default GET will use Paginator to limit results
-        return super().get(request)
-```
-
-## 2. Configuring Limits and Offsets
-
-The `Paginator` uses its `limit` and `offset` attributes to control pagination. You can customize these values at runtime by modifying the instance:
+## Quick Start
 
 ```python
-class CustomPaginator(Paginator):
-    def get_limit(self) -> int:
-        # Read limit from query params or fallback to default
-        return int(self.request.query_params.get('limit', self.limit))
+from lightapi import RestEndpoint, Pagination
 
-    def get_offset(self) -> int:
-        return int(self.request.query_params.get('offset', self.offset))
+class PostEndpoint(RestEndpoint):
+    title: str
+    body: str
+
+    class Meta:
+        pagination = Pagination(style="page_number", page_size=20)
 ```
 
-Then assign your custom paginator:
+```bash
+GET /posts             # → page 1, 20 items
+GET /posts?page=2      # → page 2, 20 items
+GET /posts?page_size=5 # → page 1, 5 items
+```
+
+## `Pagination` constructor
 
 ```python
-class ItemEndpoint(Base, RestEndpoint):
-    class Configuration:
-        pagination_class = CustomPaginator
+Pagination(
+    style: str = "page_number",   # "page_number" or "cursor"
+    page_size: int = 20,
+)
 ```
 
-## 3. Sorting Results
+| Parameter | Values | Description |
+|-----------|--------|-------------|
+| `style` | `"page_number"` | Offset-based pagination with `?page=` and `?page_size=` params. |
+| `style` | `"cursor"` | Cursor-based pagination — efficient for large, append-only datasets. |
+| `page_size` | integer ≥ 1 | Default number of items per page. |
 
-By default, `Paginator.sort` is `False`. Enable sorting in a subclass to apply ordering:
+## Page-Number Pagination
+
+### Response format
+
+```json
+{
+  "count": 150,
+  "next": "/posts?page=3",
+  "previous": "/posts?page=1",
+  "results": [...]
+}
+```
+
+### Query parameters
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `page` | `1` | Page number (1-indexed). |
+| `page_size` | Meta value | Override the page size for this request. |
+
+### Example
 
 ```python
-class SortedPaginator(Paginator):
-    sort = True
-    def apply_sorting(self, queryset):
-        # Example: sort by 'created_at' field
-        return queryset.order_by(self.model.created_at.desc())
+from lightapi import RestEndpoint, Pagination, Filtering, FieldFilter
+
+class ArticleEndpoint(RestEndpoint):
+    title: str
+    published: bool
+
+    class Meta:
+        pagination = Pagination(style="page_number", page_size=10)
+        filtering = Filtering(backends=[FieldFilter], fields=["published"])
 ```
 
-Use it in your endpoint:
+```bash
+GET /articles?published=true&page=2&page_size=5
+```
+
+## Cursor Pagination
+
+Cursor pagination uses an opaque cursor instead of page numbers. It is more efficient for large datasets because it avoids `OFFSET` scans.
+
+### Response format
+
+```json
+{
+  "next_cursor": "eyJpZCI6IDEwfQ==",
+  "results": [...]
+}
+```
+
+### Query parameters
+
+| Param | Description |
+|-------|-------------|
+| `cursor` | Opaque cursor from a previous response's `next_cursor`. Omit for the first page. |
+| `page_size` | Number of items (overrides Meta default). |
+
+### Example
 
 ```python
-class ItemEndpoint(Base, RestEndpoint):
-    class Configuration:
-        pagination_class = SortedPaginator
+class EventEndpoint(RestEndpoint):
+    name: str
+    timestamp: str
+
+    class Meta:
+        pagination = Pagination(style="cursor", page_size=50)
 ```
 
-Pagination helps control memory usage and response size when dealing with large datasets.
+```bash
+# First page
+GET /events
+
+# Next page using the cursor from the previous response
+GET /events?cursor=eyJpZCI6IDUwfQ==
+```
+
+## Pagination with Filtering
+
+Filtering and pagination compose naturally:
+
+```python
+from lightapi import RestEndpoint, Pagination, Filtering, FieldFilter, OrderingFilter
+
+class ProductEndpoint(RestEndpoint):
+    name: str
+    price: float
+    in_stock: bool
+
+    class Meta:
+        pagination = Pagination(style="page_number", page_size=25)
+        filtering = Filtering(
+            backends=[FieldFilter, OrderingFilter],
+            fields=["in_stock"],
+            ordering=["price", "name"],
+        )
+```
+
+```bash
+GET /products?in_stock=true&ordering=-price&page=2
+```
+
+## No Pagination (default)
+
+If `Meta.pagination` is not set, the `GET` list endpoint returns all matching rows as a flat list:
+
+```json
+{"results": [...]}
+```
+
+This is fine for small datasets. For large tables, always add pagination.

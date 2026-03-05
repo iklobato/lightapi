@@ -1,225 +1,123 @@
-# Swagger Integration Reference
+---
+title: OpenAPI / Swagger Reference
+description: API schema generation in LightAPI v2
+---
 
-The Swagger module provides automatic OpenAPI/Swagger documentation generation for LightAPI endpoints.
+# OpenAPI / Swagger
 
-## Basic Setup
+## v2 status
 
-### Enabling Swagger
+LightAPI v2 does **not** include a built-in Swagger UI or OpenAPI schema endpoint. The v2 architecture is a pure Starlette ASGI application — you can integrate any OpenAPI tooling that works with Starlette.
 
-```python
-from lightapi import LightAPI
-from lightapi.swagger import SwaggerUI
+## Adding OpenAPI with Starlette
 
-app = LightAPI()
-swagger = SwaggerUI(app)
+Starlette has native support for OpenAPI schema generation via `starlette.routing.Route` and the `apispec`/`spectree`/`starlette-openapi` ecosystem.
+
+### Option 1 — `starlette-openapi` (third-party)
+
+```bash
+uv add starlette-openapi
 ```
 
-### Configuration Options
-
 ```python
-swagger = SwaggerUI(
-    app,
-    title='My API',
-    version='1.0.0',
-    description='API documentation',
-    base_url='/api',
-    swagger_url='/docs'
-)
+from sqlalchemy import create_engine
+from lightapi import LightApi, RestEndpoint, Field
+from starlette_openapi import OpenAPI
+
+class BookEndpoint(RestEndpoint):
+    title: str = Field(min_length=1)
+    author: str
+
+engine = create_engine("sqlite:///books.db")
+app_instance = LightApi(engine=engine)
+app_instance.register({"/books": BookEndpoint})
+
+starlette_app = app_instance.build_app()
+
+# Wrap with OpenAPI
+openapi = OpenAPI(app=starlette_app, title="Book API", version="1.0.0")
 ```
 
-## API Documentation
+### Option 2 — `spectree`
 
-### Endpoint Documentation
-
-```python
-from lightapi.rest import RESTEndpoint
-from lightapi.swagger import swagger_doc
-
-@swagger_doc(
-    summary='Get user information',
-    description='Retrieve user details by ID',
-    responses={
-        200: {'description': 'User found'},
-        404: {'description': 'User not found'}
-    }
-)
-class UserEndpoint(RESTEndpoint):
-    route = '/users/{user_id}'
+```bash
+uv add spectree
 ```
 
-### Request Parameters
+### Option 3 — Manual schema endpoint
+
+Add a static OpenAPI JSON route directly:
 
 ```python
-@swagger_doc(
-    parameters=[
-        {
-            'name': 'user_id',
-            'in': 'path',
-            'required': True,
-            'schema': {'type': 'integer'}
-        },
-        {
-            'name': 'include_posts',
-            'in': 'query',
-            'schema': {'type': 'boolean'}
-        }
-    ]
-)
-def get(self, request, user_id):
-    pass
-```
+import json
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+from lightapi import LightApi, RestEndpoint
 
-### Request Body
+class BookEndpoint(RestEndpoint):
+    title: str
+    author: str
 
-```python
-@swagger_doc(
-    request_body={
-        'content': {
-            'application/json': {
-                'schema': {
-                    'type': 'object',
-                    'properties': {
-                        'name': {'type': 'string'},
-                        'email': {'type': 'string'}
-                    },
-                    'required': ['name', 'email']
-                }
-            }
-        }
-    }
-)
-def post(self, request):
-    pass
-```
+engine = create_engine("sqlite:///books.db")
+app = LightApi(engine=engine)
+app.register({"/books": BookEndpoint})
 
-## Advanced Features
-
-### Security Schemes
-
-```python
-swagger = SwaggerUI(
-    app,
-    security_schemes={
-        'bearerAuth': {
-            'type': 'http',
-            'scheme': 'bearer',
-            'bearerFormat': 'JWT'
-        }
-    }
-)
-
-@swagger_doc(security=[{'bearerAuth': []}])
-class ProtectedEndpoint(RESTEndpoint):
-    pass
-```
-
-### Tags and Categories
-
-```python
-@swagger_doc(
-    tags=['users'],
-    summary='User management endpoints'
-)
-class UserEndpoint(RESTEndpoint):
-    pass
-```
-
-## Examples
-
-### Complete Swagger Setup
-
-```python
-from lightapi import LightAPI
-from lightapi.rest import RESTEndpoint
-from lightapi.swagger import SwaggerUI, swagger_doc
-
-# Initialize app and Swagger
-app = LightAPI()
-swagger = SwaggerUI(
-    app,
-    title='User Management API',
-    version='1.0.0',
-    description='API for managing users and posts',
-    security_schemes={
-        'bearerAuth': {
-            'type': 'http',
-            'scheme': 'bearer',
-            'bearerFormat': 'JWT'
-        }
-    }
-)
-
-# Document endpoints
-@swagger_doc(
-    tags=['users'],
-    summary='User operations',
-    security=[{'bearerAuth': []}]
-)
-class UserEndpoint(RESTEndpoint):
-    route = '/users/{user_id}'
-
-    @swagger_doc(
-        summary='Get user details',
-        parameters=[
-            {
-                'name': 'user_id',
-                'in': 'path',
-                'required': True,
-                'schema': {'type': 'integer'}
-            }
-        ],
-        responses={
-            200: {
-                'description': 'User found',
-                'content': {
-                    'application/json': {
-                        'schema': {
-                            'type': 'object',
-                            'properties': {
-                                'id': {'type': 'integer'},
-                                'name': {'type': 'string'},
-                                'email': {'type': 'string'}
-                            }
-                        }
-                    }
-                }
+async def openapi_schema(request: Request):
+    schema = {
+        "openapi": "3.0.0",
+        "info": {"title": "My API", "version": "1.0.0"},
+        "paths": {
+            "/books": {
+                "get":  {"summary": "List books",   "responses": {"200": {"description": "OK"}}},
+                "post": {"summary": "Create a book", "responses": {"201": {"description": "Created"}}},
             },
-            404: {'description': 'User not found'}
-        }
-    )
-    def get(self, request, user_id):
-        pass
+        },
+    }
+    return JSONResponse(schema)
 
-    @swagger_doc(
-        summary='Update user',
-        request_body={
-            'content': {
-                'application/json': {
-                    'schema': {
-                        'type': 'object',
-                        'properties': {
-                            'name': {'type': 'string'},
-                            'email': {'type': 'string'}
-                        }
-                    }
-                }
-            }
-        }
-    )
-    def put(self, request, user_id):
-        pass
+# Inject extra route before building
+app._routes.append(Route("/openapi.json", endpoint=openapi_schema))
+starlette_app = app.build_app()
 ```
 
-## Best Practices
+## Pydantic v2 schemas
 
-1. Document all endpoints thoroughly
-2. Include response schemas
-3. Document error responses
-4. Use appropriate tags for organization
-5. Keep documentation up to date
+LightAPI internally generates Pydantic v2 `BaseModel` subclasses for every endpoint. You can access them for schema introspection:
 
-## See Also
+```python
+from lightapi import RestEndpoint, SchemaFactory, Field
 
-- [REST API](rest.md) - REST endpoint implementation
-- [Authentication](auth.md) - Authentication setup
-- [Models](models.md) - Data model definitions 
+class BookEndpoint(RestEndpoint):
+    title: str = Field(min_length=1)
+    author: str
+
+schema_create, schema_read = SchemaFactory.build(BookEndpoint)
+
+print(schema_create.model_json_schema())
+# {
+#   "properties": {
+#     "title": {"minLength": 1, "title": "Title", "type": "string"},
+#     "author": {"title": "Author", "type": "string"}
+#   },
+#   "required": ["title", "author"],
+#   "title": "BookEndpointCreate",
+#   "type": "object"
+# }
+```
+
+## v1 Swagger (legacy)
+
+The v1 `lightapi.core.LightApi` class includes built-in Swagger UI at `/docs`. If you need this feature, use the v1 class:
+
+```python
+from lightapi.core import LightApi as LightApiV1
+
+app = LightApiV1(
+    database_url="sqlite:///app.db",
+    enable_swagger=True,
+    swagger_title="My API",
+)
+```
+
+Note that `lightapi.core.LightApi` (v1) uses a different endpoint model (`Base + RestEndpoint`) and is not compatible with the v2 `RestEndpoint` syntax.

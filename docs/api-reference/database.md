@@ -1,150 +1,131 @@
-# Database Reference
+---
+title: Database API Reference
+description: Engine setup, session helpers, and reflection in LightAPI v2
+---
 
-The Database module provides integration with SQLAlchemy and other ORMs for data persistence in LightAPI.
+# Database API Reference
 
-## Database Configuration
+LightAPI delegates all database access to SQLAlchemy 2.x. This page covers the engine setup, session context managers, and reflection helpers exposed by LightAPI.
 
-### Basic Setup
+## Engine
 
-```python
-from lightapi.database import Database
-
-db = Database('sqlite:///app.db')
-```
-
-### Connection Options
+Pass any SQLAlchemy engine (sync or async) to `LightApi`:
 
 ```python
-db = Database(
-    'postgresql://user:pass@localhost/dbname',
-    pool_size=5,
-    max_overflow=10
-)
+from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import create_async_engine
+from lightapi import LightApi
+
+# Sync
+engine = create_engine("sqlite:///app.db")
+
+# Async
+engine = create_async_engine("postgresql+asyncpg://user:pass@localhost/db")
+
+app = LightApi(engine=engine)
 ```
 
-## Model Definition
+LightAPI detects whether the engine is async and automatically selects the correct session strategy for all built-in CRUD operations.
 
-### Basic Model
+## `get_sync_session(engine)`
+
+A context manager that yields a `sqlalchemy.orm.Session` with automatic commit and rollback:
 
 ```python
-from lightapi.database import Model
-from lightapi.models import Column, String, Integer
+from lightapi import get_sync_session
+from sqlalchemy import create_engine, select
 
-class User(Model):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(50))
-    email = Column(String(120), unique=True)
+engine = create_engine("sqlite:///app.db")
+
+with get_sync_session(engine) as session:
+    rows = session.execute(select(SomeModel)).scalars().all()
 ```
 
-### Relationships
+- Commits on successful exit.
+- Rolls back and re-raises on exception.
+
+**Signature:**
 
 ```python
-class Post(Model):
-    __tablename__ = 'posts'
-    
-    id = Column(Integer, primary_key=True)
-    title = Column(String(100))
-    user_id = Column(Integer, ForeignKey('users.id'))
-    user = relationship('User', backref='posts')
+def get_sync_session(engine: Engine) -> ContextManager[Session]: ...
 ```
 
-## Query Operations
+## `get_async_session(engine)`
 
-### Basic Queries
+An async context manager that yields a `sqlalchemy.ext.asyncio.AsyncSession`:
 
 ```python
-# Create
-user = User(name='John', email='john@example.com')
-db.session.add(user)
-db.session.commit()
+from lightapi import get_async_session
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import select
 
-# Read
-user = User.query.filter_by(name='John').first()
+engine = create_async_engine("sqlite+aiosqlite:///app.db")
 
-# Update
-user.email = 'new@example.com'
-db.session.commit()
-
-# Delete
-db.session.delete(user)
-db.session.commit()
+async with get_async_session(engine) as session:
+    rows = (await session.execute(select(SomeModel))).scalars().all()
 ```
 
-### Advanced Queries
+- Commits on successful exit.
+- Rolls back and re-raises on exception.
+- Uses `expire_on_commit=False` so objects remain usable after commit.
+
+**Signature:**
 
 ```python
-# Join queries
-users = User.query.join(Post).filter(Post.title.like('%python%')).all()
-
-# Aggregate functions
-from sqlalchemy import func
-post_count = db.session.query(func.count(Post.id)).scalar()
+async def get_async_session(engine: AsyncEngine) -> AsyncContextManager[AsyncSession]: ...
 ```
 
-## Migration Support
+## `RestEndpoint._get_engine()`
 
-### Creating Migrations
+Returns the underlying sync engine. When an `AsyncEngine` is used, this unwraps to its `.sync_engine`:
 
 ```python
-from lightapi.database import create_migration
-
-create_migration('add_user_table')
+engine = self._get_engine()  # always a sync Engine
 ```
 
-### Running Migrations
+## `RestEndpoint._get_async_engine()`
+
+Returns the raw `AsyncEngine`. Raises `RuntimeError` if the app was not started with an async engine:
 
 ```python
-from lightapi.database import migrate
-
-migrate()
+engine = self._get_async_engine()  # AsyncEngine
 ```
 
-## Examples
+## Table creation
 
-### Complete Database Setup
+Tables are created automatically when `app.register(mapping)` is called:
+
+- **Sync engine**: `metadata.create_all(engine)` is called synchronously during `register()`.
+- **Async engine**: table creation is deferred to Starlette's `on_startup` lifecycle hook, where `await conn.run_sync(metadata.create_all)` is called inside the running event loop.
+
+You never need to call `Base.metadata.create_all()` yourself.
+
+## Table reflection
+
+Set `Meta.reflect = True` on a `RestEndpoint` to map it to an existing database table:
 
 ```python
-from lightapi import LightAPI
-from lightapi.database import Database, Model
-from lightapi.models import Column, String, Integer, relationship
-
-# Initialize app and database
-app = LightAPI()
-db = Database('sqlite:///app.db')
-
-# Define models
-class User(Model):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(50))
-    email = Column(String(120), unique=True)
-    posts = relationship('Post', backref='author')
-
-class Post(Model):
-    __tablename__ = 'posts'
-    
-    id = Column(Integer, primary_key=True)
-    title = Column(String(100))
-    content = Column(String)
-    user_id = Column(Integer, ForeignKey('users.id'))
-
-# Create tables
-db.create_all()
+class LegacyUserEndpoint(RestEndpoint):
+    class Meta:
+        reflect = True
+        table = "users"   # existing table name
 ```
 
-## Best Practices
+- No field annotations are required.
+- LightAPI reads the column definitions at startup and auto-generates Pydantic schemas.
+- For async engines, reflection uses `await conn.run_sync(metadata.reflect)`.
 
-1. Use migrations for database schema changes
-2. Implement proper indexing for better performance
-3. Use relationships appropriately
-4. Handle database errors properly
-5. Use connection pooling in production
+## Supported dialects
 
-## See Also
+| Database | Sync URL scheme | Async URL scheme |
+|----------|-----------------|------------------|
+| SQLite | `sqlite:///` | `sqlite+aiosqlite:///` |
+| PostgreSQL | `postgresql://` | `postgresql+asyncpg://` |
+| MySQL | `mysql+pymysql://` | `mysql+aiomysql://` |
 
-- [Models](models.md) - Model definitions and validation
-- [REST API](rest.md) - REST endpoint implementation
-- [Core API](core.md) - Core framework functionality 
+Install async extras:
+
+```bash
+uv add "lightapi[async]"
+# installs: sqlalchemy[asyncio], asyncpg, aiosqlite, greenlet
+```

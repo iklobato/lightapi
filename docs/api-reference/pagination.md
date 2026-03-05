@@ -1,172 +1,128 @@
-# Pagination Reference
+---
+title: Pagination API Reference
+description: PageNumberPaginator and CursorPaginator reference
+---
 
-The Pagination module provides tools for implementing paginated responses in LightAPI endpoints.
+# Pagination API Reference
 
-## Basic Pagination
+## Overview
 
-### Enabling Pagination
+Pagination is enabled via `Meta.pagination` on a `RestEndpoint`. LightAPI provides two pagination styles.
 
 ```python
-from lightapi.rest import RESTEndpoint
+from lightapi import RestEndpoint, Pagination
 
-class UserEndpoint(RESTEndpoint):
-    paginate = True
-    items_per_page = 20
+class PostEndpoint(RestEndpoint):
+    title: str
+
+    class Meta:
+        pagination = Pagination(style="page_number", page_size=20)
 ```
 
-### Pagination Parameters
+## `Pagination`
 
 ```python
-# Default pagination parameters
-pagination_params = {
-    'page': 1,          # Current page number
-    'per_page': 20,     # Items per page
-    'max_per_page': 100 # Maximum items per page
+Pagination(
+    style: str = "page_number",
+    page_size: int = 20,
+)
+```
+
+| Parameter | Values | Description |
+|-----------|--------|-------------|
+| `style` | `"page_number"` | Offset-based pagination |
+| `style` | `"cursor"` | Cursor-based pagination |
+| `page_size` | `int ≥ 1` | Default items per page |
+
+Raises `ConfigurationError` if `style` is not one of the valid values or `page_size < 1`.
+
+## Page-Number Style
+
+### Query parameters
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `page` | `1` | Page number (1-indexed) |
+| `page_size` | Meta value | Override per request |
+
+### Response envelope
+
+```json
+{
+  "count": 150,
+  "next": "/posts?page=3&page_size=20",
+  "previous": "/posts?page=1&page_size=20",
+  "results": [ ... ]
 }
 ```
 
-## Advanced Pagination
+## Cursor Style
 
-### Custom Pagination
+### Query parameters
 
-```python
-from lightapi.pagination import Paginator
+| Param | Description |
+|-------|-------------|
+| `cursor` | Opaque cursor string from a previous `next_cursor`. Omit for the first page. |
+| `page_size` | Override per request |
 
-class CustomPaginator(Paginator):
-    def get_pagination_data(self, total_items):
-        return {
-            'total': total_items,
-            'pages': self.get_total_pages(total_items),
-            'current_page': self.page,
-            'has_next': self.has_next(total_items),
-            'has_prev': self.has_prev()
-        }
+### Response envelope
+
+```json
+{
+  "next_cursor": "eyJpZCI6IDIwfQ==",
+  "results": [ ... ]
+}
 ```
 
-### Cursor-based Pagination
+The cursor encodes the last `id` seen. When `next_cursor` is `null`, there are no more pages.
+
+## Combining with filtering and ordering
+
+Pagination is applied after filtering and ordering:
+
+```python
+class EventEndpoint(RestEndpoint):
+    name: str
+    timestamp: str
+
+    class Meta:
+        filtering = Filtering(backends=[OrderingFilter], ordering=["timestamp"])
+        pagination = Pagination(style="cursor", page_size=50)
+```
+
+```bash
+GET /events?ordering=-timestamp
+GET /events?ordering=-timestamp&cursor=eyJpZCI6IDUwfQ==
+```
+
+## `PageNumberPaginator` (internal)
+
+Used internally when `style="page_number"`. Also exposed for use in custom `queryset` logic:
+
+```python
+from lightapi.pagination import PageNumberPaginator
+from sqlalchemy import select
+
+class MyEndpoint(RestEndpoint):
+    name: str
+
+    async def get(self, request):
+        pager = PageNumberPaginator(page_size=10)
+        engine = self._get_async_engine()
+        cls = type(self)
+        qs = select(cls._model_class)
+        from lightapi import get_async_session
+        async with get_async_session(engine) as session:
+            rows, total = await pager.paginate_async(session, qs, request)
+        return {"count": total, "results": [dict(r) for r in rows]}
+```
+
+## `CursorPaginator` (internal)
+
+Used internally when `style="cursor"`:
 
 ```python
 from lightapi.pagination import CursorPaginator
-
-class UserEndpoint(RESTEndpoint):
-    paginator_class = CursorPaginator
-    cursor_field = 'created_at'
 ```
 
-## Response Format
-
-### Default Format
-
-```python
-{
-    "items": [...],
-    "pagination": {
-        "total": 100,
-        "pages": 5,
-        "current_page": 1,
-        "per_page": 20,
-        "has_next": true,
-        "has_prev": false
-    }
-}
-```
-
-### Custom Format
-
-```python
-class UserEndpoint(RESTEndpoint):
-    def format_paginated_response(self, items, pagination_data):
-        return {
-            'users': items,
-            'meta': {
-                'total_users': pagination_data['total'],
-                'page': pagination_data['current_page'],
-                'total_pages': pagination_data['pages']
-            }
-        }
-```
-
-## Examples
-
-### Basic Pagination Example
-
-```python
-from lightapi import LightAPI
-from lightapi.rest import RESTEndpoint
-from lightapi.pagination import Paginator
-
-app = LightAPI()
-
-class UserEndpoint(RESTEndpoint):
-    route = '/users'
-    model = User
-    paginate = True
-    items_per_page = 20
-
-    def get(self, request):
-        query = self.model.query
-        paginated_query = self.paginate_query(query)
-        return self.format_paginated_response(
-            paginated_query.items,
-            paginated_query.pagination_data
-        )
-```
-
-### Advanced Pagination Example
-
-```python
-class UserEndpoint(RESTEndpoint):
-    route = '/users'
-    model = User
-    paginator_class = CursorPaginator
-    cursor_field = 'created_at'
-    items_per_page = 20
-
-    def get(self, request):
-        query = self.model.query.order_by(self.model.created_at.desc())
-        
-        # Get cursor from request
-        cursor = request.args.get('cursor')
-        
-        # Apply cursor-based pagination
-        if cursor:
-            query = query.filter(self.model.created_at < cursor)
-            
-        # Get paginated results
-        paginated = self.paginate_query(query)
-        
-        # Format response
-        return {
-            'users': [user.to_dict() for user in paginated.items],
-            'next_cursor': paginated.next_cursor,
-            'has_more': paginated.has_more
-        }
-```
-
-## URL Parameters
-
-### Basic Pagination
-
-```
-GET /users?page=2&per_page=20
-```
-
-### Cursor Pagination
-
-```
-GET /users?cursor=2023-01-01T12:00:00Z&per_page=20
-```
-
-## Best Practices
-
-1. Set reasonable default and maximum page sizes
-2. Use cursor-based pagination for large datasets
-3. Include proper metadata in responses
-4. Handle invalid pagination parameters
-5. Document pagination parameters and response format
-
-## See Also
-
-- [REST API](rest.md) - REST endpoint implementation
-- [Filtering](filters.md) - Query filtering
-- [Database](database.md) - Database integration 
+Both paginators have `paginate(session, queryset, request)` (sync) and `paginate_async(session, queryset, request)` (async) methods.

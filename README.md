@@ -27,6 +27,13 @@
   - [Middleware](#middleware)
   - [Database Reflection](#database-reflection)
   - [YAML Configuration](#yaml-configuration)
+- [Async Support](#async-support)
+  - [Enabling Async I/O](#enabling-async-io)
+  - [Async Queryset](#async-queryset)
+  - [Async Method Overrides](#async-method-overrides)
+  - [Background Tasks](#background-tasks)
+  - [Async Middleware](#async-middleware)
+  - [Sync Endpoints on an Async App](#sync-endpoints-on-an-async-app)
 - [API Reference](#api-reference)
 - [Testing](#testing)
 - [Contributing](#contributing)
@@ -39,6 +46,7 @@
 - **One class, three roles**: Your `RestEndpoint` subclass is the SQLAlchemy ORM model, the Pydantic v2 schema, *and* the HTTP handler — no separate files, no boilerplate.
 - **Annotation-driven columns**: Write `title: str = Field(min_length=1)` — LightAPI creates the `VARCHAR` column, the Pydantic constraint, and the API validation all at once.
 - **Optimistic locking built in**: Every endpoint gets a `version` field. `PUT`/`PATCH` require `version` in the body; mismatches return `409 Conflict`.
+- **Opt-in async I/O**: Swap `create_engine` for `create_async_engine` — LightAPI automatically uses `AsyncSession` for every request. Sync and async endpoints coexist on the same app instance.
 - **No aiohttp**: Pure Starlette + Uvicorn ASGI stack, no async framework mixing.
 - **Pydantic v2**: Full `model_validate`, `model_dump(mode='json')`, `ConfigDict` compatibility.
 - **SQLAlchemy 2.0 imperative mapping**: No `DeclarativeBase` inheritance required.
@@ -49,13 +57,21 @@
 
 ```bash
 # Using uv (recommended)
-uv pip install lightapi
+uv add lightapi
 
 # Or pip
 pip install lightapi
 ```
 
 **Requirements**: Python 3.10+, SQLAlchemy 2.x, Pydantic v2, Starlette, Uvicorn.
+
+**Optional async I/O** (PostgreSQL / SQLite async):
+
+```bash
+# asyncpg (PostgreSQL async driver)
+uv add "lightapi[async]"
+# installs: sqlalchemy[asyncio], asyncpg, aiosqlite, greenlet
+```
 
 **Optional Redis caching**: `redis` is included as a core dependency but Redis caching only activates when `Meta.cache = Cache(ttl=N)` is set on an endpoint. A `RuntimeWarning` is emitted at startup if Redis is unreachable.
 
@@ -489,6 +505,215 @@ app.run()
 
 ---
 
+## Async Support
+
+LightAPI's async support is **opt-in** and activated by a single change: passing a `create_async_engine` instead of `create_engine`. Everything else — filtering, pagination, serialization, middleware, caching — continues to work unchanged.
+
+### Enabling Async I/O
+
+```bash
+uv add "lightapi[async]"   # adds sqlalchemy[asyncio], asyncpg, aiosqlite, greenlet
+```
+
+```python
+# sync — existing code, no changes required
+from sqlalchemy import create_engine
+engine = create_engine("postgresql://user:pass@localhost/db")
+
+# async — one-line swap
+from sqlalchemy.ext.asyncio import create_async_engine
+engine = create_async_engine("postgresql+asyncpg://user:pass@localhost/db")
+```
+
+Once an `AsyncEngine` is detected, LightAPI:
+
+- Uses `AsyncSession` for every request
+- Awaits `async def queryset`, `async def get/post/put/patch/delete` overrides
+- Falls back to sync CRUD for endpoints that still define sync methods
+- Runs `metadata.create_all` inside the server's event loop via Starlette `on_startup`
+- Validates that the async driver (e.g. `asyncpg`, `aiosqlite`) is installed at startup
+
+### Async Queryset
+
+Define `async def queryset` to scope the base query asynchronously:
+
+```python
+from sqlalchemy import select
+from starlette.requests import Request
+from lightapi import RestEndpoint, Field
+
+class OrderEndpoint(RestEndpoint):
+    amount: float = Field(ge=0)
+    status: str = Field(default="pending")
+
+    async def queryset(self, request: Request):
+        # e.g. scope to authenticated user
+        user_id = request.state.user["sub"]
+        return (
+            select(type(self)._model_class)
+            .where(type(self)._model_class.owner_id == user_id)
+        )
+```
+
+`async def queryset` is automatically detected via `asyncio.iscoroutinefunction` and awaited. A plain `def queryset` continues to work on an async app without any changes.
+
+### Async Method Overrides
+
+Override individual HTTP verbs with `async def`:
+
+```python
+class ProductEndpoint(RestEndpoint):
+    name: str = Field(min_length=1)
+    price: float = Field(ge=0)
+
+    async def post(self, request: Request):
+        import json
+        data = json.loads(await request.body())
+        # custom pre-processing ...
+        return await self._create_async(data)
+
+    async def get(self, request: Request):
+        # custom query, external call, etc.
+        return await self._list_async(request)
+```
+
+**Built-in async CRUD helpers** available on every `RestEndpoint`:
+
+| Method | Description |
+|---|---|
+| `await self._list_async(request)` | Paginated list |
+| `await self._retrieve_async(request, pk)` | Single row by PK |
+| `await self._create_async(data)` | Insert, flush, refresh |
+| `await self._update_async(data, pk, partial=False)` | Optimistic-lock update |
+| `await self._destroy_async(request, pk)` | Delete |
+
+### Background Tasks
+
+Call `self.background(fn, *args, **kwargs)` inside any async method override to schedule a fire-and-forget task. The task runs after the HTTP response is sent (Starlette `BackgroundTasks`):
+
+```python
+async def notify(order_id: int) -> None:
+    # send email, write audit log, push notification …
+    ...
+
+class OrderEndpoint(RestEndpoint):
+    amount: float = Field(ge=0)
+
+    async def post(self, request: Request):
+        import json
+        resp = await self._create_async(json.loads(await request.body()))
+        if resp.status_code == 201:
+            import json as _json
+            self.background(notify, _json.loads(resp.body)["id"])
+        return resp
+```
+
+Both `def` (sync) and `async def` callables are accepted by Starlette's `BackgroundTasks`. Calling `self.background()` outside a request handler raises `RuntimeError`.
+
+### Async Middleware
+
+`Middleware.process` can be a coroutine — LightAPI awaits it automatically. Sync and async middleware coexist in the same list:
+
+```python
+from lightapi.core import Middleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+class AsyncAuditMiddleware(Middleware):
+    async def process(self, request: Request, response: Response | None) -> None:
+        if response is None:
+            await write_audit_log(request)   # async I/O
+        return None
+
+class SyncHeaderMiddleware(Middleware):
+    def process(self, request: Request, response: Response | None) -> None:
+        if response is not None:
+            response.headers["X-Served-By"] = "lightapi"
+        return None
+
+app = LightApi(engine=engine, middlewares=[AsyncAuditMiddleware, SyncHeaderMiddleware])
+```
+
+Pre-processing order: `AsyncAuditMiddleware → SyncHeaderMiddleware`.
+Post-processing order (reversed): `SyncHeaderMiddleware → AsyncAuditMiddleware`.
+
+### Sync Endpoints on an Async App
+
+Endpoints that still define sync methods work without modification on an async-engine app:
+
+```python
+class TagEndpoint(RestEndpoint):
+    label: str = Field(min_length=1)
+
+    def queryset(self, request: Request):          # sync — still works
+        return select(type(self)._model_class)
+```
+
+LightAPI detects whether `queryset` / the override method is async and dispatches accordingly. No runtime penalty on the sync path.
+
+### Session Helpers
+
+`get_sync_session` and `get_async_session` are exported from `lightapi` for use in custom code:
+
+```python
+from lightapi import get_sync_session, get_async_session
+
+# Sync
+with get_sync_session(engine) as session:
+    rows = session.execute(select(MyModel)).scalars().all()
+
+# Async
+async with get_async_session(async_engine) as session:
+    rows = (await session.execute(select(MyModel))).scalars().all()
+```
+
+Both context managers commit on clean exit and roll back on exception.
+
+### Testing Async Endpoints
+
+Use `pytest-asyncio` and `httpx.AsyncClient` with an in-memory `aiosqlite` engine:
+
+```python
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import create_async_engine
+from lightapi import LightApi, RestEndpoint
+from lightapi.auth import AllowAny
+from lightapi.config import Authentication
+from pydantic import Field
+
+@pytest_asyncio.fixture
+async def client():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    class Widget(RestEndpoint):
+        name: str = Field(min_length=1)
+        class Meta:
+            authentication = Authentication(permission=AllowAny)
+
+    app = LightApi(engine=engine)
+    app.register({"/widgets": Widget})
+    async with AsyncClient(
+        transport=ASGITransport(app=app.build_app()), base_url="http://test"
+    ) as c:
+        yield c
+
+async def test_create_widget(client):
+    r = await client.post("/widgets", json={"name": "bolt"})
+    assert r.status_code == 201
+    assert r.json()["name"] == "bolt"
+```
+
+Add to `pytest.ini`:
+
+```ini
+[pytest]
+asyncio_mode = auto
+```
+
+---
+
 ## API Reference
 
 ### `LightApi`
@@ -519,7 +744,7 @@ LightApi(
 | `__schema_create__` | `ModelMetaclass` | Pydantic model for POST/PUT/PATCH input |
 | `__schema_read__` | `ModelMetaclass` | Pydantic model for responses |
 
-Override these methods to customise behaviour (all are called synchronously):
+Override these methods to customise behaviour. Both `def` (sync) and `async def` (async) variants are detected automatically:
 
 | Method | Signature | Default behaviour |
 |---|---|---|
@@ -529,6 +754,22 @@ Override these methods to customise behaviour (all are called synchronously):
 | `update` | `(data, pk, partial)` | `UPDATE WHERE id=pk AND version=N RETURNING` |
 | `destroy` | `(request, pk)` | `DELETE WHERE id=pk` |
 | `queryset` | `(request)` | Returns base `select(cls._model_class)` |
+| `get` | `(request)` | Override GET (collection or detail) |
+| `post` | `(request)` | Override POST |
+| `put` | `(request)` | Override PUT |
+| `patch` | `(request)` | Override PATCH |
+| `delete` | `(request)` | Override DELETE |
+
+**Async CRUD helpers** (available when using an async engine):
+
+| Helper | Description |
+|---|---|
+| `_list_async(request)` | Async `SELECT *` with pagination |
+| `_retrieve_async(request, pk)` | Async `SELECT WHERE id=pk` |
+| `_create_async(data)` | Async `INSERT` with flush/refresh |
+| `_update_async(data, pk, partial)` | Async optimistic-lock `UPDATE` |
+| `_destroy_async(request, pk)` | Async `DELETE` |
+| `background(fn, *args, **kwargs)` | Schedule a post-response background task |
 
 ### `Meta` inner class
 
@@ -561,20 +802,29 @@ class MyEndpoint(RestEndpoint):
 
 ```bash
 # Install with dev extras
-uv pip install -e ".[dev]"
+uv add -e ".[dev]"
 
-# Run v2 tests
-pytest tests/test_crud.py tests/test_auth.py tests/test_filtering.py \
-       tests/test_http_methods.py tests/test_middleware.py \
-       tests/test_queryset.py tests/test_reflection.py \
-       tests/test_schema.py tests/test_serializer.py \
-       tests/test_pipeline.py tests/test_yaml_config.py
+# Run all tests (sync + async)
+pytest tests/
+
+# Run only async-related tests
+pytest tests/test_async_crud.py tests/test_async_session.py \
+       tests/test_async_queryset.py tests/test_async_middleware.py \
+       tests/test_background_tasks.py tests/test_mixed_sync_async.py \
+       tests/test_async_reflection.py
 
 # Run with coverage
 pytest tests/ --cov=lightapi --cov-report=term-missing
 ```
 
-For SQLite in-memory databases in tests, use `StaticPool` to share a single connection:
+**Async test setup** — add to `pytest.ini`:
+
+```ini
+[pytest]
+asyncio_mode = auto
+```
+
+For sync SQLite in-memory databases in tests, use `StaticPool` to share a single connection:
 
 ```python
 from sqlalchemy import create_engine

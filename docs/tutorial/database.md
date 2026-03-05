@@ -1,92 +1,179 @@
-> **Note:** This page describes the v1 API and has not yet been updated for v2. See the [README](../../README.md) for current documentation.
-
 ---
 title: Database Integration
+description: Engines, sessions, reflection, and async database setup in LightAPI v2
 ---
 
-LightAPI integrates seamlessly with SQLAlchemy's async support. In this tutorial, you'll configure your database connection, define models, create tables, and use async sessions in your endpoints.
+# Database Integration
 
-## 1. Configure the Database URL
+LightAPI v2 wraps SQLAlchemy 2.x and supports any database that SQLAlchemy supports — SQLite, PostgreSQL, MySQL, and more. Both synchronous and asynchronous engines are supported.
 
-When creating your `LightApi` instance, pass the `database_url` parameter:
+## Creating an engine
+
+### Synchronous
 
 ```python
-# main.py
+from sqlalchemy import create_engine
+
+# SQLite
+engine = create_engine("sqlite:///app.db")
+
+# PostgreSQL (psycopg2)
+engine = create_engine("postgresql://user:pass@localhost:5432/mydb")
+
+# MySQL
+engine = create_engine("mysql+pymysql://user:pass@localhost:3306/mydb")
+```
+
+### Asynchronous
+
+Install the async extras first:
+
+```bash
+uv add "lightapi[async]"
+```
+
+```python
+from sqlalchemy.ext.asyncio import create_async_engine
+
+# PostgreSQL (asyncpg)
+engine = create_async_engine("postgresql+asyncpg://user:pass@localhost:5432/mydb")
+
+# SQLite (aiosqlite — useful for tests)
+engine = create_async_engine("sqlite+aiosqlite:///app.db")
+```
+
+Pass either engine type to `LightApi` — it detects async engines automatically:
+
+```python
 from lightapi import LightApi
 
-app = LightApi(
-    database_url="sqlite+aiosqlite:///./app.db"
+app = LightApi(engine=engine)
+```
+
+## Table creation
+
+When you call `app.register(mapping)`, LightAPI creates any missing tables automatically using the SQLAlchemy `MetaData`. For async engines, table creation runs inside Starlette's `on_startup` lifecycle hook, so the event loop is already running when it executes.
+
+You never need to call `Base.metadata.create_all()` manually.
+
+## Connecting to an existing database (reflection)
+
+Set `Meta.reflect = True` to map a `RestEndpoint` to an existing table without declaring columns:
+
+```python
+from lightapi import LightApi, RestEndpoint
+
+class UserEndpoint(RestEndpoint):
+    class Meta:
+        reflect = True
+        table = "users"   # exact table name in the database
+```
+
+LightAPI will reflect the table schema at startup and generate a Pydantic read schema from the discovered columns.
+
+## Session management
+
+LightAPI manages sessions internally — you do not need to create sessions for normal CRUD operations. If you need a session inside a method override, use the provided helpers:
+
+### Synchronous session
+
+```python
+from lightapi import get_sync_session
+
+class MyEndpoint(RestEndpoint):
+    name: str
+
+    def get(self, request):
+        engine = self._get_engine()
+        with get_sync_session(engine) as session:
+            rows = session.execute(...).all()
+        return {"results": rows}
+```
+
+### Asynchronous session
+
+```python
+from lightapi import get_async_session
+
+class MyEndpoint(RestEndpoint):
+    name: str
+
+    async def get(self, request):
+        engine = self._get_async_engine()
+        async with get_async_session(engine) as session:
+            rows = (await session.execute(...)).all()
+        return {"results": rows}
+```
+
+Both context managers automatically commit on success and roll back on exception.
+
+## Supported databases
+
+| Database | Sync driver | Async driver |
+|----------|-------------|--------------|
+| SQLite | built-in | `aiosqlite` |
+| PostgreSQL | `psycopg2` | `asyncpg` |
+| MySQL | `pymysql` | `aiomysql` |
+
+## Connection pooling
+
+Pass SQLAlchemy pool options to `create_engine`:
+
+```python
+from sqlalchemy import create_engine
+from sqlalchemy.pool import QueuePool
+
+engine = create_engine(
+    "postgresql://user:pass@localhost/mydb",
+    poolclass=QueuePool,
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True,
 )
 ```
 
-Supported URL schemes include:
-
-- `sqlite+aiosqlite:///<path>`
-- `postgresql+asyncpg://user:pass@host/dbname`
-- `mysql+aiomysql://user:pass@host/dbname`
-
-## 2. Define Models and Create Tables
-
-LightAPI uses a shared `Base` metadata. After defining your SQLAlchemy models, you can create tables using the built-in helper:
+For async engines:
 
 ```python
-# app/models.py
-from sqlalchemy import Column, Integer, String
-from lightapi.database import Base
+from sqlalchemy.ext.asyncio import create_async_engine
 
-class Task(Base):
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, nullable=False)
-    completed = Column(Boolean, default=False)
+engine = create_async_engine(
+    "postgresql+asyncpg://user:pass@localhost/mydb",
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True,
+)
 ```
 
-To create tables at startup, use an event handler:
+## Environment variable–driven database URL
 
 ```python
-# app/main.py
+import os
+from sqlalchemy import create_engine
 from lightapi import LightApi
-from lightapi.database import Base, engine
-from app.models import Task
 
-app = LightApi(database_url="sqlite+aiosqlite:///./app.db")
+engine = create_engine(os.environ["DATABASE_URL"])
+app = LightApi(engine=engine)
+```
 
-@app.on_event("startup")
-async def create_tables():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+Or in YAML:
 
-app.register({"/tasks": Task})
-``` 
+```yaml
+database_url: "${DATABASE_URL}"
+```
 
-## 3. Using Async Sessions in Custom Endpoints
+## Foreign keys and relationships
 
-If you need direct access to the session, inject it into your custom endpoint:
+Declare foreign keys using the `foreign_key` extra kwarg on `Field`:
 
 ```python
-# app/endpoints/custom_task.py
-from lightapi.rest import RestEndpoint
+from typing import Optional
+from lightapi import RestEndpoint, Field
 
-class CustomTaskEndpoint(Base, RestEndpoint):
-    tablename = "tasks"
-
-    async def get(self, request):
-        # `self.session` is an async SQLAlchemy session
-        tasks = await self.session.execute(
-            select(Task).order_by(Task.id)
-        )
-        return [t._asdict() for t in tasks.scalars().all()]
+class CommentEndpoint(RestEndpoint):
+    body: str
+    post_id: int = Field(foreign_key="posts.id")
+    author_id: Optional[int] = Field(None, foreign_key="users.id")
 ```
 
-Register:
-```python
-app.register({"/custom-tasks": CustomTaskEndpoint})
-```
-
-## 4. Alembic Migrations (Optional)
-
-LightAPI doesn't include migrations out of the box, but you can configure Alembic using the same `database_url`. Initialize Alembic in your project and point `alembic.ini` to `env.py` that imports `Base.metadata`:
-
-```ini
-# alembic.ini
-sqlalchemy.url = sqlite+aiosqlite:///./app.db
-```
+LightAPI creates the foreign key constraint in the database. For fetching related records, write a custom `queryset()` method using SQLAlchemy joins.
