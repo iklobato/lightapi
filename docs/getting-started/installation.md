@@ -342,7 +342,7 @@ Now that LightAPI is installed, you're ready to:
 1. **[Quickstart Guide](quickstart.md)** - Build your first API in 5 minutes
 2. **[Configuration Guide](configuration.md)** - Learn about YAML and Python configuration
 3. **[Tutorial](../tutorial/basic-api.md)** - Step-by-step API development
-4. **[Examples](../examples/)** - Explore real-world examples
+4. **[Examples](../examples/basic-rest.md)** - Explore real-world examples
 
 ## Getting Help
 

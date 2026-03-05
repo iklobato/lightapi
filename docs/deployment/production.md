@@ -1014,9 +1014,7 @@ CREATE INDEX CONCURRENTLY idx_your_table_column ON your_table(column);
 ## Next Steps
 
 - **[Docker Deployment](docker.md)** - Containerized deployment
-- **[Kubernetes](kubernetes.md)** - Orchestrated deployment
 - **[Security Guide](security.md)** - Advanced security configuration
-- **[Monitoring](monitoring.md)** - Comprehensive monitoring setup
 
 ---
 

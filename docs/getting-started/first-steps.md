@@ -107,4 +107,4 @@ A `POST /users` to this endpoint will return `405 Method Not Allowed`.
 
 - [Authentication](../advanced/authentication.md) — protect endpoints with JWT
 - [Filtering & Pagination](../advanced/filtering.md) — add query filters and pagination
-- [Serializer](../advanced/serializer.md) — control which fields are exposed
+- [Serializer](../advanced/validation.md) — control which fields are exposed

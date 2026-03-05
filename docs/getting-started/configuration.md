@@ -315,4 +315,4 @@ class ArticleEndpoint(RestEndpoint):
 | `reflect` | `bool` | Set `True` to reflect an existing table instead of creating one |
 | `table` | `str` | Override the inferred table name |
 
-See the individual sections in [Advanced Topics](../advanced/) for full details on each option.
+See the individual sections in [Advanced Topics](../advanced/authentication.md) for full details on each option.

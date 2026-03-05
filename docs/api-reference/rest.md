@@ -211,6 +211,35 @@ Unregistered methods return `405 Method Not Allowed` with an `Allow` header list
 
 ---
 
+## Reflection
+
+Set `Meta.reflect = True` to map an endpoint to an **existing** database table instead of creating a new one. LightAPI inspects the table schema at startup and builds the Pydantic schemas from the live column definitions.
+
+```python
+class LegacyOrderEndpoint(RestEndpoint):
+    class Meta:
+        reflect = True
+        table = "orders"   # exact table name in the database
+```
+
+When `reflect` is `True`:
+
+- The table **must already exist** — LightAPI does not call `CREATE TABLE`.
+- Fields declared on the class are ignored; columns come from the reflected table.
+- All auto-injected columns (`id`, `created_at`, `updated_at`, `version`) are optional — if they are not present in the real table they are simply absent from the schema.
+
+In YAML configuration:
+
+```yaml
+endpoints:
+  - route: /orders
+    reflect: true
+    meta:
+      table: orders
+```
+
+---
+
 ## Session Helpers
 
 Exported from `lightapi` for use outside of endpoint methods:
