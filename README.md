@@ -987,7 +987,7 @@ mypy lightapi/
 
 Guidelines:
 1. Fork the repository and create a feature branch
-2. Write tests for new features — all 100 existing tests must remain green
+2. Write tests for new features — all existing tests must remain green
 3. Follow the existing code style (PEP 8, type hints everywhere)
 4. Submit a pull request with a clear description of the change
 

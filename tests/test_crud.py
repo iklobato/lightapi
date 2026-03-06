@@ -1,6 +1,8 @@
 """Integration tests for US1: CRUD auto-generation."""
+
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
 from lightapi import LightApi, RestEndpoint
@@ -14,7 +16,6 @@ class BookEndpoint(RestEndpoint):
 
 @pytest.fixture(scope="module")
 def client():
-    from sqlalchemy.pool import StaticPool
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -81,7 +82,9 @@ class TestGETDetail:
 
 class TestPUT:
     def test_update_returns_200(self, client):
-        post_resp = client.post("/books", json={"title": "Original", "author": "Author"})
+        post_resp = client.post(
+            "/books", json={"title": "Original", "author": "Author"}
+        )
         book = post_resp.json()
         resp = client.put(
             f"/books/{book['id']}",
@@ -115,7 +118,46 @@ class TestPUT:
         assert resp.status_code == 422
 
     def test_update_nonexistent_404(self, client):
-        resp = client.put("/books/999999", json={"title": "X", "author": "Y", "version": 1})
+        resp = client.put(
+            "/books/999999", json={"title": "X", "author": "Y", "version": 1}
+        )
+        assert resp.status_code == 404
+
+
+class TestPATCH:
+    def test_patch_partial_update_returns_200(self, client):
+        post_resp = client.post(
+            "/books", json={"title": "Original", "author": "Author"}
+        )
+        book = post_resp.json()
+        resp = client.patch(
+            f"/books/{book['id']}",
+            json={"title": "New", "version": book["version"]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "New"
+        assert resp.json()["author"] == "Author"
+
+    def test_patch_version_conflict_409(self, client):
+        post_resp = client.post("/books", json={"title": "Conflict", "author": "Auth"})
+        book = post_resp.json()
+        resp = client.patch(
+            f"/books/{book['id']}",
+            json={"title": "Bad", "version": 9999},
+        )
+        assert resp.status_code == 409
+
+    def test_patch_missing_version_422(self, client):
+        post_resp = client.post("/books", json={"title": "NoVer", "author": "Auth"})
+        book = post_resp.json()
+        resp = client.patch(f"/books/{book['id']}", json={"title": "X"})
+        assert resp.status_code == 422
+
+    def test_patch_nonexistent_404(self, client):
+        resp = client.patch(
+            "/books/999999",
+            json={"title": "X", "version": 1},
+        )
         assert resp.status_code == 404
 
 

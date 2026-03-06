@@ -1,6 +1,10 @@
 version = 1
 revision = 3
 requires-python = ">=3.10"
+resolution-markers = [
+    "python_full_version >= '3.14'",
+    "python_full_version < '3.14'",
+]
 
 [[package]]
 name = "aiosqlite"
@@ -522,7 +526,7 @@ wheels = [
 
 [[package]]
 name = "lightapi"
-version = "0.1.11"
+version = "0.1.15"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },

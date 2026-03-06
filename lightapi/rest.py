@@ -183,7 +183,13 @@ class RestEndpointMeta(type):
         ]
 
         # ── Step 4: SchemaFactory ─────────────────────────────────────────────
-        cls.__schema_create__, cls.__schema_read__ = SchemaFactory.build(cls)  # type: ignore[attr-defined]
+        if reflect is True or reflect == "full" or reflect == "partial":
+            cls.__schema_create__ = None  # type: ignore[attr-defined]
+            cls.__schema_read__ = None  # type: ignore[attr-defined]
+            cls._schema_deferred = True  # type: ignore[attr-defined]
+        else:
+            cls.__schema_create__, cls.__schema_read__ = SchemaFactory.build(cls)  # type: ignore[attr-defined]
+            cls._schema_deferred = False  # type: ignore[attr-defined]
 
         # ── Step 5: Parse Meta → _meta ────────────────────────────────────────
         meta_obj = namespace.get("Meta") or getattr(cls, "Meta", None)
@@ -366,6 +372,19 @@ def _map_reflected(
         return
     except Exception:
         pass
+
+    # When partial=True, remove FieldInfo for reflected columns so SQLAlchemy
+    # instrumentation controls those attributes (prevents null in GET responses).
+    if partial:
+        from pydantic.fields import FieldInfo
+
+        for col in table.c:
+            existing = cls.__dict__.get(col.name)
+            if isinstance(existing, FieldInfo):
+                try:
+                    delattr(cls, col.name)
+                except AttributeError:
+                    pass
 
     registry.map_imperatively(cls, table)
     cls._model_class = cls  # type: ignore[attr-defined]

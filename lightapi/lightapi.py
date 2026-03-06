@@ -96,15 +96,27 @@ class LightApi:
             # Perform deferred reflection now that an engine is available
             if getattr(cls, "_reflect_deferred", False):
                 from lightapi.rest import _map_reflected
+
+                meta_obj = getattr(cls, "Meta", None) or type("Meta", (), {})
                 partial = cls._meta.get("reflect") == "partial"
                 extra_cols = getattr(cls, "_reflect_partial_columns", [])
                 _map_reflected(
                     cls,
                     cls.__name__,
-                    meta_obj=cls.__dict__.get("Meta") or type("Meta", (), {}),
+                    meta_obj=meta_obj,
                     partial=partial,
                     extra_columns=extra_cols,
                 )
+                if getattr(cls, "_schema_deferred", False):
+                    from sqlalchemy import inspect as sa_inspect
+
+                    from lightapi.schema import SchemaFactory
+
+                    table = sa_inspect(cls).persist_selectable
+                    cls.__schema_create__, cls.__schema_read__ = (
+                        SchemaFactory.build_from_reflected_table(cls, table)
+                    )
+                    cls._schema_deferred = False
                 cls._reflect_deferred = False
 
             allowed = cls._allowed_methods
