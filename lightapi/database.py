@@ -65,7 +65,9 @@ class Base:
         """
         return {
             column.name: (
-                getattr(self, column.name).isoformat() if isinstance(getattr(self, column.name), datetime) else getattr(self, column.name)
+                getattr(self, column.name).isoformat()
+                if isinstance(getattr(self, column.name), datetime)
+                else getattr(self, column.name)
             )
             for column in self.table.columns
         }

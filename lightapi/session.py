@@ -1,4 +1,5 @@
 """Session context managers for sync and async SQLAlchemy usage."""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager, contextmanager
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
 
 @contextmanager
 def get_sync_session(engine: Engine) -> Generator[Session, None, None]:
-    """Yield a synchronous Session; commit on clean exit, rollback and re-raise on exception."""
+    """Yield a sync Session; commit on exit, rollback and re-raise on exception."""
     with Session(engine) as session:
         try:
             yield session
@@ -25,7 +26,7 @@ def get_sync_session(engine: Engine) -> Generator[Session, None, None]:
 
 @asynccontextmanager
 async def get_async_session(engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
-    """Yield an AsyncSession (expire_on_commit=False); await commit on exit, rollback on exception."""
+    """Yield AsyncSession (expire_on_commit=False); commit on exit, rollback on exception."""
     from sqlalchemy.ext.asyncio import AsyncSession
 
     async with AsyncSession(engine, expire_on_commit=False) as session:

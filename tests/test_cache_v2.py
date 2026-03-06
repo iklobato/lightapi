@@ -1,6 +1,5 @@
 """Tests for Cache config integration (Meta.cache, FR-14a)."""
 
-import json
 from unittest.mock import patch
 
 import pytest

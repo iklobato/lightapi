@@ -24,6 +24,7 @@ Declarative format::
 
     middleware: [CORSMiddleware, RequestIdMiddleware]
 """
+
 from __future__ import annotations
 
 import datetime
@@ -39,6 +40,7 @@ from lightapi.exceptions import ConfigurationError
 # ─────────────────────────────────────────────────────────────────────────────
 # String → class registry (everything a YAML author would reference by name)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _build_name_registry() -> dict[str, type]:
     from lightapi.auth import AllowAny, IsAdminUser, IsAuthenticated, JWTAuthentication
@@ -92,9 +94,7 @@ def _resolve_name(name: str) -> type:
             mod = importlib.import_module(module_path)
             return getattr(mod, class_name)
         except (ImportError, AttributeError) as exc:
-            raise ConfigurationError(
-                f"Cannot resolve '{name}': {exc}"
-            ) from exc
+            raise ConfigurationError(f"Cannot resolve '{name}': {exc}") from exc
     raise ConfigurationError(
         f"Unknown class name '{name}'. "
         "Use a fully dotted import path for custom classes."
@@ -119,8 +119,10 @@ _YAML_TYPE_MAP: dict[str, type] = {
 # Pydantic v2 models — the YAML schema
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class DatabaseConfig(BaseModel):
     """Nested database block: database: { url: ... }"""
+
     url: str
 
     @field_validator("url", mode="before")
@@ -131,12 +133,14 @@ class DatabaseConfig(BaseModel):
 
 class AuthConfig(BaseModel):
     """Authentication block used in defaults and per-endpoint meta."""
+
     backend: str | None = None
     permission: Union[str, dict[str, str], None] = None
 
 
 class FilteringConfig(BaseModel):
     """Filtering block inside meta."""
+
     backends: list[str] = []
     fields: list[str] = []
     search: list[str] = []
@@ -145,23 +149,27 @@ class FilteringConfig(BaseModel):
 
 class PaginationConfig(BaseModel):
     """Pagination block used in defaults and per-endpoint meta."""
+
     style: str = "page_number"
     page_size: int = 20
 
 
 class DefaultsConfig(BaseModel):
     """Global defaults applied to all endpoints unless overridden."""
+
     authentication: AuthConfig | None = None
     pagination: PaginationConfig | None = None
 
 
 class MethodAuthConfig(BaseModel):
     """Per-method authentication override inside meta.methods dict."""
+
     authentication: AuthConfig | None = None
 
 
 class MetaConfig(BaseModel):
     """meta: block inside a declarative endpoint entry."""
+
     # methods can be a list ["GET", "POST"] or a dict {GET: {...}, DELETE: {...}}
     methods: Union[list[str], dict[str, MethodAuthConfig | None]] = []
     authentication: AuthConfig | None = None
@@ -171,6 +179,7 @@ class MetaConfig(BaseModel):
 
 class FieldSpec(BaseModel):
     """Single field definition inside fields:."""
+
     type: str
     optional: bool = False
     # All remaining keys forwarded to Field() as pydantic constraints
@@ -188,6 +197,7 @@ class FieldSpec(BaseModel):
 
 class EndpointConfig(BaseModel):
     """A single endpoint entry."""
+
     route: str
     fields: dict[str, FieldSpec] = {}
     reflect: bool = False
@@ -206,6 +216,7 @@ class EndpointConfig(BaseModel):
 
 class LightAPIConfig(BaseModel):
     """Root YAML document schema."""
+
     database: DatabaseConfig | None = None
     cors_origins: list[str] = []
     defaults: DefaultsConfig = DefaultsConfig()
@@ -220,6 +231,7 @@ class LightAPIConfig(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 # Translation: validated Pydantic model → LightAPI objects
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _substitute_env(value: str) -> str:
     """Replace ${VAR} with the environment variable value."""
@@ -260,8 +272,7 @@ def _make_authentication(
     if isinstance(merged_permission, dict):
         # Per-method permission dict: {GET: IsAuthenticated, DELETE: IsAdminUser}
         permission = {
-            method: _resolve_name(perm)
-            for method, perm in merged_permission.items()
+            method: _resolve_name(perm) for method, perm in merged_permission.items()
         }
     elif isinstance(merged_permission, str):
         permission = _resolve_name(merged_permission)
@@ -305,6 +316,7 @@ def _make_pagination(pag_cfg: PaginationConfig | None) -> Any:
     if pag_cfg is None:
         return None
     from lightapi.config import Pagination
+
     return Pagination(style=pag_cfg.style, page_size=pag_cfg.page_size)
 
 
@@ -334,11 +346,11 @@ def _build_meta_class(
                     permission_map[method] = _resolve_name(perm)
         if permission_map:
             # Determine shared backend (from endpoint auth or defaults)
-            backend_name = (
-                (meta.authentication and meta.authentication.backend)
-                or (defaults.authentication and defaults.authentication.backend)
+            backend_name = (meta.authentication and meta.authentication.backend) or (
+                defaults.authentication and defaults.authentication.backend
             )
             from lightapi.config import Authentication
+
             attrs["authentication"] = Authentication(
                 backend=_resolve_name(backend_name) if backend_name else None,
                 permission=permission_map,
@@ -401,8 +413,18 @@ def _build_endpoint_class(entry: EndpointConfig, defaults: DefaultsConfig) -> ty
         # Forward all extra keys (min_length, max_length, gt, default, …) to Field()
         extra = spec.model_extra or {}
         constraint_keys = {
-            "min_length", "max_length", "gt", "ge", "lt", "le",
-            "pattern", "unique", "index", "foreign_key", "decimal_places", "exclude",
+            "min_length",
+            "max_length",
+            "gt",
+            "ge",
+            "lt",
+            "le",
+            "pattern",
+            "unique",
+            "index",
+            "foreign_key",
+            "decimal_places",
+            "exclude",
         }
         pydantic_kwargs = {k: v for k, v in extra.items() if k in constraint_keys}
         default = pydantic_kwargs.pop("default", ... if not spec.optional else None)
@@ -429,6 +451,7 @@ def _build_endpoint_class(entry: EndpointConfig, defaults: DefaultsConfig) -> ty
 # ─────────────────────────────────────────────────────────────────────────────
 # Public entry point
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def load_config(app_cls: type, config_path: str, **overrides: Any) -> Any:
     """Parse a lightapi.yaml file and return a configured LightApi instance.

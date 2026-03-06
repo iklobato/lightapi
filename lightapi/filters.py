@@ -5,7 +5,6 @@ from typing import Any
 from sqlalchemy import asc, desc
 from starlette.requests import Request
 
-
 _RESERVED_PARAMS = frozenset({"page", "page_size", "cursor", "ordering"})
 
 
@@ -23,7 +22,8 @@ class BaseFilter:
 def _coerce_filter_value(col: Any, value: str) -> Any:
     """Coerce a query-string value to match the column's Python type."""
     try:
-        from sqlalchemy import Boolean, Integer, Numeric, Float
+        from sqlalchemy import Boolean, Float, Integer, Numeric
+
         col_type = col.property.columns[0].type if hasattr(col, "property") else None
         if col_type is None:
             # InstrumentedAttribute from mapped class
@@ -44,7 +44,9 @@ class FieldFilter(BaseFilter):
 
     def filter_queryset(self, request: Request, queryset: Any, view: Any) -> Any:
         filtering_cfg = getattr(view, "_meta", {}).get("filtering")
-        allowed_fields: list[str] = (filtering_cfg.fields or []) if filtering_cfg else []
+        allowed_fields: list[str] = (
+            (filtering_cfg.fields or []) if filtering_cfg else []
+        )
         if not allowed_fields:
             return queryset
 

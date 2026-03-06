@@ -1,4 +1,5 @@
 """Tests for US5: Filtering, Search, Ordering, and Pagination."""
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
@@ -46,11 +47,13 @@ def client():
         poolclass=StaticPool,
     )
     app_instance = LightApi(engine=engine)
-    app_instance.register({
-        "/products": ProductEndpoint,
-        "/cursor_products": CursorProduct,
-        "/nopag_products": NoPagProduct,
-    })
+    app_instance.register(
+        {
+            "/products": ProductEndpoint,
+            "/cursor_products": CursorProduct,
+            "/nopag_products": NoPagProduct,
+        }
+    )
     starlette_app = app_instance.build_app()
     c = TestClient(starlette_app)
 
@@ -167,13 +170,15 @@ class TestPageNumberPagination:
             poolclass=StaticPool,
         )
         app_instance = LightApi(engine=engine)
-        app_instance.register({
-            "/empty_products": type(
-                "EmptyProductEndpoint",
-                (ProductEndpoint,),
-                {},
-            ),
-        })
+        app_instance.register(
+            {
+                "/empty_products": type(
+                    "EmptyProductEndpoint",
+                    (ProductEndpoint,),
+                    {},
+                ),
+            }
+        )
         c = TestClient(app_instance.build_app())
         resp = c.get("/empty_products?page=1")
         assert resp.status_code == 200

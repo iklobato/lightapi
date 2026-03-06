@@ -1,12 +1,9 @@
 """Tests for US5: async and sync middleware coexistence."""
-import asyncio
 
-import pytest
-import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from pydantic import Field as PydanticField
 from sqlalchemy.ext.asyncio import create_async_engine
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse
 
 from lightapi import LightApi, RestEndpoint
 from lightapi.auth import AllowAny
@@ -71,7 +68,9 @@ async def test_async_process_is_awaited():
             return response
 
     app = _make_app([_MW])
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as c:
         r = await c.get("/items")
     assert r.status_code == 200
     assert "awaited" in log
@@ -94,7 +93,9 @@ async def test_sync_middleware_in_async_stack():
             return response
 
     app = _make_app([_AsyncMW, _SyncMW])
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as c:
         await c.get("/items")
     assert "a-pre" in log
     assert "s-pre" in log
@@ -123,7 +124,9 @@ async def test_middleware_declaration_order_preserved():
             return response
 
     app = _make_app([A, B, C])
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as c:
         await c.get("/items")
     pre_indices = [log.index(x) for x in ["A", "B", "C"]]
     assert pre_indices == sorted(pre_indices)
@@ -132,7 +135,9 @@ async def test_middleware_declaration_order_preserved():
 async def test_async_middleware_short_circuit():
     """Middleware returning a Response halts the chain; endpoint is not called."""
     app = _make_app([ShortCircuitMiddleware])
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as c:
         r = await c.get("/items")
     assert r.status_code == 200
     assert r.json() == {"short": "circuited"}

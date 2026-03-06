@@ -1,4 +1,5 @@
 """Tests for US4: self.background() fire-and-forget tasks."""
+
 import asyncio
 
 import pytest
@@ -16,9 +17,11 @@ def _build_app(tracker: list, use_async_fn: bool = False, multi: bool = False):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
 
     if use_async_fn:
+
         async def notify(item_id: int) -> None:
             tracker.append(item_id)
     else:
+
         def notify(item_id: int) -> None:  # type: ignore[misc]
             tracker.append(item_id)
 
@@ -31,6 +34,7 @@ def _build_app(tracker: list, use_async_fn: bool = False, multi: bool = False):
         async def post(self, request):
             item = await self._create_async(await _read_json(request))
             import json
+
             body = json.loads(item.body)
             if multi:
                 self.background(notify, body["id"])
@@ -46,6 +50,7 @@ def _build_app(tracker: list, use_async_fn: bool = False, multi: bool = False):
 
 async def _read_json(request):
     import json
+
     return json.loads(await request.body())
 
 

@@ -1,4 +1,5 @@
 """LightApi — application entry point."""
+
 from __future__ import annotations
 
 import asyncio
@@ -47,6 +48,7 @@ class LightApi:
             engine = create_engine(database_url)
         elif engine is None:
             from lightapi.config import config
+
             engine = create_engine(config.database_url)
 
         self._engine = engine
@@ -55,6 +57,7 @@ class LightApi:
         # Detect async engine — drives session strategy and startup validation
         try:
             from sqlalchemy.ext.asyncio import AsyncEngine
+
             self._async: bool = isinstance(engine, AsyncEngine)
         except ImportError:
             self._async = False
@@ -160,7 +163,9 @@ class LightApi:
                 elif is_async:
                     response = await endpoint._list_async(request)
                 else:
-                    response = _maybe_cached(cls, request, lambda: endpoint.list(request))
+                    response = _maybe_cached(
+                        cls, request, lambda: endpoint.list(request)
+                    )
             elif request.method == "POST":
                 data = await _read_body(request)
                 post_override = getattr(cls, "post", None)
@@ -215,7 +220,9 @@ class LightApi:
                 elif is_async:
                     response = await endpoint._retrieve_async(request, pk)
                 else:
-                    response = _maybe_cached(cls, request, lambda: endpoint.retrieve(request, pk))
+                    response = _maybe_cached(
+                        cls, request, lambda: endpoint.retrieve(request, pk)
+                    )
             elif request.method in {"PUT", "PATCH"}:
                 data = await _read_body(request)
                 partial = request.method == "PATCH"
@@ -321,6 +328,7 @@ class LightApi:
         Kwargs override YAML values (e.g. engine=..., database_url=...).
         """
         from lightapi.yaml_loader import load_config
+
         return load_config(cls, config_path, **kwargs)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -336,12 +344,14 @@ class LightApi:
                 # unless we are already inside a running loop (pytest-asyncio).
                 try:
                     asyncio.get_running_loop()
+
                     # Inside a running loop — create tables directly here (test context).
                     async def _create_inside_loop() -> None:
                         async with self._engine.begin() as conn:
                             await conn.run_sync(metadata.create_all)
 
                     import concurrent.futures
+
                     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                         pool.submit(asyncio.run, _create_inside_loop()).result()
                 except RuntimeError:
@@ -413,6 +423,7 @@ def _validate_async_dependencies(engine: Any) -> None:
 async def _read_body(request: Request) -> dict[str, Any]:
     """Read and parse JSON body; return {} on failure."""
     import json
+
     try:
         body = await request.body()
         return json.loads(body) if body else {}
@@ -448,12 +459,17 @@ def _check_auth(cls: type, request: Request) -> Response | None:
     if backend is not None:
         authenticator = backend()
         if not authenticator.authenticate(request):
-            return JSONResponse({"detail": "Authentication credentials invalid."}, status_code=401)
+            return JSONResponse(
+                {"detail": "Authentication credentials invalid."}, status_code=401
+            )
 
     if perm_cls is not None:
         perm = perm_cls()
         if not perm.has_permission(request):
-            return JSONResponse({"detail": "You do not have permission to perform this action."}, status_code=403)
+            return JSONResponse(
+                {"detail": "You do not have permission to perform this action."},
+                status_code=403,
+            )
 
     return None
 
@@ -506,6 +522,7 @@ def _maybe_cached(cls: type, request: Request, fn: Any) -> Response:
     response = fn()
     if isinstance(response, JSONResponse) and response.status_code == 200:
         import json
+
         try:
             set_cached(key, json.loads(response.body), cache_cfg.ttl)
         except Exception:
@@ -521,6 +538,7 @@ def _maybe_invalidate_cache(cls: type, request: Request) -> None:
     if cache_cfg is None:
         return
     from lightapi.cache import invalidate_cache_prefix
+
     invalidate_cache_prefix(_cache_key_prefix(cls))
 
 

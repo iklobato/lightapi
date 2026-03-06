@@ -1,4 +1,5 @@
 """Tests for lightapi/session.py — sync and async session context managers."""
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import Column, Integer, String, create_engine, text
@@ -110,6 +111,7 @@ async def test_get_async_session_not_shared(async_engine):
 async def test_missing_asyncio_extra_raises_config_error(monkeypatch, async_engine):
     """ConfigurationError raised when sqlalchemy[asyncio] import is unavailable."""
     import importlib
+
     from lightapi.exceptions import ConfigurationError
     from lightapi.lightapi import _validate_async_dependencies
 
@@ -129,6 +131,7 @@ async def test_missing_asyncio_extra_raises_config_error(monkeypatch, async_engi
 async def test_missing_dialect_driver_raises_config_error(monkeypatch, async_engine):
     """ConfigurationError with install hint when dialect driver is missing."""
     import importlib
+
     from lightapi.exceptions import ConfigurationError
     from lightapi.lightapi import _validate_async_dependencies
 

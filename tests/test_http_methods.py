@@ -1,11 +1,11 @@
 """Tests for US4: HttpMethod marker mixins and 405 Allow header."""
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
 from lightapi import HttpMethod, LightApi, RestEndpoint
-from lightapi.exceptions import ConfigurationError
 from lightapi.fields import Field as LField
 
 
@@ -29,11 +29,13 @@ def client():
         poolclass=StaticPool,
     )
     app_instance = LightApi(engine=engine)
-    app_instance.register({
-        "/readonly": ReadOnlyEndpoint,
-        "/writeonly": WriteOnlyEndpoint,
-        "/readwrite": ReadWriteEndpoint,
-    })
+    app_instance.register(
+        {
+            "/readonly": ReadOnlyEndpoint,
+            "/writeonly": WriteOnlyEndpoint,
+            "/readwrite": ReadWriteEndpoint,
+        }
+    )
     return TestClient(app_instance.build_app())
 
 

@@ -1,4 +1,5 @@
 """Tests for all four Serializer forms and validation guards."""
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
@@ -63,6 +64,7 @@ class TestSerializerForm4:
 
     def test_subclass_defines_fields_and_read_raises_at_class_load(self):
         with pytest.raises(ConfigurationError):
+
             class BadSerializer(Serializer):
                 fields = ["id"]
                 read = ["id", "name"]
@@ -81,11 +83,13 @@ class TestSerializerForm4:
 
         class Ep1(RestEndpoint):
             name: str = LField(min_length=1)
+
             class Meta:
                 serializer = SharedSer
 
         class Ep2(RestEndpoint):
             name: str = LField(min_length=1)
+
             class Meta:
                 serializer = SharedSer
 
@@ -115,6 +119,7 @@ class TestSerializerPipelineIntegration:
 
     def test_per_verb_serializer_get_only_read_fields(self):
         """GET response has only fields in Serializer(read=[...])."""
+
         class OrderEndpoint(RestEndpoint):
             name: str = LField(min_length=1)
             tag: str = LField(default="")
@@ -144,13 +149,16 @@ class TestSerializerPipelineIntegration:
 
     def test_per_verb_serializer_post_only_write_fields(self):
         """POST 201 response has only fields in Serializer(write=[...])."""
+
         class OrderEndpoint(RestEndpoint):
             name: str = LField(min_length=1)
             tag: str = LField(default="")
 
             class Meta:
                 table = "serializer_orders_write"
-                serializer = Serializer(read=["id", "name", "tag"], write=["id", "name"])
+                serializer = Serializer(
+                    read=["id", "name", "tag"], write=["id", "name"]
+                )
 
         engine = create_engine(
             "sqlite:///:memory:",

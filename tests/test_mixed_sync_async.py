@@ -1,7 +1,7 @@
 """Tests for US3: sync endpoint fallback on async app."""
+
 import time
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from pydantic import Field as PydanticField

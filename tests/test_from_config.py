@@ -1,14 +1,10 @@
-import base64
 import datetime
 import json
 import os
-import sqlite3
 import tempfile
-import time
 
 import pytest
 import yaml
-from aiohttp import web
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -20,12 +16,10 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
-    LargeBinary,
     MetaData,
     PrimaryKeyConstraint,
     String,
     Table,
-    Text,
     UniqueConstraint,
     create_engine,
     text,
@@ -85,7 +79,9 @@ def temp_db_and_config():
     metadata.create_all(engine)
     config = {
         "database_url": f"sqlite:///{db_path}",
-        "tables": [{"name": "users", "crud": ["get", "post", "put", "delete", "patch"]}],
+        "tables": [
+            {"name": "users", "crud": ["get", "post", "put", "delete", "patch"]}
+        ],
     }
     config_fd, config_path = tempfile.mkstemp(suffix=".yaml")
     with os.fdopen(config_fd, "w") as f:
@@ -134,7 +130,9 @@ class TestFromConfigExtensive:
 
         async with TestClient(TestServer(app)) as client:
             # Users table: full CRUD
-            resp = await client.post("/users/", json={"name": "Bob", "email": "bob@example.com"})
+            resp = await client.post(
+                "/users/", json={"name": "Bob", "email": "bob@example.com"}
+            )
             assert resp.status == 201
             user = await resp.json()
             user_id = user["id"]
@@ -343,7 +341,9 @@ class TestFromConfigExtensive:
         metadata.create_all(engine)
         config = {
             "database_url": f"sqlite:///{temp_db}",
-            "tables": [{"name": "complex", "crud": ["get", "post", "put", "patch", "delete"]}],
+            "tables": [
+                {"name": "complex", "crud": ["get", "post", "put", "patch", "delete"]}
+            ],
         }
         config_path = make_config(config)
         os.environ["DATABASE_URL"] = f"sqlite:///{temp_db}"
@@ -407,7 +407,9 @@ class TestFromConfigExtensive:
             assert row["name"] == "Alpha"
 
             # PUT update
-            resp = await client.put(f"/complex/{id1}", json={"name": "Alpha2", "age": 50})
+            resp = await client.put(
+                f"/complex/{id1}", json={"name": "Alpha2", "age": 50}
+            )
             assert resp.status == 200
             row = await resp.json()
             assert row["name"] == "Alpha2"
@@ -465,16 +467,20 @@ class TestFromConfigExtensive:
             author = await resp.json()
             author_id = author["id"]
             # Create book for author
-            resp = await client.post("/books/", json={"author_id": author_id, "title": "LOTR"})
+            resp = await client.post(
+                "/books/", json={"author_id": author_id, "title": "LOTR"}
+            )
             assert resp.status == 201
             book = await resp.json()
             # Try to create book with invalid author_id
-            resp = await client.post("/books/", json={"author_id": 999, "title": "Ghost"})
+            resp = await client.post(
+                "/books/", json={"author_id": 999, "title": "Ghost"}
+            )
             assert resp.status in (400, 409)
             # Delete author, book should be deleted (cascade)
             resp = await client.delete(f"/authors/{author_id}")
             assert resp.status == 204
-            resp = await client.get(f'/books/{book["id"]}')
+            resp = await client.get(f"/books/{book['id']}")
             assert resp.status == 404
         os.remove(config_path)
 
@@ -487,7 +493,9 @@ class TestFromConfigExtensive:
             metadata,
             Column("id", Integer, primary_key=True, autoincrement=True),
             Column("name", String, nullable=False),
-            Column("parent_id", Integer, ForeignKey("categories.id", ondelete="CASCADE")),
+            Column(
+                "parent_id", Integer, ForeignKey("categories.id", ondelete="CASCADE")
+            ),
         )
         metadata.create_all(engine)
         config = {
@@ -506,11 +514,15 @@ class TestFromConfigExtensive:
             assert resp.status == 201
             root = await resp.json()
             # Create child
-            resp = await client.post("/categories/", json={"name": "Child", "parent_id": root["id"]})
+            resp = await client.post(
+                "/categories/", json={"name": "Child", "parent_id": root["id"]}
+            )
             assert resp.status == 201
             child = await resp.json()
             # Patch child to move under non-existent parent
-            resp = await client.patch(f'/categories/{child["id"]}', json={"parent_id": 999})
+            resp = await client.patch(
+                f"/categories/{child['id']}", json={"parent_id": 999}
+            )
             assert resp.status in (400, 409)
         os.remove(config_path)
 
@@ -598,13 +610,19 @@ class TestFromConfigExtensive:
         from aiohttp.test_utils import TestClient, TestServer
 
         async with TestClient(TestServer(app)) as client:
-            resp = await client.post("/people/", json={"id": 1, "email": "a@b.com", "username": "bob"})
+            resp = await client.post(
+                "/people/", json={"id": 1, "email": "a@b.com", "username": "bob"}
+            )
             assert resp.status == 201
             # Duplicate email
-            resp = await client.post("/people/", json={"id": 2, "email": "a@b.com", "username": "alice"})
+            resp = await client.post(
+                "/people/", json={"id": 2, "email": "a@b.com", "username": "alice"}
+            )
             assert resp.status in (400, 409)
             # Duplicate username
-            resp = await client.post("/people/", json={"id": 3, "email": "c@d.com", "username": "bob"})
+            resp = await client.post(
+                "/people/", json={"id": 3, "email": "c@d.com", "username": "bob"}
+            )
             assert resp.status in (400, 409)
         os.remove(config_path)
 
@@ -707,7 +725,9 @@ class TestFromConfigExtensive:
                 ForeignKey("grandparent.id", ondelete="CASCADE"),
             ),
             Column("name", String),
-            ForeignKeyConstraint(["grandparent_id"], ["grandparent.id"], ondelete="CASCADE"),
+            ForeignKeyConstraint(
+                ["grandparent_id"], ["grandparent.id"], ondelete="CASCADE"
+            ),
         )
         Table(
             "child",
@@ -735,9 +755,13 @@ class TestFromConfigExtensive:
         async with TestClient(TestServer(app)) as client:
             resp = await client.post("/grandparent/", json={"id": 1, "name": "GP"})
             assert resp.status == 201
-            resp = await client.post("/parent/", json={"id": 1, "grandparent_id": 1, "name": "P"})
+            resp = await client.post(
+                "/parent/", json={"id": 1, "grandparent_id": 1, "name": "P"}
+            )
             assert resp.status == 201
-            resp = await client.post("/child/", json={"id": 1, "parent_id": 1, "name": "C"})
+            resp = await client.post(
+                "/child/", json={"id": 1, "parent_id": 1, "name": "C"}
+            )
             assert resp.status == 201
             # Delete grandparent, all should be gone
             resp = await client.delete("/grandparent/1")
@@ -794,9 +818,9 @@ class TestFromConfigExtensive:
                 Column("sum", Integer, Computed("a + b")),
             )
             metadata.create_all(engine)
-            supports_generated = True
+            _supports_generated = True
         except Exception:
-            supports_generated = False
+            _supports_generated = False
         config = {
             "database_url": f"sqlite:///{temp_db}",
             "tables": [{"name": "gen", "crud": ["get", "post"]}],
@@ -863,7 +887,9 @@ class TestFromConfigExtensive:
             resp = await client.get("/audit/")
             assert resp.status == 200
             logs = await resp.json()
-            assert any(l["main_id"] == 1 and l["action"] == "insert" for l in logs)
+            assert any(
+                log["main_id"] == 1 and log["action"] == "insert" for log in logs
+            )
         os.remove(config_path)
 
     @pytest.mark.asyncio
@@ -911,13 +937,19 @@ class TestFromConfigExtensive:
             assert resp.status == 201
             resp = await client.post("/courses/", json={"id": 1, "title": "Math"})
             assert resp.status == 201
-            resp = await client.post("/enrollments/", json={"student_id": 1, "course_id": 1})
+            resp = await client.post(
+                "/enrollments/", json={"student_id": 1, "course_id": 1}
+            )
             assert resp.status == 201
             # Try duplicate enrollment
-            resp = await client.post("/enrollments/", json={"student_id": 1, "course_id": 1})
+            resp = await client.post(
+                "/enrollments/", json={"student_id": 1, "course_id": 1}
+            )
             assert resp.status in (400, 409)
             # Delete enrollment
-            resp = await client.delete("/enrollments/1")  # Should 404 (no single PK), but test for robustness
+            resp = await client.delete(
+                "/enrollments/1"
+            )  # Should 404 (no single PK), but test for robustness
         os.remove(config_path)
 
     @pytest.mark.asyncio
@@ -1017,7 +1049,9 @@ class TestFromConfigExtensive:
         from aiohttp.test_utils import TestClient, TestServer
 
         async with TestClient(TestServer(app)) as client:
-            resp = await client.post("/events/", json={"id": 1, "end": "2025-01-01T12:00:00"})
+            resp = await client.post(
+                "/events/", json={"id": 1, "end": "2025-01-01T12:00:00"}
+            )
             if resp.status != 201:
                 print("POST /events/ error:", await resp.text())
             assert resp.status == 201
@@ -1073,7 +1107,9 @@ class TestFromConfigExtensive:
             assert resp.status == 201
             resp = await client.post("/users/", json={"id": 2, "name": "B"})
             assert resp.status == 201
-            resp = await client.post("/tasks/", json={"id": 1, "user_id": 1, "manager_id": 2})
+            resp = await client.post(
+                "/tasks/", json={"id": 1, "user_id": 1, "manager_id": 2}
+            )
             assert resp.status == 201
             row = await resp.json()
             assert row["user_id"] == 1 and row["manager_id"] == 2
@@ -1106,7 +1142,9 @@ class TestFromConfig:
 
         async with TestClient(TestServer(app)) as client:
             # POST (create)
-            resp = await client.post("/users/", json={"name": "Alice", "email": "alice@example.com"})
+            resp = await client.post(
+                "/users/", json={"name": "Alice", "email": "alice@example.com"}
+            )
             assert resp.status == 201
             data = await resp.json()
             assert data["name"] == "Alice"

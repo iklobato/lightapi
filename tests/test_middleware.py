@@ -1,4 +1,5 @@
 """Tests for US7: Middleware processing chain."""
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
@@ -61,7 +62,10 @@ class TestMiddlewareInvoked:
     def test_pre_middleware_called_on_get(self, client_with_logging):
         LoggingMiddleware.calls.clear()
         client_with_logging.get("/audit")
-        assert any(phase == "pre" and method == "GET" for phase, method in LoggingMiddleware.calls)
+        assert any(
+            phase == "pre" and method == "GET"
+            for phase, method in LoggingMiddleware.calls
+        )
 
     def test_post_middleware_called_after_get(self, client_with_logging):
         LoggingMiddleware.calls.clear()

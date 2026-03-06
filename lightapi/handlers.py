@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from lightapi.database import Base, SessionLocal
 
 
-def create_handler(model: Type[Base], session_factory=SessionLocal) -> List[web.RouteDef]:
+def create_handler(
+    model: Type[Base], session_factory=SessionLocal
+) -> List[web.RouteDef]:
     """
     Creates a list of route handlers for the given model.
     Accepts a session_factory to use for DB sessions.
@@ -20,9 +22,15 @@ def create_handler(model: Type[Base], session_factory=SessionLocal) -> List[web.
         web.post(f"/{model.__tablename__}/", CreateHandler(model, session_factory)),
         web.get(f"/{model.__tablename__}/", RetrieveAllHandler(model, session_factory)),
         web.get(f"/{model.__tablename__}/{{id}}", ReadHandler(model, session_factory)),
-        web.put(f"/{model.__tablename__}/{{id}}", UpdateHandler(model, session_factory)),
-        web.delete(f"/{model.__tablename__}/{{id}}", DeleteHandler(model, session_factory)),
-        web.patch(f"/{model.__tablename__}/{{id}}", PatchHandler(model, session_factory)),
+        web.put(
+            f"/{model.__tablename__}/{{id}}", UpdateHandler(model, session_factory)
+        ),
+        web.delete(
+            f"/{model.__tablename__}/{{id}}", DeleteHandler(model, session_factory)
+        ),
+        web.patch(
+            f"/{model.__tablename__}/{{id}}", PatchHandler(model, session_factory)
+        ),
     ]
 
 
@@ -115,23 +123,48 @@ class AbstractHandler(ABC):
                     filters = [col == getattr(item, col.name) for col in self.model.id]
                     item = db.query(self.model).filter(*filters).first()
                 else:
-                    item = db.query(self.model).filter(self.model.id == getattr(item, self.model.id.name)).first()
+                    item = (
+                        db.query(self.model)
+                        .filter(self.model.id == getattr(item, self.model.id.name))
+                        .first()
+                    )
 
             for col in self.model.__table__.columns:
-                if getattr(item, col.name) is None and col.default is not None and col.default.is_scalar:
+                if (
+                    getattr(item, col.name) is None
+                    and col.default is not None
+                    and col.default.is_scalar
+                ):
                     setattr(item, col.name, col.default.arg)
 
                 if hasattr(col.type, "python_type"):
-                    if col.type.python_type is datetime.datetime and isinstance(getattr(item, col.name), str):
+                    if col.type.python_type is datetime.datetime and isinstance(
+                        getattr(item, col.name), str
+                    ):
                         try:
-                            setattr(item, col.name, datetime.datetime.fromisoformat(getattr(item, col.name)))
+                            setattr(
+                                item,
+                                col.name,
+                                datetime.datetime.fromisoformat(
+                                    getattr(item, col.name)
+                                ),
+                            )
                         except ValueError:
                             pass
-                    elif col.type.python_type is datetime.date and isinstance(getattr(item, col.name), str):
+                    elif col.type.python_type is datetime.date and isinstance(
+                        getattr(item, col.name), str
+                    ):
                         try:
-                            setattr(item, col.name, datetime.date.fromisoformat(getattr(item, col.name)))
+                            setattr(
+                                item,
+                                col.name,
+                                datetime.date.fromisoformat(getattr(item, col.name)),
+                            )
                         except ValueError:
-                            return self.json_error_response(f"Invalid date format for field '{col.name}'", status=400)
+                            return self.json_error_response(
+                                f"Invalid date format for field '{col.name}'",
+                                status=400,
+                            )
             return item
         except (IntegrityError, StatementError) as e:
             db.rollback()
@@ -217,26 +250,42 @@ class CreateHandler(AbstractHandler):
                 if col.name not in data:
                     missing.append(col.name)
         if missing:
-            return web.json_response({"error": f"Missing required fields: {', '.join(missing)}"}, status=400)
+            return web.json_response(
+                {"error": f"Missing required fields: {', '.join(missing)}"}, status=400
+            )
 
         if "amount" in data and isinstance(data["amount"], (int, float)):
             if data["amount"] < 0:
-                return web.json_response({"error": "Amount must be non-negative"}, status=400)
+                return web.json_response(
+                    {"error": "Amount must be non-negative"}, status=400
+                )
 
         for col in self.model.__table__.columns:
             if col.name in data:
                 val = data[col.name]
                 if hasattr(col.type, "python_type"):
-                    if col.type.python_type is datetime.datetime and isinstance(val, str):
+                    if col.type.python_type is datetime.datetime and isinstance(
+                        val, str
+                    ):
                         try:
                             data[col.name] = datetime.datetime.fromisoformat(val)
                         except ValueError:
-                            return web.json_response({"error": f"Invalid datetime format for field '{col.name}'"}, status=400)
+                            return web.json_response(
+                                {
+                                    "error": f"Invalid datetime format for field '{col.name}'"
+                                },
+                                status=400,
+                            )
                     elif col.type.python_type is datetime.date and isinstance(val, str):
                         try:
                             data[col.name] = datetime.date.fromisoformat(val)
                         except ValueError:
-                            return web.json_response({"error": f"Invalid date format for field '{col.name}'"}, status=400)
+                            return web.json_response(
+                                {
+                                    "error": f"Invalid date format for field '{col.name}'"
+                                },
+                                status=400,
+                            )
         item = self.model(**data)
         item = self.add_and_commit_item(db, item)
         if isinstance(item, web.Response):
@@ -268,9 +317,13 @@ class ReadHandler(AbstractHandler):
         if self.pk_cols and len(self.pk_cols) > 1:
             pk_values = [request.match_info.get(col) for col in self.pk_cols]
             if None in pk_values:
-                return web.json_response({"error": "Missing composite key(s)"}, status=400)
+                return web.json_response(
+                    {"error": "Missing composite key(s)"}, status=400
+                )
             filters = [
-                getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)
+                getattr(self.model, col)
+                == self._parse_pk_value(val, getattr(self.model, col))
+                for col, val in zip(self.pk_cols, pk_values)
             ]
             item = db.query(self.model).filter(*filters).first()
         else:
@@ -278,7 +331,10 @@ class ReadHandler(AbstractHandler):
             pk_value = request.match_info.get(pk_col)
             item = (
                 db.query(self.model)
-                .filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col)))
+                .filter(
+                    getattr(self.model, pk_col)
+                    == self._parse_pk_value(pk_value, getattr(self.model, pk_col))
+                )
                 .first()
             )
         if not item:
@@ -311,7 +367,9 @@ class UpdateHandler(AbstractHandler):
             if None in pk_values:
                 return self.json_error_response("Missing composite key(s)", status=400)
             filters = [
-                getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)
+                getattr(self.model, col)
+                == self._parse_pk_value(val, getattr(self.model, col))
+                for col, val in zip(self.pk_cols, pk_values)
             ]
             item = db.query(self.model).filter(*filters).first()
         else:
@@ -319,7 +377,10 @@ class UpdateHandler(AbstractHandler):
             pk_value = request.match_info.get(pk_col)
             item = (
                 db.query(self.model)
-                .filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col)))
+                .filter(
+                    getattr(self.model, pk_col)
+                    == self._parse_pk_value(pk_value, getattr(self.model, pk_col))
+                )
                 .first()
             )
         if not item:
@@ -360,7 +421,9 @@ class PatchHandler(AbstractHandler):
             if None in pk_values:
                 return self.json_error_response("Missing composite key(s)", status=400)
             filters = [
-                getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)
+                getattr(self.model, col)
+                == self._parse_pk_value(val, getattr(self.model, col))
+                for col, val in zip(self.pk_cols, pk_values)
             ]
             item = db.query(self.model).filter(*filters).first()
         else:
@@ -368,7 +431,10 @@ class PatchHandler(AbstractHandler):
             pk_value = request.match_info.get(pk_col)
             item = (
                 db.query(self.model)
-                .filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col)))
+                .filter(
+                    getattr(self.model, pk_col)
+                    == self._parse_pk_value(pk_value, getattr(self.model, pk_col))
+                )
                 .first()
             )
         if not item:
@@ -380,16 +446,28 @@ class PatchHandler(AbstractHandler):
             if col.name in data:
                 val = data[col.name]
                 if hasattr(col.type, "python_type"):
-                    if col.type.python_type is datetime.datetime and isinstance(val, str):
+                    if col.type.python_type is datetime.datetime and isinstance(
+                        val, str
+                    ):
                         try:
                             data[col.name] = datetime.datetime.fromisoformat(val)
                         except ValueError:
-                            return web.json_response({"error": f"Invalid datetime format for field '{col.name}'"}, status=400)
+                            return web.json_response(
+                                {
+                                    "error": f"Invalid datetime format for field '{col.name}'"
+                                },
+                                status=400,
+                            )
                     elif col.type.python_type is datetime.date and isinstance(val, str):
                         try:
                             data[col.name] = datetime.date.fromisoformat(val)
                         except ValueError:
-                            return web.json_response({"error": f"Invalid date format for field '{col.name}'"}, status=400)
+                            return web.json_response(
+                                {
+                                    "error": f"Invalid date format for field '{col.name}'"
+                                },
+                                status=400,
+                            )
         for key, value in data.items():
             setattr(item, key, value)
 
@@ -424,7 +502,9 @@ class DeleteHandler(AbstractHandler):
             if None in pk_values:
                 return self.json_error_response("Missing composite key(s)", status=400)
             filters = [
-                getattr(self.model, col) == self._parse_pk_value(val, getattr(self.model, col)) for col, val in zip(self.pk_cols, pk_values)
+                getattr(self.model, col)
+                == self._parse_pk_value(val, getattr(self.model, col))
+                for col, val in zip(self.pk_cols, pk_values)
             ]
             item = db.query(self.model).filter(*filters).first()
         else:
@@ -432,7 +512,10 @@ class DeleteHandler(AbstractHandler):
             pk_value = request.match_info.get(pk_col)
             item = (
                 db.query(self.model)
-                .filter(getattr(self.model, pk_col) == self._parse_pk_value(pk_value, getattr(self.model, pk_col)))
+                .filter(
+                    getattr(self.model, pk_col)
+                    == self._parse_pk_value(pk_value, getattr(self.model, pk_col))
+                )
                 .first()
             )
         if not item:

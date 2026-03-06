@@ -2,6 +2,7 @@
 
 Run with: uv run python examples/smoke_async.py
 """
+
 import asyncio
 from typing import Optional
 
@@ -43,6 +44,7 @@ class Item(RestEndpoint):
 
     async def post(self, request):
         import json
+
         data = json.loads(await request.body())
         response = await self._create_async(data)
         if response.status_code == 201:
@@ -61,7 +63,9 @@ class Category(RestEndpoint):
         authentication = Authentication(permission=AllowAny)
 
     def queryset(self, request):
-        return select(type(self)._model_class).where(type(self)._model_class.active.is_(True))
+        return select(type(self)._model_class).where(
+            type(self)._model_class.active.is_(True)
+        )
 
 
 async def run_smoke() -> None:
@@ -79,7 +83,9 @@ async def run_smoke() -> None:
         assert "secret" not in str(r.json()), "secret field leaked in GET response"
 
         r = await c.post("/items", json={"name": "widget", "quantity": 5})
-        assert r.status_code == 201, f"POST /items failed: {r.status_code} body={r.text}"
+        assert r.status_code == 201, (
+            f"POST /items failed: {r.status_code} body={r.text}"
+        )
         assert set(r.json().keys()) == {"id", "name", "quantity", "created_at"}, (
             f"Unexpected keys: {set(r.json().keys())}"
         )

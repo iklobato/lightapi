@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Type
 
 import uvicorn
 from starlette.applications import Starlette
-
 from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -94,7 +93,8 @@ class LightApi:
         if route_patterns:
             methods = (
                 handler.Configuration.http_method_names
-                if hasattr(handler, "Configuration") and hasattr(handler.Configuration, "http_method_names")
+                if hasattr(handler, "Configuration")
+                and hasattr(handler.Configuration, "http_method_names")
                 else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
             )
             endpoint_handler = self._create_handler(handler, methods)
@@ -107,18 +107,21 @@ class LightApi:
         # If it's a SQLAlchemy model (RESTful resource)
         if hasattr(handler, "__tablename__") and handler.__tablename__:
             # Auto-integrate with SQLAlchemy Base if needed
-            from .database import Base
             from sqlalchemy import Column
-            
+
+            from .database import Base
+
             # Check if has Column attributes and doesn't inherit from Base
-            has_columns = any(isinstance(getattr(handler, attr, None), Column) 
-                           for attr in dir(handler))
-            
+            has_columns = any(
+                isinstance(getattr(handler, attr, None), Column)
+                for attr in dir(handler)
+            )
+
             if has_columns and not issubclass(handler, Base):
                 # Create a new class that inherits from both Base and the original class
                 # This replicates the logic from register_model_class
                 unique_name = f"{handler.__module__}.{handler.__name__}"
-                
+
                 # Create new class with Base as parent
                 new_handler = type(
                     unique_name,
@@ -128,17 +131,19 @@ class LightApi:
                         "__table_args__": {"extend_existing": True},
                     },
                 )
-                
+
                 # Replace the original class in its module's namespace
                 import sys
+
                 module = sys.modules[handler.__module__]
                 setattr(module, handler.__name__, new_handler)
                 handler = new_handler
-            
+
             tablename = handler.__tablename__
             methods = (
                 handler.Configuration.http_method_names
-                if hasattr(handler, "Configuration") and hasattr(handler.Configuration, "http_method_names")
+                if hasattr(handler, "Configuration")
+                and hasattr(handler.Configuration, "http_method_names")
                 else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
             )
             endpoint_handler = self._create_handler(handler, methods)
@@ -153,11 +158,16 @@ class LightApi:
             return
 
         # If it's a RestEndpoint subclass without route_patterns or __tablename__
-        if hasattr(handler, "Configuration") or hasattr(handler, "get") or hasattr(handler, "post"):
+        if (
+            hasattr(handler, "Configuration")
+            or hasattr(handler, "get")
+            or hasattr(handler, "post")
+        ):
             path = f"/{handler.__name__.lower()}"
             methods = (
                 handler.Configuration.http_method_names
-                if hasattr(handler, "Configuration") and hasattr(handler.Configuration, "http_method_names")
+                if hasattr(handler, "Configuration")
+                and hasattr(handler.Configuration, "http_method_names")
                 else ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
             )
             endpoint_handler = self._create_handler(handler, methods)
@@ -166,9 +176,13 @@ class LightApi:
                 self.swagger_generator.register_endpoint(path, handler)
             return
 
-        raise TypeError(f"Handler must be a SQLAlchemy model class or RestEndpoint class. Got: {handler}")
+        raise TypeError(
+            f"Handler must be a SQLAlchemy model class or RestEndpoint class. Got: {handler}"
+        )
 
-    def _create_handler(self, endpoint_class: Type["RestEndpoint"], methods: List[str]) -> Callable:
+    def _create_handler(
+        self, endpoint_class: Type["RestEndpoint"], methods: List[str]
+    ) -> Callable:
         """
         Create a request handler for an endpoint class.
 
@@ -203,7 +217,9 @@ class LightApi:
 
                 method = request.method.lower()
                 if method.upper() not in [m.upper() for m in methods]:
-                    return JSONResponse({"error": f"Method {method} not allowed"}, status_code=405)
+                    return JSONResponse(
+                        {"error": f"Method {method} not allowed"}, status_code=405
+                    )
 
                 func = getattr(endpoint, method)
                 if iscoroutinefunction(func):
@@ -275,7 +291,9 @@ class LightApi:
                     elif hasattr(route.endpoint, "__class__"):
                         endpoint_name = route.endpoint.__class__.__name__
 
-                endpoint_info.append({"path": path, "methods": methods_str, "name": endpoint_name})
+                endpoint_info.append(
+                    {"path": path, "methods": methods_str, "name": endpoint_name}
+                )
 
         if not endpoint_info:
             print("📡 No API endpoints found (only system routes)")
@@ -286,12 +304,16 @@ class LightApi:
         max_methods_len = max(len(info["methods"]) for info in endpoint_info)
 
         # Print header
-        print(f"{'Path':<{max_path_len + 2}} {'Methods':<{max_methods_len + 2}} Endpoint")
+        print(
+            f"{'Path':<{max_path_len + 2}} {'Methods':<{max_methods_len + 2}} Endpoint"
+        )
         print("-" * (max_path_len + max_methods_len + 20))
 
         # Print each endpoint
         for info in sorted(endpoint_info, key=lambda x: x["path"]):
-            print(f"{info['path']:<{max_path_len + 2}} {info['methods']:<{max_methods_len + 2}} {info['name']}")
+            print(
+                f"{info['path']:<{max_path_len + 2}} {info['methods']:<{max_methods_len + 2}} {info['name']}"
+            )
 
         # Print additional info
         if self.enable_swagger:
@@ -586,7 +608,9 @@ class CORSMiddleware(Middleware):
                     import json
 
                     content = json.loads(content.decode("utf-8"))
-                return JSONResponse(content, status_code=response.status_code, headers=all_headers)
+                return JSONResponse(
+                    content, status_code=response.status_code, headers=all_headers
+                )
             except (json.JSONDecodeError, AttributeError, UnicodeDecodeError):
                 # If we can't extract content, just add headers to existing response
                 response.headers.update(cors_headers)

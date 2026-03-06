@@ -1,5 +1,5 @@
 """Tests for US2: async queryset scoping and resolution."""
-import pytest
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from pydantic import Field as PydanticField

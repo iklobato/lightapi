@@ -1,4 +1,5 @@
 """Tests for YAML-based LightApi configuration (declarative format)."""
+
 import os
 import tempfile
 import textwrap
@@ -9,12 +10,12 @@ from pydantic import ValidationError
 
 from lightapi.exceptions import ConfigurationError
 from lightapi.lightapi import LightApi
-from lightapi.yaml_loader import LightAPIConfig, _resolve_name, load_config
-
+from lightapi.yaml_loader import LightAPIConfig, _resolve_name
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _write_yaml(content: str | dict) -> str:
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -37,6 +38,7 @@ def _from_str(content: str) -> LightApi:
 # Schema validation
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestSchemaValidation:
     def test_invalid_yaml_syntax_raises(self):
         path = _write_yaml("invalid: yaml: content: [")
@@ -56,9 +58,7 @@ class TestSchemaValidation:
     def test_unknown_field_type_raises(self):
         raw = {
             "database": {"url": "sqlite:///:memory:"},
-            "endpoints": [
-                {"route": "/x", "fields": {"foo": {"type": "nonsense"}}}
-            ],
+            "endpoints": [{"route": "/x", "fields": {"foo": {"type": "nonsense"}}}],
         }
         with pytest.raises(ValidationError):
             LightAPIConfig.model_validate(raw)
@@ -72,10 +72,10 @@ class TestSchemaValidation:
             os.unlink(path)
 
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # New declarative format
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestDeclarativeFormat:
     def _route_cls(self, app: LightApi, route_path: str) -> type:
@@ -147,6 +147,7 @@ class TestDeclarativeFormat:
         meta = cls.Meta
         assert hasattr(meta, "authentication")
         from lightapi.auth import IsAuthenticated
+
         assert meta.authentication.permission is IsAuthenticated
 
     def test_endpoint_auth_overrides_defaults(self):
@@ -169,6 +170,7 @@ class TestDeclarativeFormat:
         app = _from_str(content)
         cls = self._route_cls(app, "/public")
         from lightapi.auth import AllowAny
+
         assert cls.Meta.authentication.permission is AllowAny
 
     def test_per_method_auth_in_meta(self):
@@ -191,6 +193,7 @@ class TestDeclarativeFormat:
         app = _from_str(content)
         cls = self._route_cls(app, "/itemsauth")
         from lightapi.auth import AllowAny, IsAdminUser
+
         perm = cls.Meta.authentication.permission
         assert isinstance(perm, dict)
         assert perm.get("GET") is AllowAny
@@ -214,6 +217,7 @@ class TestDeclarativeFormat:
         app = _from_str(content)
         cls = self._route_cls(app, "/posts")
         from lightapi.filters import FieldFilter, OrderingFilter
+
         meta = cls.Meta
         assert hasattr(meta, "filtering")
         backends = meta.filtering.backends
@@ -253,6 +257,7 @@ class TestDeclarativeFormat:
             MetaConfig,
             _build_endpoint_class,
         )
+
         entry = EndpointConfig(route="/legacy", reflect=True, meta=MetaConfig())
         cls = _build_endpoint_class(entry, DefaultsConfig())
         assert cls.Meta.reflect is True
@@ -298,14 +303,17 @@ class TestDeclarativeFormat:
 # _resolve_name utility
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestResolveName:
     def test_builtin_names_resolve(self):
         from lightapi.auth import IsAuthenticated
+
         assert _resolve_name("IsAuthenticated") is IsAuthenticated
 
     def test_dotted_path_resolves(self):
         cls = _resolve_name("lightapi.auth.AllowAny")
         from lightapi.auth import AllowAny
+
         assert cls is AllowAny
 
     def test_unknown_name_raises(self):

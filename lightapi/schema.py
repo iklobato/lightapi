@@ -29,14 +29,16 @@ def normalise_serializer(
     if isinstance(serializer, type):
         if not issubclass(serializer, Serializer):
             raise ConfigurationError(
-                f"Meta.serializer must be a Serializer subclass, got '{serializer.__name__}'."
+                f"Meta.serializer must be a Serializer subclass, "
+                f"got '{serializer.__name__}'."
             )
         instance = serializer()
         return instance.fields, instance.read, instance.write
 
     if not isinstance(serializer, Serializer):
         raise ConfigurationError(
-            f"Meta.serializer must be a Serializer instance or subclass, got '{type(serializer).__name__}'."
+            f"Meta.serializer must be a Serializer instance or subclass, "
+            f"got '{type(serializer).__name__}'."
         )
     return serializer.fields, serializer.read, serializer.write
 
@@ -64,10 +66,7 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         return row
     # ORM-mapped instance: use descriptor access to trigger lazy loads
     if hasattr(row, "__mapper__"):
-        return {
-            col.key: getattr(row, col.key)
-            for col in row.__mapper__.column_attrs
-        }
+        return {col.key: getattr(row, col.key) for col in row.__mapper__.column_attrs}
     if hasattr(row, "_mapping"):
         return dict(row._mapping)
     if hasattr(row, "__dict__"):
@@ -75,9 +74,7 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
     raise SerializationError(f"Cannot convert {type(row)} to dict.")
 
 
-def _apply_fields(
-    d: dict[str, Any], fields: list[str] | None
-) -> dict[str, Any]:
+def _apply_fields(d: dict[str, Any], fields: list[str] | None) -> dict[str, Any]:
     """Project a dict to only the requested field names.  None → passthrough."""
     if fields is None:
         return d
@@ -130,9 +127,9 @@ class SchemaFactory:
                 continue
 
             if fi is not None:
-                # create schema: keep original FieldInfo with all constraints (INPUT validation)
+                # create: FieldInfo with constraints for INPUT validation
                 create_fields[name] = (annotation, fi)
-                # read schema: always Optional[T] so the serializer can project out any field
+                # read: Optional[T] so serializer can project out any field
                 read_fields[name] = (Optional[annotation], None)  # type: ignore[valid-type]
             else:
                 create_fields[name] = (annotation, ...)
@@ -198,7 +195,7 @@ class SchemaFactory:
             PG_UUID = None  # type: ignore[assignment,misc]
 
         def _col_type_to_annotation(col: Any) -> Any | None:
-            """Map SQLAlchemy column type to Pydantic annotation. Returns None if unknown."""
+            """Map SQLAlchemy column type to Pydantic annotation. None if unknown."""
             col_type = type(col.type)
             if isinstance(col.type, (Integer, BigInteger, SmallInteger)):
                 return int
@@ -307,10 +304,11 @@ class SchemaFactory:
 
 
 def _strip_lightapi_kwargs(fi: FieldInfo) -> FieldInfo:
-    """Return a copy of FieldInfo with LightAPI-only keys removed from json_schema_extra."""
-    from lightapi.fields import _LIGHTAPI_KWARGS
+    """Copy of FieldInfo with LightAPI-only keys removed from json_schema_extra."""
     from pydantic import Field as pydantic_Field
     from pydantic_core import PydanticUndefined
+
+    from lightapi.fields import _LIGHTAPI_KWARGS
 
     extra = fi.json_schema_extra or {}
     clean_extra = {k: v for k, v in extra.items() if k not in _LIGHTAPI_KWARGS}
@@ -320,7 +318,17 @@ def _strip_lightapi_kwargs(fi: FieldInfo) -> FieldInfo:
         kwargs["default"] = fi.default
     if fi.default_factory is not None:
         kwargs["default_factory"] = fi.default_factory
-    for attr in ("title", "description", "gt", "ge", "lt", "le", "min_length", "max_length", "pattern"):
+    for attr in (
+        "title",
+        "description",
+        "gt",
+        "ge",
+        "lt",
+        "le",
+        "min_length",
+        "max_length",
+        "pattern",
+    ):
         val = getattr(fi, attr, None)
         if val is not None:
             kwargs[attr] = val

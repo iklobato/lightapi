@@ -1,8 +1,6 @@
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from lightapi.cache import BaseCache, RedisCache
 
 

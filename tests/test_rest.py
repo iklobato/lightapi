@@ -69,6 +69,7 @@ class TestAnnotationTypeMap:
 
     def test_uuid_maps_to_uuid_column(self):
         """UUID annotation maps to Uuid/PG_UUID column type."""
+
         class UuidEndpoint(RestEndpoint):
             ref: UUID = LField()
 
@@ -118,7 +119,9 @@ class TestLightApiFieldKwargs:
         table = UniqueEndpoint.__table__
         from sqlalchemy import UniqueConstraint
 
-        unique_constraints = [c for c in table.constraints if isinstance(c, UniqueConstraint)]
+        unique_constraints = [
+            c for c in table.constraints if isinstance(c, UniqueConstraint)
+        ]
         assert len(unique_constraints) >= 1 or any(c.unique for c in table.c.values())
 
     def test_index_true_adds_index(self):
@@ -177,7 +180,9 @@ class TestAutoFields:
         assert "updated_at" in table.c
         assert "version" in table.c
 
-    @pytest.mark.xfail(reason="Framework may not yet reject redeclared auto fields (FR-2)")
+    @pytest.mark.xfail(
+        reason="Framework may not yet reject redeclared auto fields (FR-2)"
+    )
     def test_redeclare_auto_field_raises(self):
         """Declaring id (or other auto field) raises ConfigurationError."""
         with pytest.raises(ConfigurationError, match="id|auto"):

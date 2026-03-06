@@ -1,8 +1,9 @@
 """Tests for the serialization pipeline helpers."""
+
 import pytest
 
-from lightapi.schema import _apply_fields, _row_to_dict, resolve_fields
 from lightapi.exceptions import SerializationError
+from lightapi.schema import _apply_fields, _row_to_dict, resolve_fields
 
 
 class TestRowToDict:
@@ -60,13 +61,20 @@ class TestApplyFields:
 
 class TestJoinLabelPassthrough:
     def test_join_label_in_read_schema(self):
-        from lightapi.rest import RestEndpoint
         from lightapi.fields import Field as LField
+        from lightapi.rest import RestEndpoint
 
         class Ep(RestEndpoint):
             name: str = LField(min_length=1)
 
-        row_dict = {"id": 1, "name": "x", "version": 1, "created_at": None, "updated_at": None, "category_name": "Books"}
+        row_dict = {
+            "id": 1,
+            "name": "x",
+            "version": 1,
+            "created_at": None,
+            "updated_at": None,
+            "category_name": "Books",
+        }
         validated = Ep.__schema_read__.model_validate(row_dict)
         dumped = validated.model_dump()
         assert dumped["category_name"] == "Books"
@@ -74,32 +82,38 @@ class TestJoinLabelPassthrough:
 
 class TestResolveFields:
     def test_get_returns_read_fields(self):
-        from lightapi.rest import RestEndpoint
-        from lightapi.fields import Field as LField
         from lightapi.config import Serializer
+        from lightapi.fields import Field as LField
+        from lightapi.rest import RestEndpoint
 
         class Ep(RestEndpoint):
             name: str = LField(min_length=1)
+
             class Meta:
-                serializer = Serializer(read=["id", "name", "tag"], write=["id", "name"])
+                serializer = Serializer(
+                    read=["id", "name", "tag"], write=["id", "name"]
+                )
 
         assert resolve_fields(Ep, "GET") == ["id", "name", "tag"]
 
     def test_post_returns_write_fields(self):
-        from lightapi.rest import RestEndpoint
-        from lightapi.fields import Field as LField
         from lightapi.config import Serializer
+        from lightapi.fields import Field as LField
+        from lightapi.rest import RestEndpoint
 
         class Ep(RestEndpoint):
             name: str = LField(min_length=1)
+
             class Meta:
-                serializer = Serializer(read=["id", "name", "tag"], write=["id", "name"])
+                serializer = Serializer(
+                    read=["id", "name", "tag"], write=["id", "name"]
+                )
 
         assert resolve_fields(Ep, "POST") == ["id", "name"]
 
     def test_no_serializer_returns_none(self):
-        from lightapi.rest import RestEndpoint
         from lightapi.fields import Field as LField
+        from lightapi.rest import RestEndpoint
 
         class Ep(RestEndpoint):
             name: str = LField(min_length=1)

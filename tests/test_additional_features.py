@@ -2,16 +2,12 @@ import json
 from unittest.mock import MagicMock
 
 import pytest
-import redis
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from lightapi.cache import RedisCache
-from lightapi.core import Middleware, Response
+from lightapi.core import Response
 from lightapi.filters import ParameterFilter
-from lightapi.lightapi import LightApi
-from lightapi.rest import RestEndpoint
 
 
 class DummyRedis:

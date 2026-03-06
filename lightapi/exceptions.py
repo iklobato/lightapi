@@ -26,6 +26,8 @@ class MissingHandlerImplementationError(Exception):
             handler_name: The name of the handler that should be implemented.
             verb: The HTTP verb that requires the handler.
         """
-        super().__init__(
-            f"Missing implementation for {handler_name} required for HTTP verb: {verb}. " f"Please implement this handler in the subclass."
+        msg = (
+            f"Missing implementation for {handler_name} required for HTTP verb: "
+            f"{verb}. Please implement this handler in the subclass."
         )
+        super().__init__(msg)

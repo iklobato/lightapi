@@ -1,4 +1,5 @@
 """LightAPI v2 public API."""
+
 from lightapi.auth import AllowAny, IsAdminUser, IsAuthenticated, JWTAuthentication
 from lightapi.cache import RedisCache
 from lightapi.config import Authentication, Cache, Filtering, Pagination, Serializer

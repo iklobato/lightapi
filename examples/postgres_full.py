@@ -16,9 +16,9 @@ Demonstrates:
 Run with:
     uv run python examples/postgres_full.py
 """
+
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from typing import Optional
@@ -27,10 +27,10 @@ from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import Response
 
 from lightapi import LightApi, RestEndpoint
-from lightapi.auth import AllowAny, IsAuthenticated
+from lightapi.auth import AllowAny
 from lightapi.config import Authentication, Filtering, Pagination, Serializer
 from lightapi.core import Middleware
 from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
@@ -97,13 +97,13 @@ class Author(RestEndpoint):
         )
 
     async def queryset(self, request: Request):
-        return (
-            select(type(self)._model_class)
-            .where(type(self)._model_class.active.is_(True))
+        return select(type(self)._model_class).where(
+            type(self)._model_class.active.is_(True)
         )
 
     async def post(self, request: Request) -> Response:
         import json
+
         data = json.loads(await request.body())
         resp = await self._create_async(data)
         if resp.status_code == 201:
@@ -130,7 +130,15 @@ class Book(RestEndpoint):
         )
         pagination = Pagination(page_size=5)
         serializer = Serializer(
-            fields=["id", "title", "author_id", "isbn", "published", "page_count", "created_at"],
+            fields=[
+                "id",
+                "title",
+                "author_id",
+                "isbn",
+                "published",
+                "page_count",
+                "created_at",
+            ],
         )
 
     async def queryset(self, request: Request):
@@ -138,6 +146,7 @@ class Book(RestEndpoint):
 
     async def post(self, request: Request) -> Response:
         import json
+
         data = json.loads(await request.body())
         resp = await self._create_async(data)
         if resp.status_code == 201:
@@ -185,11 +194,13 @@ def build() -> LightApi:
         engine=engine,
         middlewares=[RequestLogMiddleware, TimingMiddleware],
     )
-    app.register({
-        "/authors": Author,
-        "/books": Book,
-        "/tags": Tag,
-    })
+    app.register(
+        {
+            "/authors": Author,
+            "/books": Book,
+            "/tags": Tag,
+        }
+    )
     return app
 
 

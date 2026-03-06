@@ -1,5 +1,5 @@
 """Tests for US1: engine swap activates full async CRUD."""
-import pytest
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from pydantic import Field as PydanticField

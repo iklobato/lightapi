@@ -50,7 +50,9 @@ class PageNumberPaginator:
         offset = (page - 1) * page_size
         count_stmt = select(func.count()).select_from(qs.subquery())
         total: int = (await session.execute(count_stmt)).scalar_one()
-        rows = (await session.execute(qs.limit(page_size).offset(offset))).scalars().all()
+        rows = (
+            (await session.execute(qs.limit(page_size).offset(offset))).scalars().all()
+        )
         return list(rows), total
 
     def wrap(
@@ -96,7 +98,11 @@ class CursorPaginator:
             try:
                 last_id = decode_cursor(cursor_str)
                 # Extract entity from the select and filter on its id column
-                entity = qs.columns_clause_froms[0] if hasattr(qs, "columns_clause_froms") else None
+                entity = (
+                    qs.columns_clause_froms[0]
+                    if hasattr(qs, "columns_clause_froms")
+                    else None
+                )
                 id_col = None
                 if entity is not None:
                     id_col = entity.c.get("id")
@@ -125,7 +131,11 @@ class CursorPaginator:
         if cursor_str:
             try:
                 last_id = decode_cursor(cursor_str)
-                entity = qs.columns_clause_froms[0] if hasattr(qs, "columns_clause_froms") else None
+                entity = (
+                    qs.columns_clause_froms[0]
+                    if hasattr(qs, "columns_clause_froms")
+                    else None
+                )
                 id_col = None
                 if entity is not None:
                     id_col = entity.c.get("id")
@@ -133,7 +143,9 @@ class CursorPaginator:
                     qs = qs.where(id_col > last_id)
             except Exception:
                 pass
-        rows = (await session.execute(qs.order_by("id").limit(page_size))).scalars().all()
+        rows = (
+            (await session.execute(qs.order_by("id").limit(page_size))).scalars().all()
+        )
         next_cursor = None
         if len(rows) == page_size:
             last_obj = rows[-1]

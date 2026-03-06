@@ -4,6 +4,7 @@ This module holds the global registry, metadata, and engine used by
 RestEndpointMeta._map_imperatively() and RestEndpoint CRUD methods.
 The engine is injected by LightApi.run() before requests start.
 """
+
 from __future__ import annotations
 
 from sqlalchemy import MetaData

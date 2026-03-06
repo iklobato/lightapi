@@ -8,11 +8,11 @@ Then try:
     curl -X POST http://localhost:8000/books -H 'Content-Type: application/json' -d '{"title":"Clean Code","author":"Martin"}'
     curl http://localhost:8000/books/1
 """
+
 from sqlalchemy import create_engine
 
 from lightapi import (
     Authentication,
-    Cache,
     Filtering,
     HttpMethod,
     IsAdminUser,
@@ -26,7 +26,14 @@ from lightapi.fields import Field
 from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
 
 
-class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE):
+class BookEndpoint(
+    RestEndpoint,
+    HttpMethod.GET,
+    HttpMethod.POST,
+    HttpMethod.PUT,
+    HttpMethod.PATCH,
+    HttpMethod.DELETE,
+):
     """A fully-featured book endpoint."""
 
     title: str = Field(min_length=1, description="Book title")
@@ -43,7 +50,15 @@ class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST, HttpMethod.PUT
         )
         pagination = Pagination(style="page_number", page_size=10)
         serializer = Serializer(
-            read=["id", "title", "author", "genre", "published", "created_at", "version"],
+            read=[
+                "id",
+                "title",
+                "author",
+                "genre",
+                "published",
+                "created_at",
+                "version",
+            ],
             write=["id", "title", "author", "genre", "published"],
         )
 
@@ -64,7 +79,9 @@ class AdminBookEndpoint(RestEndpoint, HttpMethod.DELETE):
 if __name__ == "__main__":
     engine = create_engine("sqlite:///books.db")
     app = LightApi(engine=engine)
-    app.register({
-        "/books": BookEndpoint,
-    })
+    app.register(
+        {
+            "/books": BookEndpoint,
+        }
+    )
     app.run(host="0.0.0.0", port=8000, debug=True)

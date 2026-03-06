@@ -83,7 +83,9 @@ class Authentication:
         from lightapi.auth import AllowAny
 
         self.backend = backend
-        self.permission: type | dict[str, type] = permission if permission is not None else AllowAny
+        self.permission: type | dict[str, type] = (
+            permission if permission is not None else AllowAny
+        )
 
 
 class Filtering:
@@ -110,7 +112,8 @@ class Pagination:
     def __init__(self, style: str = "page_number", page_size: int = 20) -> None:
         if style not in self.VALID_STYLES:
             raise ConfigurationError(
-                f"Pagination style '{style}' is invalid. Choose from: {self.VALID_STYLES}"
+                f"Pagination style '{style}' is invalid. "
+                f"Choose from: {self.VALID_STYLES}"
             )
         if page_size < 1:
             raise ConfigurationError("Pagination page_size must be a positive integer.")

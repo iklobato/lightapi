@@ -40,7 +40,8 @@ import os
 import time
 from typing import Optional
 
-from sqlalchemy import create_engine, select as sa_select
+from sqlalchemy import create_engine
+from sqlalchemy import select as sa_select
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
@@ -82,7 +83,9 @@ class AuditMiddleware(Middleware):
             return None
 
         # post-hook: compute elapsed time and attach header
-        elapsed = time.monotonic() - getattr(request.state, "_audit_start", time.monotonic())
+        elapsed = time.monotonic() - getattr(
+            request.state, "_audit_start", time.monotonic()
+        )
         try:
             body = json.loads(response.body)
         except Exception:
@@ -120,16 +123,34 @@ class BookEndpoint(
     class Meta:
         filtering = Filtering(
             backends=[FieldFilter, SearchFilter, OrderingFilter],
-            fields=["genre"],               # ?genre=fiction
-            search=["title", "author"],     # ?search=<term>
-            ordering=["title", "price"],    # ?ordering=price or ?ordering=-price
+            fields=["genre"],  # ?genre=fiction
+            search=["title", "author"],  # ?search=<term>
+            ordering=["title", "price"],  # ?ordering=price or ?ordering=-price
         )
         pagination = Pagination(style="page_number", page_size=5)
         serializer = Serializer(
-            read=["id", "title", "author", "genre", "price", "published",
-                  "created_at", "updated_at", "version"],
-            write=["id", "title", "author", "genre", "price", "published",
-                   "created_at", "updated_at", "version"],
+            read=[
+                "id",
+                "title",
+                "author",
+                "genre",
+                "price",
+                "published",
+                "created_at",
+                "updated_at",
+                "version",
+            ],
+            write=[
+                "id",
+                "title",
+                "author",
+                "genre",
+                "price",
+                "published",
+                "created_at",
+                "updated_at",
+                "version",
+            ],
         )
         cache = Cache(ttl=30)  # gracefully skipped if Redis is unavailable
 
@@ -160,7 +181,9 @@ class AuthorEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
         )
 
 
-class AdminBookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST, HttpMethod.DELETE):
+class AdminBookEndpoint(
+    RestEndpoint, HttpMethod.GET, HttpMethod.POST, HttpMethod.DELETE
+):
     """Admin-only endpoint (GET, POST, DELETE) — requires is_admin=True in JWT.
     Models its own `adminbookendpoints` table; demonstrates IsAdminUser permission."""
 
@@ -206,10 +229,12 @@ if __name__ == "__main__":
         middlewares=[AuditMiddleware],
         cors_origins=["http://localhost:3000"],
     )
-    app.register({
-        "/books": BookEndpoint,
-        "/admin/books": AdminBookEndpoint,
-        "/authors": AuthorEndpoint,
-        "/tags": TagEndpoint,
-    })
+    app.register(
+        {
+            "/books": BookEndpoint,
+            "/admin/books": AdminBookEndpoint,
+            "/authors": AuthorEndpoint,
+            "/tags": TagEndpoint,
+        }
+    )
     app.run(host="0.0.0.0", port=8000)

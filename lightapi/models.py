@@ -33,8 +33,6 @@ def setup_database(database_url: str = "sqlite:///app.db"):
     return engine, Session
 
 
-
-
 class Person(Base):
     """
     Person model representing a user or individual.

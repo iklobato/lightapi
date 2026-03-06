@@ -1,4 +1,5 @@
 """RestEndpointMeta metaclass and RestEndpoint base class."""
+
 from __future__ import annotations
 
 import asyncio
@@ -76,7 +77,7 @@ def _is_optional(annotation: Any) -> tuple[bool, Any]:
 
 
 class RestEndpointMeta(type):
-    """Metaclass that turns annotated RestEndpoint subclasses into mapped SQLAlchemy tables."""
+    """Metaclass: annotated RestEndpoint subclasses → mapped SQLAlchemy tables."""
 
     def __new__(
         mcs,
@@ -90,7 +91,9 @@ class RestEndpointMeta(type):
         if name == "RestEndpoint":
             return cls
 
-        is_base_only = kwargs.get("base_only", False) or namespace.get("_base_only", False)
+        is_base_only = kwargs.get("base_only", False) or namespace.get(
+            "_base_only", False
+        )
         if is_base_only:
             cls._allowed_methods = set(_ALL_METHODS)
             cls._meta = {}
@@ -105,7 +108,6 @@ class RestEndpointMeta(type):
         import typing as _typing
 
         from pydantic.fields import FieldInfo
-
 
         # ── Step 1: Collect annotations ──────────────────────────────────────
         # Use get_type_hints() so that PEP-563 string annotations (from
@@ -135,7 +137,8 @@ class RestEndpointMeta(type):
         for auto in _AUTO_FIELDS:
             if auto in namespace.get("__annotations__", {}):
                 raise ConfigurationError(
-                    f"RestEndpoint '{name}': '{auto}' is auto-injected and must not be redeclared."
+                    f"RestEndpoint '{name}': '{auto}' is auto-injected "
+                    "and must not be redeclared."
                 )
 
         # ── Step 2: Build SQLAlchemy columns ─────────────────────────────────
@@ -185,7 +188,12 @@ class RestEndpointMeta(type):
         auto_cols = [
             Column("id", Integer, primary_key=True, autoincrement=True),
             Column("created_at", DateTime, default=datetime.datetime.utcnow),
-            Column("updated_at", DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow),
+            Column(
+                "updated_at",
+                DateTime,
+                default=datetime.datetime.utcnow,
+                onupdate=datetime.datetime.utcnow,
+            ),
             Column("version", Integer, default=1, nullable=False),
         ]
 
@@ -205,16 +213,19 @@ class RestEndpointMeta(type):
         # Guard: Meta.serializer must be Serializer instance/subclass
         if raw_serializer is not None:
             from pydantic import BaseModel as PydanticBaseModel
+
             if isinstance(raw_serializer, type):
                 if issubclass(raw_serializer, PydanticBaseModel):
                     raise ConfigurationError(
-                        f"Meta.serializer on '{name}' must be a Serializer instance or subclass, "
-                        f"not a BaseModel subclass."
+                        f"Meta.serializer on '{name}' must be a Serializer "
+                        "instance or subclass, not a BaseModel subclass."
                     )
         serialiser_normalised = normalise_serializer(raw_serializer)
 
         cls._meta = {  # type: ignore[attr-defined]
-            "authentication": getattr(meta_obj, "authentication", None) if meta_obj else None,
+            "authentication": getattr(meta_obj, "authentication", None)
+            if meta_obj
+            else None,
             "filtering": getattr(meta_obj, "filtering", None) if meta_obj else None,
             "pagination": getattr(meta_obj, "pagination", None) if meta_obj else None,
             "serializer_normalised": serialiser_normalised,
@@ -242,9 +253,17 @@ class RestEndpointMeta(type):
             cls._reflect_partial_columns = columns if reflect == "partial" else []  # type: ignore[attr-defined]
         else:
             cls._reflect_deferred = False  # type: ignore[attr-defined]
-            _map_imperatively(cls, name, all_columns=auto_cols + columns, meta_obj=meta_obj)
+            _map_imperatively(
+                cls, name, all_columns=auto_cols + columns, meta_obj=meta_obj
+            )
 
-    def __init__(cls, name: str, bases: tuple[type, ...], namespace: dict[str, Any], **kwargs: Any) -> None:
+    def __init__(
+        cls,
+        name: str,
+        bases: tuple[type, ...],
+        namespace: dict[str, Any],
+        **kwargs: Any,
+    ) -> None:
         super().__init__(name, bases, namespace, **kwargs)
 
 
@@ -261,14 +280,12 @@ def _map_imperatively(
 
     registry, metadata = get_registry_and_metadata()
 
-    table_name = (
-        getattr(meta_obj, "table", None)
-        or f"{name.lower()}s"
-    )
+    table_name = getattr(meta_obj, "table", None) or f"{name.lower()}s"
 
     # Avoid double-mapping (e.g., when class is referenced from two routes)
     try:
         from sqlalchemy import inspect as sa_inspect
+
         sa_inspect(cls)
         cls._model_class = cls  # type: ignore[attr-defined]
         return
@@ -276,7 +293,7 @@ def _map_imperatively(
         pass
 
     # Remove FieldInfo class attributes so SQLAlchemy can instrument them.
-    # We already saved them in cls._fields_info; restore as plain defaults after mapping.
+    # We already saved them in cls._fields_info; restore as plain defaults.
     stashed: dict[str, Any] = {}
     for col in all_columns:
         existing = cls.__dict__.get(col.name)
@@ -315,11 +332,16 @@ def _map_reflected(
     registry, metadata = get_registry_and_metadata()
     engine = get_engine()
 
-    table_name = getattr(meta_obj, "table", None) or getattr(meta_obj, "table_name", None) or f"{name.lower()}s"
+    table_name = (
+        getattr(meta_obj, "table", None)
+        or getattr(meta_obj, "table_name", None)
+        or f"{name.lower()}s"
+    )
 
     # Detect AsyncEngine and use run_sync for reflection
     try:
         from sqlalchemy.ext.asyncio import AsyncEngine as _AE
+
         _is_async = isinstance(engine, _AE)
     except ImportError:
         _is_async = False
@@ -328,6 +350,7 @@ def _map_reflected(
         # Reflect using conn.run_sync; must be driven from a sync context.
         def _do_reflect_sync(conn: Any) -> list[str]:
             from sqlalchemy import inspect as _insp
+
             return _insp(conn).get_table_names()
 
         def _do_reflect_table(conn: Any) -> None:
@@ -343,12 +366,14 @@ def _map_reflected(
         try:
             asyncio.get_running_loop()
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 table_names = pool.submit(asyncio.run, _async_reflect()).result()
         except RuntimeError:
             table_names = asyncio.run(_async_reflect())
     else:
         from sqlalchemy import inspect as sa_inspect_engine
+
         existing_inspector = sa_inspect_engine(engine)
         table_names = existing_inspector.get_table_names()
         if table_name not in table_names:
@@ -374,6 +399,7 @@ def _map_reflected(
 
     try:
         from sqlalchemy import inspect as sa_inspect
+
         sa_inspect(cls)
         cls._model_class = cls  # type: ignore[attr-defined]
         return
@@ -431,10 +457,12 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     def _get_engine(self) -> Any:
         from lightapi._registry import get_engine
+
         engine = get_engine()
         # Sync callers use the sync engine; if an AsyncEngine was registered, unwrap it.
         try:
             from sqlalchemy.ext.asyncio import AsyncEngine as _AE
+
             if isinstance(engine, _AE):
                 return engine.sync_engine
         except ImportError:
@@ -490,15 +518,23 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
                 if pagination_cfg.style == "cursor":
                     pager = CursorPaginator()
-                    rows, next_cursor = pager.paginate(request, qs, session, pagination_cfg.page_size)
+                    rows, next_cursor = pager.paginate(
+                        request, qs, session, pagination_cfg.page_size
+                    )
                     results = [self._serialize_row(r, "GET") for r in rows]
                     return JSONResponse(pager.wrap(results, next_cursor, None))
                 else:
                     pager = PageNumberPaginator()
                     page = int(request.query_params.get("page", 1))
-                    rows, total = pager.paginate(request, qs, session, pagination_cfg.page_size)
+                    rows, total = pager.paginate(
+                        request, qs, session, pagination_cfg.page_size
+                    )
                     results = [self._serialize_row(r, "GET") for r in rows]
-                    return JSONResponse(pager.wrap(request, results, total, page, pagination_cfg.page_size))
+                    return JSONResponse(
+                        pager.wrap(
+                            request, results, total, page, pagination_cfg.page_size
+                        )
+                    )
 
             instances = session.execute(qs).scalars().all()
             results = [self._serialize_row(inst, "GET") for inst in instances]
@@ -511,9 +547,13 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         engine = self._get_engine()
         cls = type(self)
         with Session(engine) as session:
-            instance = session.execute(
-                sa_select(cls._model_class).where(cls._model_class.id == pk)
-            ).scalars().first()
+            instance = (
+                session.execute(
+                    sa_select(cls._model_class).where(cls._model_class.id == pk)
+                )
+                .scalars()
+                .first()
+            )
             if instance is None:
                 return JSONResponse({"detail": "not found"}, status_code=404)
             return JSONResponse(self._serialize_row(instance, "GET"))
@@ -539,8 +579,10 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                 version=1,
             )
             session.add(instance)
-            session.flush()          # executes INSERT, populates auto-increment id
-            session.refresh(instance)  # re-loads all columns (including DB-generated ones)
+            session.flush()  # executes INSERT, populates auto-increment id
+            session.refresh(
+                instance
+            )  # re-loads all columns (including DB-generated ones)
             response_data = self._serialize_row(instance, "POST")
             session.commit()
             return JSONResponse(response_data, status_code=201)
@@ -553,7 +595,11 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         client_version = data.get("version")
         if client_version is None:
             return JSONResponse(
-                {"detail": [{"loc": ["version"], "msg": "Field required", "type": "missing"}]},
+                {
+                    "detail": [
+                        {"loc": ["version"], "msg": "Field required", "type": "missing"}
+                    ]
+                },
                 status_code=422,
             )
 
@@ -568,6 +614,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
                 from pydantic import ConfigDict as _CD
                 from pydantic import create_model as _cm
+
                 patch_fields: dict[str, Any] = {}
                 for fname, finfo in cls.__schema_create__.model_fields.items():
                     ann = finfo.annotation
@@ -586,7 +633,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             else:
                 validated = cls.__schema_create__.model_validate(data)
                 update_data = {
-                    k: v for k, v in validated.model_dump().items() if k not in _AUTO_FIELDS
+                    k: v
+                    for k, v in validated.model_dump().items()
+                    if k not in _AUTO_FIELDS
                 }
         except ValidationError as exc:
             return JSONResponse({"detail": exc.errors()}, status_code=422)
@@ -600,8 +649,13 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                     cls._model_class.id == pk,
                     cls._model_class.version == client_version,
                 )
-                .values(**update_data, version=client_version + 1,
-                        updated_at=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
+                .values(
+                    **update_data,
+                    version=client_version + 1,
+                    updated_at=datetime.datetime.now(datetime.timezone.utc).replace(
+                        tzinfo=None
+                    ),
+                )
             )
             if result.rowcount == 0:
                 exists = session.execute(
@@ -612,9 +666,13 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                     return JSONResponse({"detail": "not found"}, status_code=404)
                 return JSONResponse({"detail": "version conflict"}, status_code=409)
             # Re-fetch so all columns (including updated_at/version) are current
-            instance = session.execute(
-                sa_select(cls._model_class).where(cls._model_class.id == pk)
-            ).scalars().first()
+            instance = (
+                session.execute(
+                    sa_select(cls._model_class).where(cls._model_class.id == pk)
+                )
+                .scalars()
+                .first()
+            )
             response_data = self._serialize_row(instance, "PUT")
             session.commit()
             return JSONResponse(response_data)
@@ -657,6 +715,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     def _get_async_engine(self) -> Any:
         """Return the raw (AsyncEngine) engine for async session creation."""
         from lightapi._registry import get_engine
+
         return get_engine()
 
     # ── Async CRUD ────────────────────────────────────────────────────────────
@@ -690,7 +749,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                     )
                     results = [self._serialize_row(r, "GET") for r in rows]
                     return JSONResponse(
-                        pager.wrap(request, results, total, page, pagination_cfg.page_size)
+                        pager.wrap(
+                            request, results, total, page, pagination_cfg.page_size
+                        )
                     )
 
             instances = (await session.execute(qs)).scalars().all()
@@ -705,10 +766,14 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         cls = type(self)
         async with get_async_session(engine) as session:
             instance = (
-                await session.execute(
-                    sa_select(cls._model_class).where(cls._model_class.id == pk)
+                (
+                    await session.execute(
+                        sa_select(cls._model_class).where(cls._model_class.id == pk)
+                    )
                 )
-            ).scalars().first()
+                .scalars()
+                .first()
+            )
             if instance is None:
                 return JSONResponse({"detail": "not found"}, status_code=404)
             return JSONResponse(self._serialize_row(instance, "GET"))
@@ -751,7 +816,11 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         client_version = data.get("version")
         if client_version is None:
             return JSONResponse(
-                {"detail": [{"loc": ["version"], "msg": "Field required", "type": "missing"}]},
+                {
+                    "detail": [
+                        {"loc": ["version"], "msg": "Field required", "type": "missing"}
+                    ]
+                },
                 status_code=422,
             )
 
@@ -764,6 +833,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
                 from pydantic import ConfigDict as _CD
                 from pydantic import create_model as _cm
+
                 patch_fields: dict[str, Any] = {}
                 for fname, finfo in cls.__schema_create__.model_fields.items():
                     ann = finfo.annotation
@@ -782,7 +852,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             else:
                 validated = cls.__schema_create__.model_validate(data)
                 update_data = {
-                    k: v for k, v in validated.model_dump().items() if k not in _AUTO_FIELDS
+                    k: v
+                    for k, v in validated.model_dump().items()
+                    if k not in _AUTO_FIELDS
                 }
         except ValidationError as exc:
             return JSONResponse({"detail": exc.errors()}, status_code=422)
@@ -799,7 +871,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                 .values(
                     **update_data,
                     version=client_version + 1,
-                    updated_at=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
+                    updated_at=datetime.datetime.now(datetime.timezone.utc).replace(
+                        tzinfo=None
+                    ),
                 )
             )
             if result.rowcount == 0:
@@ -813,10 +887,14 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                     return JSONResponse({"detail": "not found"}, status_code=404)
                 return JSONResponse({"detail": "version conflict"}, status_code=409)
             instance = (
-                await session.execute(
-                    sa_select(cls._model_class).where(cls._model_class.id == pk)
+                (
+                    await session.execute(
+                        sa_select(cls._model_class).where(cls._model_class.id == pk)
+                    )
                 )
-            ).scalars().first()
+                .scalars()
+                .first()
+            )
             response_data = self._serialize_row(instance, "PUT")
             return JSONResponse(response_data)
 

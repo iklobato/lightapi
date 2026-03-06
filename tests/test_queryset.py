@@ -1,4 +1,5 @@
 """Tests for US6: Custom queryset override."""
+
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.pool import StaticPool
@@ -15,7 +16,7 @@ class ArticleEndpoint(RestEndpoint):
 
     def queryset(self, request: Request):
         cls = type(self)
-        return select(cls._model_class).where(cls._model_class.published == True)
+        return select(cls._model_class).where(cls._model_class.published.is_(True))
 
 
 @pytest.fixture(scope="module")
@@ -54,7 +55,9 @@ class TestCustomQueryset:
 
     def test_retrieve_bypasses_queryset(self, client):
         # retrieve() uses sa_select(cls._model_class) directly, not queryset
-        draft_resp = client.post("/articles", json={"title": "Direct Draft", "published": False})
+        draft_resp = client.post(
+            "/articles", json={"title": "Direct Draft", "published": False}
+        )
         draft_id = draft_resp.json()["id"]
         resp = client.get(f"/articles/{draft_id}")
         assert resp.status_code == 200
@@ -68,9 +71,9 @@ class TestCustomQueryset:
             published: bool = LField()
 
         # Set queryset after class creation (static class attr)
-        StaticArticleEndpoint.queryset = select(StaticArticleEndpoint._model_class).where(
-            StaticArticleEndpoint._model_class.published == True
-        )
+        StaticArticleEndpoint.queryset = select(
+            StaticArticleEndpoint._model_class
+        ).where(StaticArticleEndpoint._model_class.published.is_(True))
 
         engine = create_engine(
             "sqlite:///:memory:",
@@ -100,7 +103,9 @@ class TestCustomQueryset:
 
             def queryset(self, request: Request):
                 cls = type(self)
-                return select(cls._model_class).where(cls._model_class.published == True)
+                return select(cls._model_class).where(
+                    cls._model_class.published.is_(True)
+                )
 
             class Meta:
                 filtering = Filtering(backends=[FieldFilter], fields=["category"])
@@ -113,9 +118,18 @@ class TestCustomQueryset:
         app = LightApi(engine=engine)
         app.register({"/filtered_articles": FilteredArticleEndpoint})
         c = TestClient(app.build_app())
-        c.post("/filtered_articles", json={"title": "Draft A", "published": False, "category": "x"})
-        c.post("/filtered_articles", json={"title": "Live A", "published": True, "category": "x"})
-        c.post("/filtered_articles", json={"title": "Live B", "published": True, "category": "y"})
+        c.post(
+            "/filtered_articles",
+            json={"title": "Draft A", "published": False, "category": "x"},
+        )
+        c.post(
+            "/filtered_articles",
+            json={"title": "Live A", "published": True, "category": "x"},
+        )
+        c.post(
+            "/filtered_articles",
+            json={"title": "Live B", "published": True, "category": "y"},
+        )
         resp = c.get("/filtered_articles?category=x")
         assert resp.status_code == 200
         results = resp.json()["results"]

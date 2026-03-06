@@ -20,4 +20,6 @@ def Field(**kwargs: object) -> FieldInfo:  # type: ignore[return]
         if k in _LIGHTAPI_KWARGS
     }
     existing_extra: dict[str, object] = kwargs.pop("json_schema_extra", None) or {}  # type: ignore[assignment]
-    return _pydantic_Field(**kwargs, json_schema_extra={**existing_extra, **lightapi_meta})  # type: ignore[return-value]
+    return _pydantic_Field(
+        **kwargs, json_schema_extra={**existing_extra, **lightapi_meta}
+    )  # type: ignore[return-value]
