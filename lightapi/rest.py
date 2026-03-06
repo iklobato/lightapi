@@ -131,6 +131,13 @@ class RestEndpointMeta(type):
                             annotations.pop(k, None)
                     break
 
+        # Guard: user must not redeclare auto-injected fields
+        for auto in _AUTO_FIELDS:
+            if auto in namespace.get("__annotations__", {}):
+                raise ConfigurationError(
+                    f"RestEndpoint '{name}': '{auto}' is auto-injected and must not be redeclared."
+                )
+
         # ── Step 2: Build SQLAlchemy columns ─────────────────────────────────
         columns: list[Column] = []
         fields_info: dict[str, FieldInfo] = {}
@@ -436,7 +443,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     def _get_queryset(self, request: Request) -> Any:
         cls = type(self)
-        qs_attr = cls.__dict__.get("queryset") or getattr(cls, "queryset", None)
+        qs_attr = cls.__dict__.get("queryset")
+        if qs_attr is None:
+            qs_attr = getattr(cls, "queryset", None)
         if qs_attr is None:
             return sa_select(cls._model_class)
         if callable(qs_attr):
@@ -633,7 +642,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     async def _get_queryset_async(self, request: Request) -> Any:
         """Resolve queryset; await if it is a coroutine function."""
         cls = type(self)
-        qs_attr = cls.__dict__.get("queryset") or getattr(cls, "queryset", None)
+        qs_attr = cls.__dict__.get("queryset")
+        if qs_attr is None:
+            qs_attr = getattr(cls, "queryset", None)
         if qs_attr is None:
             return sa_select(cls._model_class)
         if asyncio.iscoroutinefunction(qs_attr):

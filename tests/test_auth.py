@@ -39,6 +39,18 @@ class PublicEndpoint(RestEndpoint):
     name: str = LField(min_length=1)
 
 
+class PerMethodAuthEndpoint(RestEndpoint):
+    """GET: AllowAny, POST: IsAuthenticated."""
+
+    name: str = LField(min_length=1)
+
+    class Meta:
+        authentication = Authentication(
+            backend=JWTAuthentication,
+            permission={"GET": AllowAny, "POST": IsAuthenticated},
+        )
+
+
 @pytest.fixture(scope="module")
 def jwt_secret(monkeypatch_session=None):
     secret = "test-secret-key"
@@ -59,6 +71,7 @@ def client(jwt_secret):
         "/secrets": SecretEndpoint,
         "/admin": AdminEndpoint,
         "/public": PublicEndpoint,
+        "/permethod": PerMethodAuthEndpoint,
     })
     return TestClient(app_instance.build_app())
 
@@ -133,3 +146,19 @@ class TestPermissionClasses:
         assert IsAdminUser().has_permission(req_non_admin) is False
         assert IsAdminUser().has_permission(req_admin) is True
         assert IsAdminUser().has_permission(req_no_claim) is False
+
+
+class TestPerMethodAuth:
+    """Authentication(permission={"GET": AllowAny, "POST": IsAuthenticated})."""
+
+    def test_per_method_auth_get_allow_post_require(self, client):
+        """GET with AllowAny -> 200 without token; POST with IsAuthenticated -> 401 without token."""
+        resp_get = client.get("/permethod")
+        assert resp_get.status_code == 200
+        resp_post = client.post("/permethod", json={"name": "x"})
+        assert resp_post.status_code == 401  # No token = auth fails before permission check
+        token = _make_token({"sub": "user1"})
+        resp_post_authed = client.post(
+            "/permethod", json={"name": "x"}, headers={"Authorization": f"Bearer {token}"}
+        )
+        assert resp_post_authed.status_code == 201

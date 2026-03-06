@@ -178,3 +178,34 @@ class TestDELETE:
         client.delete(f"/books/{book_id}")
         resp = client.get(f"/books/{book_id}")
         assert resp.status_code == 404
+
+
+class TestErrorResponseFormats:
+    """Verify exact error response formats per spec."""
+
+    def test_404_detail_not_found(self, client):
+        resp = client.get("/books/999999")
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "not found"}
+
+    def test_409_detail_version_conflict(self, client):
+        post_resp = client.post("/books", json={"title": "Conflict", "author": "Auth"})
+        book = post_resp.json()
+        resp = client.put(
+            f"/books/{book['id']}",
+            json={"title": "Bad", "author": "Auth", "version": 9999},
+        )
+        assert resp.status_code == 409
+        assert resp.json()["detail"] == "version conflict"
+
+    def test_422_pydantic_format(self, client):
+        resp = client.post("/books", json={"title": "", "author": "X"})
+        assert resp.status_code == 422
+        body = resp.json()
+        assert "detail" in body
+        assert isinstance(body["detail"], list)
+        assert len(body["detail"]) >= 1
+        err = body["detail"][0]
+        assert "loc" in err
+        assert "msg" in err
+        assert "type" in err

@@ -430,11 +430,13 @@ def _build_endpoint_class(entry: EndpointConfig, defaults: DefaultsConfig) -> ty
 # Public entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
-def load_config(app_cls: type, config_path: str) -> Any:
+def load_config(app_cls: type, config_path: str, **overrides: Any) -> Any:
     """Parse a lightapi.yaml file and return a configured LightApi instance.
 
     Uses the declarative format: database.url + endpoints[].route +
     endpoints[].fields + defaults + middleware.
+
+    Kwargs override YAML-derived values (e.g. engine=..., database_url=...).
     """
     import yaml
     from pydantic import ValidationError
@@ -452,11 +454,14 @@ def load_config(app_cls: type, config_path: str) -> Any:
     db_url = cfg.effective_database_url
     middlewares: list[type] = [_resolve_name(name) for name in cfg.middleware]
 
-    instance = app_cls(
-        database_url=db_url or None,
-        cors_origins=cfg.cors_origins or None,
-        middlewares=middlewares or None,
-    )
+    constructor_kwargs: dict[str, Any] = {
+        "database_url": db_url or None,
+        "cors_origins": cfg.cors_origins or None,
+        "middlewares": middlewares or None,
+    }
+    constructor_kwargs.update(overrides)
+
+    instance = app_cls(**constructor_kwargs)
 
     mapping: dict[str, type] = {}
     for entry in cfg.endpoints:

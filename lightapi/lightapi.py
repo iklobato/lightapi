@@ -85,7 +85,9 @@ class LightApi:
                 )
             # Warn if endpoint defines async queryset but engine is sync
             if not self._async:
-                qs = cls.__dict__.get("queryset") or getattr(cls, "queryset", None)
+                qs = cls.__dict__.get("queryset")
+                if qs is None:
+                    qs = getattr(cls, "queryset", None)
                 if qs is not None and asyncio.iscoroutinefunction(qs):
                     warnings.warn(
                         f"'{cls.__name__}.queryset' is async but engine is sync; "
@@ -185,6 +187,7 @@ class LightApi:
             return await _run_post_middlewares(app_middlewares, request, response)
 
         handler.__name__ = f"{cls.__name__}_collection"
+        handler.__endpoint_cls__ = cls
         return handler
 
     def _make_detail_handler(self, cls: type) -> Any:
@@ -250,6 +253,7 @@ class LightApi:
             return await _run_post_middlewares(app_middlewares, request, response)
 
         handler.__name__ = f"{cls.__name__}_detail"
+        handler.__endpoint_cls__ = cls
         return handler
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -297,6 +301,7 @@ class LightApi:
         so it runs inside the correct event loop (not a throwaway thread loop).
         """
         self._create_tables()
+        self._check_cache_connections()
         on_startup = [self._async_create_tables] if self._async else []
         return Starlette(routes=self._routes, on_startup=on_startup)
 
@@ -305,16 +310,18 @@ class LightApi:
     # ─────────────────────────────────────────────────────────────────────────
 
     @classmethod
-    def from_config(cls, config_path: str) -> "LightApi":
+    def from_config(cls, config_path: str, **kwargs: Any) -> "LightApi":
         """Create a LightApi instance from a ``lightapi.yaml`` file.
 
         Supports both the legacy format (``database_url`` + ``endpoints[].class``)
         and the new declarative format (``database.url``, inline ``fields``,
         ``defaults``, ``middleware``).  Parsing and validation is handled by
         :mod:`lightapi.yaml_loader` using Pydantic v2 models.
+
+        Kwargs override YAML values (e.g. engine=..., database_url=...).
         """
         from lightapi.yaml_loader import load_config
-        return load_config(cls, config_path)
+        return load_config(cls, config_path, **kwargs)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Internal helpers
@@ -361,16 +368,11 @@ class LightApi:
         """Emit RuntimeWarning if any endpoint has cache configured but Redis is unreachable."""
         import warnings
 
-
-        checked = False
-        for route in self._routes:
-            handler = route.endpoint
-            cls = getattr(handler, "__endpoint_cls__", None)
-            if cls is None:
-                continue
+        for cls in self._endpoint_map.values():
             cache_cfg = getattr(cls, "_meta", {}).get("cache")
-            if cache_cfg and not checked:
+            if cache_cfg:
                 from lightapi.cache import _ping_redis
+
                 if not _ping_redis():
                     warnings.warn(
                         "Redis is configured for caching but is not reachable at startup. "
@@ -378,7 +380,7 @@ class LightApi:
                         RuntimeWarning,
                         stacklevel=3,
                     )
-                checked = True
+                break
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -420,6 +422,8 @@ async def _read_body(request: Request) -> dict[str, Any]:
 
 def _check_auth(cls: type, request: Request) -> Response | None:
     """Run authentication + permission checks; return 401/403 response or None."""
+    from lightapi.auth import AllowAny
+
     auth_cfg = cls._meta.get("authentication")
     if auth_cfg is None:
         return None
@@ -427,13 +431,27 @@ def _check_auth(cls: type, request: Request) -> Response | None:
     backend = auth_cfg.backend
     permission_cls = auth_cfg.permission
 
+    # Resolve permission for this method
+    if permission_cls is not None:
+        if isinstance(permission_cls, dict):
+            perm_cls = permission_cls.get(request.method)
+            if perm_cls is None:
+                perm_cls = AllowAny
+            # Per-method AllowAny: method is public, skip backend
+            if perm_cls is AllowAny:
+                return None
+        else:
+            perm_cls = permission_cls
+    else:
+        perm_cls = AllowAny
+
     if backend is not None:
         authenticator = backend()
         if not authenticator.authenticate(request):
             return JSONResponse({"detail": "Authentication credentials invalid."}, status_code=401)
 
-    if permission_cls is not None:
-        perm = permission_cls()
+    if perm_cls is not None:
+        perm = perm_cls()
         if not perm.has_permission(request):
             return JSONResponse({"detail": "You do not have permission to perform this action."}, status_code=403)
 
@@ -479,7 +497,10 @@ def _maybe_cached(cls: type, request: Request, fn: Any) -> Response:
         return fn()
 
     key = _cache_key(cls, request)
-    cached = get_cached(key)
+    try:
+        cached = get_cached(key)
+    except Exception:
+        cached = None
     if cached is not None:
         return JSONResponse(cached)
     response = fn()

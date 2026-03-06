@@ -5,6 +5,7 @@ from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
 from lightapi import HttpMethod, LightApi, RestEndpoint
+from lightapi.exceptions import ConfigurationError
 from lightapi.fields import Field as LField
 
 
@@ -81,3 +82,38 @@ class TestHttpMethodMeta:
 
     def test_allowed_methods_attribute_readwrite(self):
         assert ReadWriteEndpoint._allowed_methods == {"GET", "POST"}
+
+
+class Test405AllowHeader:
+    def test_405_includes_allow_header(self, client):
+        """PUT on read-only endpoint returns 405 with Allow: GET header (FR-11)."""
+        resp = client.put("/readonly/1", json={"title": "X"})
+        assert resp.status_code == 405
+        assert "Allow" in resp.headers
+        assert "GET" in resp.headers["Allow"]
+
+
+class TestRouteMerge:
+    def test_route_merge_combines_methods(self, client):
+        """ReadWriteEndpoint on /readwrite accepts both GET and POST."""
+        resp_get = client.get("/readwrite")
+        assert resp_get.status_code == 200
+        resp_post = client.post("/readwrite", json={"name": "merged"})
+        assert resp_post.status_code == 201
+
+
+class TestDuplicateRouteRegistration:
+    def test_same_route_same_verb_twice_overwrites(self, client):
+        """Registering two classes for same path: current API overwrites (no ConfigurationError)."""
+        # The register() API takes one class per path; duplicate keys in dict not possible.
+        # Second register() call would add duplicate routes - framework may or may not raise.
+        # This test documents current behavior: second registration overwrites _endpoint_map.
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        app = LightApi(engine=engine)
+        app.register({"/dup": ReadOnlyEndpoint})
+        app.register({"/dup": WriteOnlyEndpoint})  # overwrites
+        assert app._endpoint_map["/dup"] is WriteOnlyEndpoint

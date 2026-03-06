@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 # Legacy v1 test files that are not compatible with v2 API
 collect_ignore = [
-    "test_rest.py",
     "test_validators.py",
     "test_core.py",
     "test_helpers.py",

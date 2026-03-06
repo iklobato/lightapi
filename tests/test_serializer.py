@@ -1,8 +1,13 @@
 """Tests for all four Serializer forms and validation guards."""
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
+from starlette.testclient import TestClient
 
+from lightapi import LightApi, RestEndpoint
 from lightapi.config import Serializer
 from lightapi.exceptions import ConfigurationError
+from lightapi.fields import Field as LField
 from lightapi.schema import normalise_serializer
 
 
@@ -70,9 +75,6 @@ class TestSerializerForm4:
         assert f is None and r is None and w is None
 
     def test_shared_subclass_reused_on_two_endpoints(self):
-        from lightapi.rest import RestEndpoint
-        from lightapi.fields import Field as LField
-
         class SharedSer(Serializer):
             read = ["id", "name"]
             write = ["id"]
@@ -106,3 +108,61 @@ class TestSerializerValidationGuards:
 
     def test_none_returns_all_none(self):
         assert normalise_serializer(None) == (None, None, None)
+
+
+class TestSerializerPipelineIntegration:
+    """Integration tests: Serializer read/write projection in HTTP responses."""
+
+    def test_per_verb_serializer_get_only_read_fields(self):
+        """GET response has only fields in Serializer(read=[...])."""
+        class OrderEndpoint(RestEndpoint):
+            name: str = LField(min_length=1)
+            tag: str = LField(default="")
+
+            class Meta:
+                table = "serializer_orders_read"
+                serializer = Serializer(read=["id", "name"], write=["id", "name"])
+
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        app = LightApi(engine=engine)
+        app.register({"/orders": OrderEndpoint})
+        # Explicitly create our table (metadata.create_all may fail when other tests
+        # have added tables with FK issues, leaving our table uncreated)
+        OrderEndpoint.__table__.create(engine, checkfirst=True)
+        c = TestClient(app.build_app())
+        c.post("/orders", json={"name": "Order1", "tag": "secret"})
+        resp = c.get("/orders")
+        assert resp.status_code == 200
+        results = resp.json()["results"]
+        assert len(results) >= 1
+        assert set(results[0].keys()) <= {"id", "name"}
+        assert "tag" not in results[0]
+
+    def test_per_verb_serializer_post_only_write_fields(self):
+        """POST 201 response has only fields in Serializer(write=[...])."""
+        class OrderEndpoint(RestEndpoint):
+            name: str = LField(min_length=1)
+            tag: str = LField(default="")
+
+            class Meta:
+                table = "serializer_orders_write"
+                serializer = Serializer(read=["id", "name", "tag"], write=["id", "name"])
+
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        app = LightApi(engine=engine)
+        app.register({"/orders": OrderEndpoint})
+        OrderEndpoint.__table__.create(engine, checkfirst=True)
+        c = TestClient(app.build_app())
+        resp = c.post("/orders", json={"name": "Order1", "tag": "x"})
+        assert resp.status_code == 201
+        body = resp.json()
+        assert set(body.keys()) <= {"id", "name"}
+        assert "tag" not in body

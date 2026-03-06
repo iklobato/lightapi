@@ -266,6 +266,33 @@ class TestDeclarativeFormat:
         app = _from_str(content)
         assert app is not None
 
+    def test_from_config_kwargs_override_yaml(self):
+        """LightApi.from_config(path, engine=custom_engine) uses custom engine."""
+        from sqlalchemy import create_engine
+        from sqlalchemy.pool import StaticPool
+
+        content = """\
+            database:
+              url: "sqlite:///other.db"
+            endpoints:
+              - route: /items
+                fields:
+                  name: { type: str }
+                meta:
+                  methods: [GET]
+            """
+        path = _write_yaml(content)
+        try:
+            custom_engine = create_engine(
+                "sqlite:///:memory:",
+                connect_args={"check_same_thread": False},
+                poolclass=StaticPool,
+            )
+            app = LightApi.from_config(path, engine=custom_engine)
+            assert app._engine is custom_engine
+        finally:
+            os.unlink(path)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # _resolve_name utility
