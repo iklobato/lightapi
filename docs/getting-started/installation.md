@@ -211,7 +211,7 @@ from lightapi import LightApi
 load_dotenv()
 
 app = LightApi(
-    database_url=os.getenv("DATABASE_URL"),
+    database_url=os.getenv("LIGHTAPI_DATABASE_URL"),
     redis_url=os.getenv("REDIS_URL"),
     jwt_secret=os.getenv("JWT_SECRET"),
     debug=os.getenv("DEBUG", "false").lower() == "true"

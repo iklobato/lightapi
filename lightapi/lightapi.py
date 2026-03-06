@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
+import os
 import warnings
 from typing import Any
 
@@ -47,9 +48,13 @@ class LightApi:
         if engine is None and database_url:
             engine = create_engine(database_url)
         elif engine is None:
-            from lightapi.config import config
-
-            engine = create_engine(config.database_url)
+            url = os.environ.get("LIGHTAPI_DATABASE_URL")
+            if url is None:
+                raise ConfigurationError(
+                    "No database configured. Provide engine=..., database_url=..., or set "
+                    "LIGHTAPI_DATABASE_URL environment variable."
+                )
+            engine = create_engine(url)
 
         self._engine = engine
         set_engine(engine)

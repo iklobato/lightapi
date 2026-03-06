@@ -26,7 +26,7 @@ LightApi(
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `engine` | `Engine \| AsyncEngine` | SQLAlchemy engine (sync or async). |
-| `database_url` | `str \| None` | Creates a sync engine when no `engine` is provided. Falls back to `LIGHTAPI_DATABASE_URL`. |
+| `database_url` | `str \| None` | Creates a sync engine when no `engine` is provided. Falls back to `LIGHTAPI_DATABASE_URL`. Raises `ConfigurationError` if none are provided. |
 | `cors_origins` | `list[str] \| None` | CORS allowed origins. |
 | `middlewares` | `list[type] \| None` | `Middleware` subclasses applied to all requests. |
 

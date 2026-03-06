@@ -927,7 +927,7 @@ client = TestClient(app_instance.build_app())
 
 | Variable | Default | Description |
 |---|---|---|
-| `LIGHTAPI_DATABASE_URL` | `sqlite:///app.db` | Database connection URL |
+| `LIGHTAPI_DATABASE_URL` | — | Database connection URL when no `engine` or `database_url` is passed. One of `engine`, `database_url`, or `LIGHTAPI_DATABASE_URL` is required. |
 | `LIGHTAPI_JWT_SECRET` | — | Required for `JWTAuthentication` |
 | `LIGHTAPI_REDIS_URL` | `redis://localhost:6379/0` | Redis URL for response caching |
 | `LIGHTAPI_HOST` | `0.0.0.0` | Uvicorn bind host |

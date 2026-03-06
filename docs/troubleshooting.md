@@ -224,7 +224,7 @@ Use `Meta.filtering` rather than filtering results in Python — let the databas
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LIGHTAPI_DATABASE_URL` | Database URL when no engine is given | `sqlite:///app.db` |
+| `LIGHTAPI_DATABASE_URL` | Database URL when no engine is given | — (required) |
 | `LIGHTAPI_JWT_SECRET` | JWT signing secret | — (required) |
 | `LIGHTAPI_REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` |
 

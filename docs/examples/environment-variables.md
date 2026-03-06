@@ -8,7 +8,7 @@ LightAPI reads the following environment variables:
 
 | Variable | Used by | Default |
 |----------|---------|---------|
-| `LIGHTAPI_DATABASE_URL` | `LightApi` constructor when no `engine` or `database_url` is given | `sqlite:///app.db` |
+| `LIGHTAPI_DATABASE_URL` | `LightApi` constructor when no `engine` or `database_url` is given | — (required if no engine/database_url) |
 | `LIGHTAPI_JWT_SECRET` | `JWTAuthentication` | — (required when JWT auth is used) |
 | `LIGHTAPI_REDIS_URL` | Cache backend | `redis://localhost:6379/0` |
 
@@ -16,7 +16,7 @@ LightAPI reads the following environment variables:
 
 ```bash
 # .env
-DATABASE_URL=postgresql+psycopg2://user:pass@localhost/mydb
+LIGHTAPI_DATABASE_URL=postgresql+psycopg2://user:pass@localhost/mydb
 LIGHTAPI_JWT_SECRET=change-me-in-production
 LIGHTAPI_REDIS_URL=redis://localhost:6379/0
 ```
@@ -31,12 +31,10 @@ uv add python-dotenv
 from dotenv import load_dotenv
 load_dotenv()
 
-import os
-from sqlalchemy import create_engine
 from lightapi import LightApi
 
-engine = create_engine(os.environ["DATABASE_URL"])
-app = LightApi(engine=engine)
+# LightApi reads LIGHTAPI_DATABASE_URL when no engine/database_url is passed
+app = LightApi()
 ```
 
 ## YAML `${VAR}` substitution
@@ -78,14 +76,14 @@ app.run()
 **`.env.development`:**
 
 ```bash
-DATABASE_URL=sqlite:///dev.db
+LIGHTAPI_DATABASE_URL=sqlite:///dev.db
 LIGHTAPI_JWT_SECRET=dev-secret
 ```
 
 **`.env.production`:**
 
 ```bash
-DATABASE_URL=postgresql+psycopg2://user:pass@prod-db/mydb
+LIGHTAPI_DATABASE_URL=postgresql+psycopg2://user:pass@prod-db/mydb
 LIGHTAPI_JWT_SECRET=a-long-random-secret
 LIGHTAPI_REDIS_URL=redis://:password@redis-host:6379/0
 ```
@@ -97,7 +95,7 @@ Pass environment variables via `docker run -e` or Kubernetes `env:` fields:
 ```yaml
 # deployment.yaml
 env:
-  - name: DATABASE_URL
+  - name: LIGHTAPI_DATABASE_URL
     valueFrom:
       secretKeyRef:
         name: app-secrets

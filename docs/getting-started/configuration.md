@@ -26,8 +26,8 @@ app = LightApi(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `engine` | `Engine \| AsyncEngine` | auto | SQLAlchemy engine. If omitted, falls back to `database_url`. |
-| `database_url` | `str` | `config.database_url` | Creates a sync engine from this URL if `engine` is not given. |
+| `engine` | `Engine \| AsyncEngine` | — | SQLAlchemy engine. If omitted, uses `database_url` or env vars. |
+| `database_url` | `str \| None` | — | Creates a sync engine from this URL if `engine` is not given. Falls back to `LIGHTAPI_DATABASE_URL` env var. Raises `ConfigurationError` if none are provided. |
 | `cors_origins` | `list[str]` | `[]` | Domains allowed for cross-origin requests. |
 | `middlewares` | `list[type]` | `[]` | `Middleware` subclasses applied to every request. |
 
@@ -248,7 +248,7 @@ LightAPI reads the following environment variables:
 
 | Variable | Description |
 |----------|-------------|
-| `LIGHTAPI_DATABASE_URL` | Default database URL when no `engine` or `database_url` is passed. |
+| `LIGHTAPI_DATABASE_URL` | Database URL when no `engine` or `database_url` is passed. Required when neither is provided. |
 | `LIGHTAPI_JWT_SECRET` | Secret key used by `JWTAuthentication`. Required when JWT auth is used. |
 
 ## Per-endpoint configuration (`Meta`)
