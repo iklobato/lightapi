@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lightapi"
-version = "0.1.17"
+version = "0.1.18"
 description = "A lightweight framework for building API endpoints using Python's native libraries."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -110,22 +110,42 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# FROZEN / legacy modules — do not modify
-"lightapi/auth.py" = ["E501"]
-"lightapi/cache.py" = ["E501"]
-"lightapi/swagger.py" = ["E501"]
-"lightapi/lightapi.py" = ["E501"]
-"lightapi/base_endpoint.py" = ["E501"]
-"lightapi/core.py" = ["E501"]
-"lightapi/database.py" = ["E501"]
-"lightapi/handlers.py" = ["E501"]
-"lightapi/models.py" = ["E501"]
-# Examples — demo files may have long lines for readability
-"examples/*.py" = ["E501"]
-# Tests — docstrings and URLs often exceed line length
-"tests/*.py" = ["E501"]
-# Session module
-"lightapi/session.py" = ["E501"]
+"lightapi/auth.py" = [
+    "E501",
+]
+"lightapi/cache.py" = [
+    "E501",
+]
+"lightapi/swagger.py" = [
+    "E501",
+]
+"lightapi/lightapi.py" = [
+    "E501",
+]
+"lightapi/base_endpoint.py" = [
+    "E501",
+]
+"lightapi/core.py" = [
+    "E501",
+]
+"lightapi/database.py" = [
+    "E501",
+]
+"lightapi/handlers.py" = [
+    "E501",
+]
+"lightapi/models.py" = [
+    "E501",
+]
+"examples/*.py" = [
+    "E501",
+]
+"tests/*.py" = [
+    "E501",
+]
+"lightapi/session.py" = [
+    "E501",
+]
 
 [tool.mypy]
 python_version = "3.10"
@@ -147,7 +167,6 @@ module = [
 ]
 ignore_missing_imports = true
 
-# FROZEN / legacy modules — skip type checking
 [[tool.mypy.overrides]]
 module = [
     "lightapi.auth",
@@ -162,7 +181,6 @@ module = [
 ]
 ignore_errors = true
 
-# v2 modules with dynamic metaclass attributes — relax for now
 [[tool.mypy.overrides]]
 module = [
     "lightapi.rest",
