@@ -4,24 +4,6 @@ from sqlalchemy import create_engine as sa_create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import create_async_engine
 
-# Legacy v1 test files that are not compatible with v2 API
-collect_ignore = [
-    "test_validators.py",
-    "test_core.py",
-    "test_helpers.py",
-    "test_integration.py",
-    "test_caching_example.py",
-    "test_custom_snippet.py",
-    "test_filtering_pagination_example.py",
-    "test_from_config.py",
-    "test_swagger.py",
-    "test_base_endpoint.py",
-    "test_additional_features.py",
-    "test_cache.py",
-    "test_filters.py",
-    "test_pagination.py",
-]
-
 
 @pytest.fixture
 def engine() -> Engine:
@@ -53,9 +35,6 @@ async def async_app(async_engine):
     from lightapi.auth import AllowAny
     from lightapi.config import Authentication
 
-    app = LightApi(engine=async_engine)
-
-    @app.route("/items")
     class _AsyncItem(RestEndpoint):
         name: str = PydanticField(min_length=1)
         active: bool = PydanticField(default=True)
@@ -63,4 +42,6 @@ async def async_app(async_engine):
         class Meta:
             authentication = Authentication(permission=AllowAny)
 
+    app = LightApi(engine=async_engine)
+    app.register({"/items": _AsyncItem})
     return app

@@ -98,7 +98,7 @@ Tables are created automatically when `app.register(mapping)` is called:
 - **Sync engine**: `metadata.create_all(engine)` is called synchronously during `register()`.
 - **Async engine**: table creation is deferred to Starlette's `on_startup` lifecycle hook, where `await conn.run_sync(metadata.create_all)` is called inside the running event loop.
 
-You never need to call `Base.metadata.create_all()` yourself.
+LightApi creates tables automatically when you call `run()` or `build_app()` — you never need to create them yourself.
 
 ## Table reflection
 

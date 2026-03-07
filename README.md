@@ -538,41 +538,22 @@ app = LightApi.from_config("lightapi.yaml")
 app.run()
 ```
 
-#### Legacy format (existing classes)
-
-Point to pre-existing `RestEndpoint` subclasses by dotted import path:
-
-```yaml
-# lightapi.yaml
-database_url: "${DATABASE_URL}"
-cors_origins:
-  - "https://myapp.com"
-endpoints:
-  - path: /products
-    class: myapp.endpoints.ProductEndpoint
-  - path: /orders
-    class: myapp.endpoints.OrderEndpoint
-```
-
 #### YAML field reference
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `database.url` | string | SQLAlchemy URL (nested form). Supports `${VAR}`. |
-| `database_url` | string | SQLAlchemy URL (legacy flat form). Supports `${VAR}`. |
+| `database.url` | string | SQLAlchemy URL. Supports `${VAR}` env substitution. |
 | `cors_origins` | list | CORS allowed origins. |
 | `defaults.authentication` | object | `backend` + `permission` applied to every endpoint. |
 | `defaults.pagination` | object | `style` + `page_size` applied to every endpoint. |
 | `middleware` | list | Class names or dotted paths resolved at startup. |
-| `endpoints[].route` | string | URL prefix (declarative format). |
+| `endpoints[].route` | string | URL prefix. |
 | `endpoints[].fields` | object | Inline field definitions — `type`, constraints, `optional`. |
 | `endpoints[].meta.methods` | list or dict | HTTP methods to enable; dict form allows per-method auth. |
 | `endpoints[].meta.authentication` | object | Overrides `defaults.authentication` for this endpoint. |
 | `endpoints[].meta.filtering` | object | `fields`, `search`, `ordering` lists. |
 | `endpoints[].meta.pagination` | object | `style` + `page_size` for this endpoint. |
 | `endpoints[].reflect` | bool | Reflect an existing table — no fields needed. |
-| `endpoints[].path` | string | URL prefix (legacy format). |
-| `endpoints[].class` | string | Dotted import path to a `RestEndpoint` subclass (legacy). |
 
 Validation is performed by Pydantic v2 at load time. Any schema error raises a
 `ConfigurationError` with a precise message pointing to the offending field.
@@ -930,9 +911,6 @@ client = TestClient(app_instance.build_app())
 | `LIGHTAPI_DATABASE_URL` | — | Database connection URL when no `engine` or `database_url` is passed. One of `engine`, `database_url`, or `LIGHTAPI_DATABASE_URL` is required. |
 | `LIGHTAPI_JWT_SECRET` | — | Required for `JWTAuthentication` |
 | `LIGHTAPI_REDIS_URL` | `redis://localhost:6379/0` | Redis URL for response caching |
-| `LIGHTAPI_HOST` | `0.0.0.0` | Uvicorn bind host |
-| `LIGHTAPI_PORT` | `8000` | Uvicorn bind port |
-| `LIGHTAPI_DEBUG` | `false` | Enable debug mode |
 
 ### Docker
 

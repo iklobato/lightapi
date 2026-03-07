@@ -48,7 +48,6 @@ def _build_name_registry() -> dict[str, type]:
     from lightapi.filters import (
         FieldFilter,
         OrderingFilter,
-        ParameterFilter,
         SearchFilter,
     )
     from lightapi.methods import HttpMethod
@@ -64,7 +63,6 @@ def _build_name_registry() -> dict[str, type]:
         "FieldFilter": FieldFilter,
         "SearchFilter": SearchFilter,
         "OrderingFilter": OrderingFilter,
-        "ParameterFilter": ParameterFilter,
         # Middleware
         "Middleware": Middleware,
         "CORSMiddleware": CORSMiddleware,

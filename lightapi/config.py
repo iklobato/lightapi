@@ -6,8 +6,8 @@ from typing import Any
 from lightapi.exceptions import ConfigurationError
 
 
-class _LegacyConfig:
-    """Backward-compatibility shim for legacy modules and JWTAuthentication."""
+class _Config:
+    """Configuration used by JWTAuthentication and other components."""
 
     def __init__(self) -> None:
         self._overrides: dict[str, Any] = {}
@@ -25,51 +25,8 @@ class _LegacyConfig:
     def jwt_secret(self) -> str | None:
         return self._get("jwt_secret", "LIGHTAPI_JWT_SECRET")
 
-    @property
-    def database_url(self) -> str:
-        return self._get("database_url", "LIGHTAPI_DATABASE_URL", "sqlite:///app.db")
 
-    @property
-    def host(self) -> str:
-        return self._get("host", "LIGHTAPI_HOST", "0.0.0.0")
-
-    @property
-    def port(self) -> int:
-        return int(self._get("port", "LIGHTAPI_PORT", 8000))
-
-    @property
-    def debug(self) -> bool:
-        v = self._get("debug", "LIGHTAPI_DEBUG", False)
-        return v if isinstance(v, bool) else v.lower() == "true"
-
-    @property
-    def reload(self) -> bool:
-        v = self._get("reload", "LIGHTAPI_RELOAD", False)
-        return v if isinstance(v, bool) else v.lower() == "true"
-
-    @property
-    def enable_swagger(self) -> bool:
-        v = self._get("enable_swagger", "LIGHTAPI_ENABLE_SWAGGER", False)
-        return v if isinstance(v, bool) else v.lower() == "true"
-
-    @property
-    def swagger_title(self) -> str:
-        return self._get("swagger_title", "LIGHTAPI_SWAGGER_TITLE", "LightAPI")
-
-    @property
-    def swagger_version(self) -> str:
-        return self._get("swagger_version", "LIGHTAPI_SWAGGER_VERSION", "1.0.0")
-
-    @property
-    def swagger_description(self) -> str:
-        return self._get("swagger_description", "LIGHTAPI_SWAGGER_DESCRIPTION", "")
-
-    @property
-    def cors_origins(self) -> list[str]:
-        return self._get("cors_origins", "LIGHTAPI_CORS_ORIGINS", [])
-
-
-config = _LegacyConfig()
+config = _Config()
 
 
 class Authentication:

@@ -54,7 +54,7 @@ app = LightApi(engine=engine)
 
 When you call `app.register(mapping)`, LightAPI creates any missing tables automatically using the SQLAlchemy `MetaData`. For async engines, table creation runs inside Starlette's `on_startup` lifecycle hook, so the event loop is already running when it executes.
 
-You never need to call `Base.metadata.create_all()` manually.
+LightApi creates tables automatically when you call `run()` or `build_app()` — you never need to create them manually.
 
 ## Connecting to an existing database (reflection)
 

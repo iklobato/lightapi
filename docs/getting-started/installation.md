@@ -194,10 +194,9 @@ Create a `.env` file for environment-specific settings:
 
 ```bash
 # .env
-DATABASE_URL=sqlite:///development.db
-REDIS_URL=redis://localhost:6379
-JWT_SECRET=your-secret-key-here
-DEBUG=true
+LIGHTAPI_DATABASE_URL=sqlite:///development.db
+LIGHTAPI_JWT_SECRET=your-secret-key-here
+LIGHTAPI_REDIS_URL=redis://localhost:6379/0
 ```
 
 Load environment variables in your application:
@@ -207,15 +206,10 @@ import os
 from dotenv import load_dotenv
 from lightapi import LightApi
 
-# Load environment variables
 load_dotenv()
 
-app = LightApi(
-    database_url=os.getenv("LIGHTAPI_DATABASE_URL"),
-    redis_url=os.getenv("REDIS_URL"),
-    jwt_secret=os.getenv("JWT_SECRET"),
-    debug=os.getenv("DEBUG", "false").lower() == "true"
-)
+# LightApi uses LIGHTAPI_DATABASE_URL when no engine/database_url is passed
+app = LightApi(database_url=os.getenv("LIGHTAPI_DATABASE_URL"))
 ```
 
 ### Docker Setup

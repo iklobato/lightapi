@@ -325,10 +325,9 @@ class LightApi:
     def from_config(cls, config_path: str, **kwargs: Any) -> "LightApi":
         """Create a LightApi instance from a ``lightapi.yaml`` file.
 
-        Supports both the legacy format (``database_url`` + ``endpoints[].class``)
-        and the new declarative format (``database.url``, inline ``fields``,
-        ``defaults``, ``middleware``).  Parsing and validation is handled by
-        :mod:`lightapi.yaml_loader` using Pydantic v2 models.
+        Uses the declarative format: ``database.url``, ``endpoints[].route``,
+        inline ``fields``, ``defaults``, ``middleware``. Parsing and validation
+        is handled by :mod:`lightapi.yaml_loader` using Pydantic v2 models.
 
         Kwargs override YAML values (e.g. engine=..., database_url=...).
         """

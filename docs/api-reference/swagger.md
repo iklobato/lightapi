@@ -106,18 +106,3 @@ print(schema_create.model_json_schema())
 # }
 ```
 
-## v1 Swagger (legacy)
-
-The v1 `lightapi.core.LightApi` class includes built-in Swagger UI at `/docs`. If you need this feature, use the v1 class:
-
-```python
-from lightapi.core import LightApi as LightApiV1
-
-app = LightApiV1(
-    database_url="sqlite:///app.db",
-    enable_swagger=True,
-    swagger_title="My API",
-)
-```
-
-Note that `lightapi.core.LightApi` (v1) uses a different endpoint model (`Base + RestEndpoint`) and is not compatible with the v2 `RestEndpoint` syntax.

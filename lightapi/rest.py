@@ -423,10 +423,6 @@ def _map_reflected(
     cls._model_class = cls  # type: ignore[attr-defined]
 
 
-class Validator:
-    """Backward-compatibility stub. Use Pydantic Field constraints instead."""
-
-
 class RestEndpoint(metaclass=RestEndpointMeta):
     """Base class for all LightAPI endpoints.
 
