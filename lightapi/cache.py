@@ -10,17 +10,18 @@ import redis
 logger = logging.getLogger(__name__)
 
 _REDIS_URL = os.environ.get("LIGHTAPI_REDIS_URL", "redis://localhost:6379/0")
-_redis_client: "redis.Redis | None" = None
+_redis_state: dict[str, "redis.Redis | None"] = {"client": None}
 
 
 def _get_redis() -> "redis.Redis | None":
-    global _redis_client
-    if _redis_client is None:
+    if _redis_state["client"] is None:
         try:
-            _redis_client = redis.from_url(_REDIS_URL, socket_connect_timeout=1)
+            _redis_state["client"] = redis.from_url(
+                _REDIS_URL, socket_connect_timeout=1
+            )
         except Exception:
             return None
-    return _redis_client
+    return _redis_state["client"]
 
 
 def _ping_redis() -> bool:

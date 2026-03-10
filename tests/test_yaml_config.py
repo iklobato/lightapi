@@ -26,10 +26,20 @@ def _write_yaml(content: str | dict) -> str:
         return f.name
 
 
-def _from_str(content: str) -> LightApi:
+def _dummy_login_validator(username: str, password: str):
+    return None
+
+
+def _from_str(content: str, login_validator=None) -> LightApi:
     path = _write_yaml(content)
     try:
-        return LightApi.from_config(path)
+        # Pass login_validator when YAML uses JWT or Basic auth (required by LightApi)
+        needs_validator = (
+            "JWTAuthentication" in content or "BasicAuthentication" in content
+        )
+        if needs_validator and login_validator is None:
+            login_validator = _dummy_login_validator
+        return LightApi.from_config(path, login_validator=login_validator)
     finally:
         os.unlink(path)
 
@@ -295,6 +305,154 @@ class TestDeclarativeFormat:
             )
             app = LightApi.from_config(path, engine=custom_engine)
             assert app._engine is custom_engine
+        finally:
+            os.unlink(path)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auth/login YAML configuration
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestYamlAuthConfig:
+    def test_auth_path_from_yaml(self):
+        """auth.auth_path in YAML configures login/token route prefix."""
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret"
+        content = """\
+            database:
+              url: "sqlite:///:memory:"
+            auth:
+              auth_path: /api/auth
+            defaults:
+              authentication:
+                backend: JWTAuthentication
+                permission: IsAuthenticated
+            endpoints:
+              - route: /x
+                fields:
+                  data: { type: str }
+                meta:
+                  methods: [GET]
+            """
+        app = _from_str(content)
+        from starlette.testclient import TestClient
+
+        client = TestClient(app.build_app())
+        resp = client.post(
+            "/api/auth/login",
+            json={"username": "a", "password": "b"},
+        )
+        assert resp.status_code in (200, 401)
+
+    def test_login_validator_dotted_path_from_yaml(self):
+        """auth.login_validator as dotted path resolves to callable."""
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret"
+        content = """\
+            database:
+              url: "sqlite:///:memory:"
+            auth:
+              login_validator: tests.test_yaml_config._dummy_login_validator
+            defaults:
+              authentication:
+                backend: JWTAuthentication
+                permission: IsAuthenticated
+            endpoints:
+              - route: /x
+                fields:
+                  data: { type: str }
+                meta:
+                  methods: [GET]
+            """
+        app = _from_str(content)
+        assert app._login_validator is _dummy_login_validator
+
+    def test_jwt_expiration_from_defaults(self):
+        """defaults.authentication.jwt_expiration flows to Meta."""
+        content = """\
+            database:
+              url: "sqlite:///:memory:"
+            defaults:
+              authentication:
+                backend: JWTAuthentication
+                permission: IsAuthenticated
+                jwt_expiration: 300
+            endpoints:
+              - route: /x
+                fields:
+                  data: { type: str }
+                meta:
+                  methods: [GET]
+            """
+        app = _from_str(content)
+        cls = app._endpoint_map["/x"]
+        assert cls.Meta.authentication.jwt_expiration == 300
+
+    def test_jwt_extra_claims_from_defaults(self):
+        """defaults.authentication.jwt_extra_claims flows to Meta."""
+        content = """\
+            database:
+              url: "sqlite:///:memory:"
+            defaults:
+              authentication:
+                backend: JWTAuthentication
+                permission: IsAuthenticated
+                jwt_extra_claims: [sub, email]
+            endpoints:
+              - route: /x
+                fields:
+                  data: { type: str }
+                meta:
+                  methods: [GET]
+            """
+        app = _from_str(content)
+        cls = app._endpoint_map["/x"]
+        assert cls.Meta.authentication.jwt_extra_claims == ["sub", "email"]
+
+    def test_basic_authentication_from_yaml(self):
+        """BasicAuthentication can be specified as backend in YAML."""
+        content = """\
+            database:
+              url: "sqlite:///:memory:"
+            defaults:
+              authentication:
+                backend: BasicAuthentication
+                permission: IsAuthenticated
+            endpoints:
+              - route: /items
+                fields:
+                  name: { type: str }
+                meta:
+                  methods: [GET]
+            """
+        app = _from_str(content)
+        from lightapi.auth import BasicAuthentication
+
+        cls = app._endpoint_map["/items"]
+        assert cls.Meta.authentication.backend is BasicAuthentication
+
+    def test_login_validator_invalid_dotted_path_raises(self):
+        """Invalid login_validator dotted path raises ConfigurationError."""
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret"
+        content = """\
+            database:
+              url: "sqlite:///:memory:"
+            auth:
+              login_validator: non.existent.module.foo
+            defaults:
+              authentication:
+                backend: JWTAuthentication
+                permission: IsAuthenticated
+            endpoints:
+              - route: /x
+                fields:
+                  data: { type: str }
+                meta:
+                  methods: [GET]
+            """
+        path = _write_yaml(content)
+        try:
+            with pytest.raises(ConfigurationError, match="login_validator"):
+                LightApi.from_config(path)
         finally:
             os.unlink(path)
 

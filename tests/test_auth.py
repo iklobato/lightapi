@@ -59,6 +59,11 @@ def jwt_secret(monkeypatch_session=None):
     return secret
 
 
+def _login_validator(username: str, password: str):
+    """Test validator; always returns None (tests use _make_token for tokens)."""
+    return None
+
+
 @pytest.fixture(scope="module")
 def client(jwt_secret):
     os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
@@ -67,7 +72,7 @@ def client(jwt_secret):
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    app_instance = LightApi(engine=engine)
+    app_instance = LightApi(engine=engine, login_validator=_login_validator)
     app_instance.register(
         {
             "/secrets": SecretEndpoint,

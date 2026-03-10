@@ -22,12 +22,18 @@ defaults:
   authentication:
     backend: JWTAuthentication
     permission: IsAuthenticated
+    jwt_expiration: 3600
+    jwt_extra_claims: [sub, email]
   pagination:
     style: page_number
     page_size: 20
 
 middleware:
   - CORSMiddleware
+
+auth:
+  auth_path: /auth
+  login_validator: myapp.validators.validate_login
 
 endpoints:
   - route: /products
@@ -130,8 +136,12 @@ python -c "from lightapi import LightApi; LightApi.from_config('lightapi.yaml').
 |-------|------|-------------|
 | `database.url` | string | SQLAlchemy URL. Supports `${VAR}` substitution. |
 | `cors_origins` | list | CORS allowed origins. |
-| `defaults.authentication.backend` | string | Auth backend class name. |
+| `defaults.authentication.backend` | string | Auth backend class name (`JWTAuthentication`, `BasicAuthentication`). |
 | `defaults.authentication.permission` | string | Permission class name. |
+| `defaults.authentication.jwt_expiration` | int | JWT token expiration in seconds (JWT only). |
+| `defaults.authentication.jwt_extra_claims` | list | Claims to include in token payload (JWT only). |
+| `auth.auth_path` | string | Path prefix for `/login` and `/token` (default `/auth`). |
+| `auth.login_validator` | string | Dotted path to credential validator callable (e.g. `myapp.validators.check_user`). |
 | `defaults.pagination.style` | string | `page_number` or `cursor`. |
 | `defaults.pagination.page_size` | int | Rows per page. |
 | `middleware` | list | Class names resolved at startup. |

@@ -44,6 +44,8 @@ class LightApi:
         database_url: str | None = None,
         cors_origins: list[str] | None = None,
         middlewares: list[type] | None = None,
+        login_validator: Any = None,
+        auth_path: str = "/auth",
     ) -> None:
         if engine is None and database_url:
             engine = create_engine(database_url)
@@ -71,6 +73,12 @@ class LightApi:
         self._endpoint_map: dict[str, type] = {}
         self._middlewares: list[type] = middlewares or []
         self._cors_origins: list[str] = cors_origins or []
+        self._login_validator = login_validator
+        self._auth_path = auth_path
+        if login_validator is not None:
+            from lightapi._registry import set_login_validator
+
+            set_login_validator(login_validator)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Registration
@@ -143,6 +151,83 @@ class LightApi:
             self._routes.append(collection_route)
             self._routes.append(detail_route)
             self._endpoint_map[path] = cls
+
+        # Auto-register /auth/login and /auth/token when JWT or Basic auth is used
+        from lightapi.auth import BasicAuthentication, JWTAuthentication
+
+        auth_backends: set[type] = set()
+        jwt_config_expiration: int | None = None
+        jwt_config_extra_claims: list[str] | None = None
+        jwt_config_algorithm: str | None = None
+        for cls in self._endpoint_map.values():
+            auth_cfg = getattr(cls, "_meta", {}).get("authentication")
+            if auth_cfg and auth_cfg.backend:
+                auth_backends.add(auth_cfg.backend)
+                if (
+                    auth_cfg.backend is JWTAuthentication
+                    and jwt_config_expiration is None
+                ):
+                    jwt_config_expiration = getattr(auth_cfg, "jwt_expiration", None)
+                    jwt_config_extra_claims = getattr(
+                        auth_cfg, "jwt_extra_claims", None
+                    )
+                    jwt_config_algorithm = getattr(auth_cfg, "jwt_algorithm", None)
+
+        if auth_backends & {JWTAuthentication, BasicAuthentication}:
+            if self._login_validator is None:
+                raise ConfigurationError(
+                    "login_validator is required when using JWTAuthentication "
+                    "or BasicAuthentication. Pass it to LightApi(login_validator=...)."
+                )
+            has_jwt = JWTAuthentication in auth_backends
+            auth_path = self._auth_path.rstrip("/")
+            login_endpoint = self._make_login_endpoint(
+                has_jwt=has_jwt,
+                jwt_expiration=jwt_config_expiration,
+                jwt_extra_claims=jwt_config_extra_claims,
+                jwt_algorithm=jwt_config_algorithm,
+            )
+            self._routes.insert(
+                0,
+                Route(
+                    f"{auth_path}/login",
+                    login_endpoint,
+                    methods=["POST"],
+                ),
+            )
+            self._routes.insert(
+                1,
+                Route(
+                    f"{auth_path}/token",
+                    login_endpoint,
+                    methods=["POST"],
+                ),
+            )
+
+    def _make_login_endpoint(
+        self,
+        *,
+        has_jwt: bool,
+        jwt_expiration: int | None,
+        jwt_extra_claims: list[str] | None,
+        jwt_algorithm: str | None,
+    ) -> Any:
+        """Create the login/token handler with captured config."""
+        from lightapi._login import login_handler
+
+        login_validator = self._login_validator
+
+        async def handler(request: Request) -> Response:
+            return await login_handler(
+                request,
+                login_validator=login_validator,
+                has_jwt=has_jwt,
+                jwt_expiration=jwt_expiration,
+                jwt_extra_claims=jwt_extra_claims,
+                jwt_algorithm=jwt_algorithm,
+            )
+
+        return handler
 
     def _make_collection_handler(self, cls: type) -> Any:
         app_middlewares = self._middlewares
@@ -461,7 +546,15 @@ def _check_auth(cls: type, request: Request) -> Response | None:
         perm_cls = AllowAny
 
     if backend is not None:
-        authenticator = backend()
+        # Pass JWT configuration if backend is JWTAuthentication
+        if backend.__name__ == "JWTAuthentication":
+            authenticator = backend(
+                expiration=getattr(auth_cfg, "jwt_expiration", None),
+                algorithm=getattr(auth_cfg, "jwt_algorithm", None),
+            )
+        else:
+            authenticator = backend()
+
         if not authenticator.authenticate(request):
             return JSONResponse(
                 {"detail": "Authentication credentials invalid."}, status_code=401

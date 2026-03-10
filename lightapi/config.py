@@ -9,6 +9,18 @@ from lightapi.exceptions import ConfigurationError
 class _Config:
     """Configuration used by JWTAuthentication and other components."""
 
+    VALID_JWT_ALGORITHMS = {
+        "HS256",
+        "HS384",
+        "HS512",
+        "RS256",
+        "RS384",
+        "RS512",
+        "ES256",
+        "ES384",
+        "ES512",
+    }
+
     def __init__(self) -> None:
         self._overrides: dict[str, Any] = {}
 
@@ -25,6 +37,16 @@ class _Config:
     def jwt_secret(self) -> str | None:
         return self._get("jwt_secret", "LIGHTAPI_JWT_SECRET")
 
+    @property
+    def jwt_algorithm(self) -> str:
+        algorithm = self._get("jwt_algorithm", "LIGHTAPI_JWT_ALGORITHM", "HS256")
+        if algorithm not in self.VALID_JWT_ALGORITHMS:
+            raise ConfigurationError(
+                f"Invalid JWT algorithm '{algorithm}'. "
+                f"Valid algorithms are: {sorted(self.VALID_JWT_ALGORITHMS)}"
+            )
+        return algorithm
+
 
 config = _Config()
 
@@ -36,6 +58,9 @@ class Authentication:
         self,
         backend: type | None = None,
         permission: type | dict[str, type] | None = None,
+        jwt_expiration: int | None = None,
+        jwt_extra_claims: list[str] | None = None,
+        jwt_algorithm: str | None = None,
     ) -> None:
         from lightapi.auth import AllowAny
 
@@ -43,6 +68,9 @@ class Authentication:
         self.permission: type | dict[str, type] = (
             permission if permission is not None else AllowAny
         )
+        self.jwt_expiration = jwt_expiration
+        self.jwt_extra_claims = jwt_extra_claims
+        self.jwt_algorithm = jwt_algorithm
 
 
 class Filtering:
