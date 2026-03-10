@@ -1,6 +1,6 @@
 import base64
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import jwt
 from starlette.requests import Request
@@ -18,24 +18,24 @@ class BaseAuthentication:
     By default, allows all requests.
     """
 
-    def authenticate(self, _request: Request) -> bool:
+    def authenticate(self, request: Request) -> bool:
         """
         Authenticate a request.
 
         Args:
-            _request: The HTTP request to authenticate (unused in base class).
+            request: The HTTP request to authenticate.
 
         Returns:
             bool: True if authentication succeeds, False otherwise.
         """
         return True
 
-    def get_auth_error_response(self, _request: Request) -> JSONResponse:
+    def get_auth_error_response(self, request: Request) -> JSONResponse:
         """
         Get the response to return when authentication fails.
 
         Args:
-            _request: The HTTP request object (unused in base class).
+            request: The HTTP request object.
 
         Returns:
             Response object for authentication error.
@@ -88,24 +88,27 @@ class JWTAuthentication(BaseAuthentication):
             return True
 
         auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
+        if not auth_header or not auth_header.lower().startswith("bearer "):
             return False
 
-        token = auth_header.split(" ")[1]
         try:
-            payload = self.decode_token(token)
-            request.state.user = payload
-            return True
-        except jwt.InvalidTokenError:
+            token = auth_header.split(" ", 1)[1]
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+        except (jwt.InvalidTokenError, ValueError, IndexError):
             return False
 
-    def generate_token(self, payload: Dict, expiration: Optional[int] = None) -> str:
+        request.state.user = payload
+        return True
+
+    def generate_token(
+        self, payload: dict[str, Any], expiration: int | None = None
+    ) -> str:
         """
-        Generate a JWT token.
+        Generate a JWT token with the given payload.
 
         Args:
-            payload: The data to encode in the token.
-            expiration: Token expiration time in seconds.
+            payload: Dictionary of claims to include in the token.
+            expiration: Optional expiration time in seconds (overrides default).
 
         Returns:
             str: The encoded JWT token.
@@ -126,33 +129,6 @@ class JWTAuthentication(BaseAuthentication):
             "exp": datetime.utcnow() + timedelta(seconds=exp_seconds),
         }
         return jwt.encode(token_data, self.secret_key, algorithm=self.algorithm)
-
-    def decode_token(self, token: str) -> Dict:
-        """
-        Decode and verify a JWT token.
-
-        Args:
-            token: The JWT token to decode.
-
-        Returns:
-            dict: The decoded token payload.
-
-        Raises:
-            jwt.InvalidTokenError: If the token is invalid or expired.
-        """
-        return jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
-
-    def get_auth_error_response(self, request: Request) -> JSONResponse:
-        """
-        Get the response to return when authentication fails.
-
-        Args:
-            request: The HTTP request object.
-
-        Returns:
-            Response object for authentication error.
-        """
-        return JSONResponse({"error": "authentication failed"}, status_code=401)
 
 
 class BasicAuthentication(BaseAuthentication):
