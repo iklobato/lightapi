@@ -58,6 +58,8 @@ def jwt_client():
     )
     app = LightApi(engine=engine, login_validator=_valid_validator)
     app.register({"/secrets": JWTProtectedEndpoint})
+    # Disable rate limiting for tests
+    app._auth_rate_limiter = None
     return TestClient(app.build_app())
 
 
@@ -70,6 +72,8 @@ def basic_client():
     )
     app = LightApi(engine=engine, login_validator=_valid_validator)
     app.register({"/items": BasicProtectedEndpoint})
+    # Disable rate limiting for tests
+    app._auth_rate_limiter = None
     return TestClient(app.build_app())
 
 
@@ -294,7 +298,7 @@ class TestJWTConfigOverrides:
         def validator_with_extra(username: str, password: str):
             if username == "alice" and password == "secret":
                 return {
-                    "sub": "1",
+                    "user_id": "1",
                     "email": "a@b.com",
                     "secret": "must-not-appear",
                 }
@@ -306,7 +310,7 @@ class TestJWTConfigOverrides:
             class Meta:
                 authentication = Authentication(
                     backend=JWTAuthentication,
-                    jwt_extra_claims=["sub", "email"],
+                    jwt_extra_claims=["user_id", "email"],
                 )
 
         os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
@@ -325,7 +329,7 @@ class TestJWTConfigOverrides:
         assert resp.status_code == 200
         token = resp.json()["token"]
         payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
-        assert "sub" in payload
+        assert "user_id" in payload
         assert "email" in payload
         assert "secret" not in payload
 
@@ -717,7 +721,7 @@ class TestJWTExtraClaimsEdgeCases:
     def test_jwt_extra_claims_partial_overlap_only_included_in_token(self):
         def validator_partial(username: str, password: str):
             if username == "alice" and password == "secret":
-                return {"sub": "1", "email": "a@b.com"}
+                return {"user_id": "1", "email": "a@b.com"}
             return None
 
         class JWTPartialExtraEndpoint(RestEndpoint):
@@ -726,7 +730,7 @@ class TestJWTExtraClaimsEdgeCases:
             class Meta:
                 authentication = Authentication(
                     backend=JWTAuthentication,
-                    jwt_extra_claims=["sub", "missing"],
+                    jwt_extra_claims=["user_id", "missing"],
                 )
 
         os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
@@ -745,8 +749,8 @@ class TestJWTExtraClaimsEdgeCases:
         assert resp.status_code == 200
         token = resp.json()["token"]
         payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
-        assert "sub" in payload
-        assert payload["sub"] == "1"
+        assert "user_id" in payload
+        assert payload["user_id"] == "1"
         assert "missing" not in payload
 
 

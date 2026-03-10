@@ -372,7 +372,7 @@ class TestYamlAuthConfig:
                     meta:
                       methods: [GET]
                 """
-            app = _from_str(content)
+                app = _from_str(content, login_validator=_dummy_login_validator)
             # The validator from YAML should be resolved and used
             assert app._login_validator is test_validator
         finally:
@@ -409,7 +409,7 @@ class TestYamlAuthConfig:
               authentication:
                 backend: JWTAuthentication
                 permission: IsAuthenticated
-                jwt_extra_claims: [sub, email]
+                jwt_extra_claims: [user_id, email]
             endpoints:
               - route: /x
                 fields:
@@ -419,7 +419,7 @@ class TestYamlAuthConfig:
             """
         app = _from_str(content)
         cls = app._endpoint_map["/x"]
-        assert cls.Meta.authentication.jwt_extra_claims == ["sub", "email"]
+        assert cls.Meta.authentication.jwt_extra_claims == ["user_id", "email"]
 
     def test_basic_authentication_from_yaml(self):
         """BasicAuthentication can be specified as backend in YAML."""
