@@ -43,7 +43,13 @@ from lightapi.exceptions import ConfigurationError
 
 
 def _build_name_registry() -> dict[str, type]:
-    from lightapi.auth import AllowAny, IsAdminUser, IsAuthenticated, JWTAuthentication
+    from lightapi.auth import (
+        AllowAny,
+        BasicAuthentication,
+        IsAdminUser,
+        IsAuthenticated,
+        JWTAuthentication,
+    )
     from lightapi.core import AuthenticationMiddleware, CORSMiddleware, Middleware
     from lightapi.filters import (
         FieldFilter,
@@ -55,6 +61,7 @@ def _build_name_registry() -> dict[str, type]:
     return {
         # Auth backends
         "JWTAuthentication": JWTAuthentication,
+        "BasicAuthentication": BasicAuthentication,
         # Permissions
         "AllowAny": AllowAny,
         "IsAuthenticated": IsAuthenticated,
@@ -74,6 +81,58 @@ def _build_name_registry() -> dict[str, type]:
         "PATCH": HttpMethod.PATCH,
         "DELETE": HttpMethod.DELETE,
     }
+
+
+def _resolve_callable(dotted_path: str) -> Any:
+    """Resolve a dotted path like 'myapp.validators.validate_login' to a callable."""
+    if "." not in dotted_path:
+        raise ConfigurationError(
+            f"login_validator must be a dotted path (e.g. myapp.validators.check), "
+            f"got '{dotted_path}'"
+        )
+    module_path, attr_name = dotted_path.rsplit(".", 1)
+    try:
+        mod = importlib.import_module(module_path)
+        fn = getattr(mod, attr_name)
+    except (ImportError, AttributeError) as exc:
+        raise ConfigurationError(
+            f"Cannot resolve login_validator '{dotted_path}': {exc}"
+        ) from exc
+    if not callable(fn):
+        raise ConfigurationError(f"login_validator '{dotted_path}' is not callable.")
+
+    # Validate signature: must be sync function with exactly 2 positional args
+    import inspect
+
+    if inspect.iscoroutinefunction(fn):
+        raise ConfigurationError(
+            f"login_validator '{dotted_path}' is async, but sync function required. "
+            f"Login validation must be a synchronous function."
+        )
+
+    try:
+        sig = inspect.signature(fn)
+    except ValueError:
+        # Some callables (e.g., builtins) don't have inspectable signatures
+        return fn
+
+    # Count required positional parameters
+    required_params = 0
+    for param in sig.parameters.values():
+        if param.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        ):
+            if param.default is inspect.Parameter.empty:
+                required_params += 1
+
+    if required_params != 2:
+        raise ConfigurationError(
+            f"login_validator '{dotted_path}' must accept exactly 2 required "
+            f"positional parameters (username, password), got {required_params}"
+        )
+
+    return fn
 
 
 def _resolve_name(name: str) -> type:
@@ -129,11 +188,26 @@ class DatabaseConfig(BaseModel):
         return _substitute_env(v)
 
 
+class AuthLoginConfig(BaseModel):
+    """Login/auth block: auth: { auth_path: ..., login_validator: ... }.
+
+    When using JWTAuthentication or BasicAuthentication, login_validator is required.
+    It can be specified as a dotted path (e.g. myapp.validators.validate_login)
+    or passed as an override to from_config(login_validator=...).
+    """
+
+    auth_path: str = "/auth"
+    login_validator: str | None = None
+
+
 class AuthConfig(BaseModel):
     """Authentication block used in defaults and per-endpoint meta."""
 
     backend: str | None = None
     permission: Union[str, dict[str, str], None] = None
+    jwt_expiration: int | None = None
+    jwt_extra_claims: list[str] | None = None
+    jwt_algorithm: str | None = None
 
 
 class FilteringConfig(BaseModel):
@@ -220,6 +294,7 @@ class LightAPIConfig(BaseModel):
     defaults: DefaultsConfig = DefaultsConfig()
     endpoints: list[EndpointConfig] = []
     middleware: list[str] = []
+    auth: AuthLoginConfig | None = None
 
     @property
     def effective_database_url(self) -> str | None:
@@ -245,14 +320,15 @@ def _substitute_env(value: str) -> str:
 
 
 def _make_authentication(
-    auth_cfg: AuthConfig | None, defaults_auth: AuthConfig | None
+    auth_cfg: AuthConfig | None,
+    defaults_auth: AuthConfig | None,
 ) -> Any:
-    """Build an Authentication instance from an AuthConfig, merged with defaults."""
-    from lightapi.config import Authentication
-
     # Merge: explicit cfg wins over defaults, defaults fill gaps
     merged_backend = None
     merged_permission = None
+    merged_jwt_expiration = None
+    merged_jwt_extra_claims = None
+    merged_jwt_algorithm = None
 
     for source in (defaults_auth, auth_cfg):
         if source is None:
@@ -261,6 +337,12 @@ def _make_authentication(
             merged_backend = source.backend
         if source.permission is not None:
             merged_permission = source.permission
+        if source.jwt_expiration is not None:
+            merged_jwt_expiration = source.jwt_expiration
+        if source.jwt_extra_claims is not None:
+            merged_jwt_extra_claims = source.jwt_extra_claims
+        if source.jwt_algorithm is not None:
+            merged_jwt_algorithm = source.jwt_algorithm
 
     if merged_backend is None and merged_permission is None:
         return None
@@ -277,7 +359,15 @@ def _make_authentication(
     else:
         permission = None
 
-    return Authentication(backend=backend_cls, permission=permission)
+    from lightapi.config import Authentication
+
+    return Authentication(
+        backend=backend_cls,
+        permission=permission,
+        jwt_expiration=merged_jwt_expiration,
+        jwt_extra_claims=merged_jwt_extra_claims,
+        jwt_algorithm=merged_jwt_algorithm,
+    )
 
 
 def _make_filtering(filtering_cfg: FilteringConfig | None) -> Any:
@@ -335,23 +425,72 @@ def _build_meta_class(
         # Build per-method permission dict from the methods dict
         permission_map: dict[str, type] = {}
         method_auth_default = meta.authentication  # endpoint-level auth override
+
+        # Get default permission from defaults
+        default_permission = None
+        if defaults.authentication and defaults.authentication.permission:
+            default_permission = defaults.authentication.permission
+
         for method, method_cfg in meta.methods.items():
             cfg_auth = method_cfg.authentication if method_cfg else None
             src_auth = cfg_auth or method_auth_default
+
+            # Determine permission for this method
+            method_permission = None
+
+            # First, check method-specific auth
             if src_auth and src_auth.permission:
                 perm = src_auth.permission
                 if isinstance(perm, str):
-                    permission_map[method] = _resolve_name(perm)
+                    method_permission = _resolve_name(perm)
+                # Note: per-method auth in YAML dict can't have dict permissions
+                # only string permissions are supported in this path
+
+            # If no method-specific permission, check default permission
+            if method_permission is None and default_permission is not None:
+                if isinstance(default_permission, dict):
+                    # Default permission is a dict: check for method-specific default
+                    if method in default_permission:
+                        perm = default_permission[method]
+                        if isinstance(perm, str):
+                            method_permission = _resolve_name(perm)
+                else:
+                    # Default permission is a string or class
+                    if isinstance(default_permission, str):
+                        method_permission = _resolve_name(default_permission)
+                    else:
+                        method_permission = default_permission
+
+            if method_permission is not None:
+                permission_map[method] = method_permission
+
         if permission_map:
-            # Determine shared backend (from endpoint auth or defaults)
-            backend_name = (meta.authentication and meta.authentication.backend) or (
-                defaults.authentication and defaults.authentication.backend
-            )
+            # Merge auth settings similar to _make_authentication
+            merged_backend = None
+            merged_jwt_expiration = None
+            merged_jwt_extra_claims = None
+            merged_jwt_algorithm = None
+
+            for source in (defaults.authentication, meta.authentication):
+                if source is None:
+                    continue
+                if source.backend is not None:
+                    merged_backend = source.backend
+                if source.jwt_expiration is not None:
+                    merged_jwt_expiration = source.jwt_expiration
+                if source.jwt_extra_claims is not None:
+                    merged_jwt_extra_claims = source.jwt_extra_claims
+                if source.jwt_algorithm is not None:
+                    merged_jwt_algorithm = source.jwt_algorithm
+
             from lightapi.config import Authentication
 
             attrs["authentication"] = Authentication(
-                backend=_resolve_name(backend_name) if backend_name else None,
+                backend=_resolve_name(merged_backend) if merged_backend else None,
                 permission=permission_map,
+                jwt_expiration=merged_jwt_expiration,
+                jwt_extra_claims=merged_jwt_extra_claims,
+                jwt_algorithm=merged_jwt_algorithm,
             )
     else:
         # Simple auth: endpoint overrides defaults
@@ -480,6 +619,15 @@ def load_config(app_cls: type, config_path: str, **overrides: Any) -> Any:
         "cors_origins": cfg.cors_origins or None,
         "middlewares": middlewares or None,
     }
+
+    # Auth/login config from YAML auth: block
+    if cfg.auth:
+        constructor_kwargs["auth_path"] = cfg.auth.auth_path
+        if cfg.auth.login_validator:
+            constructor_kwargs["login_validator"] = _resolve_callable(
+                cfg.auth.login_validator
+            )
+
     constructor_kwargs.update(overrides)
 
     instance = app_cls(**constructor_kwargs)

@@ -1,10 +1,11 @@
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import jwt
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from ._registry import LoginValidator, get_login_validator
 from .config import config
 
 
@@ -16,7 +17,7 @@ class BaseAuthentication:
     By default, allows all requests.
     """
 
-    def authenticate(self, request):
+    def authenticate(self, request: Request) -> bool:
         """
         Authenticate a request.
 
@@ -28,7 +29,72 @@ class BaseAuthentication:
         """
         return True
 
-    def get_auth_error_response(self, request):
+
+def get_auth_error_response(self, request: Request) -> JSONResponse:
+    """
+    Get the response to return when authentication fails.
+
+    Args:
+        request: The HTTP request object.
+
+    Returns:
+        Response object for authentication error.
+    """
+    return JSONResponse(
+        {"error": "authentication failed"},
+        status_code=401,
+        headers={"WWW-Authenticate": 'Basic realm="Restricted Area"'},
+    )
+
+
+class BasicAuthentication(BaseAuthentication):
+    """
+    Basic (Base64) authentication.
+
+    Authenticates requests using Authorization: Basic <base64(username:password)>.
+    Delegates credential validation to the app-level login_validator from the registry.
+    """
+
+    def __init__(
+        self,
+        login_validator: Optional[LoginValidator] = None,
+    ) -> None:
+        self.login_validator = login_validator
+
+    def authenticate(self, request: Request) -> bool:
+        if request.method == "OPTIONS":
+            return True
+
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return False
+
+        # Use the shared Basic auth parsing function
+        from lightapi._login import _parse_basic_header
+
+        credentials = _parse_basic_header(auth_header)
+        if credentials is None:
+            return False
+
+        username, password = credentials
+        from lightapi._registry import get_login_validator
+
+        validator = self.login_validator or get_login_validator()
+        if validator is None:
+            return False
+
+        try:
+            payload = validator(username, password)
+        except Exception:
+            return False
+
+        if payload is None:
+            return False
+
+        request.state.user = payload
+        return True
+
+    def get_auth_error_response(self, request: Request) -> JSONResponse:
         """
         Get the response to return when authentication fails.
 
@@ -38,91 +104,41 @@ class BaseAuthentication:
         Returns:
             Response object for authentication error.
         """
-        return JSONResponse({"error": "not allowed"}, status_code=403)
-
-
-class JWTAuthentication(BaseAuthentication):
-    """
-    JWT (JSON Web Token) based authentication.
-
-    Authenticates requests using JWT tokens from the Authorization header.
-    Validates token signatures and expiration times.
-    Automatically skips authentication for OPTIONS requests (CORS preflight).
-
-    Attributes:
-        secret_key: Secret key for signing tokens.
-        algorithm: JWT algorithm to use.
-        expiration: Token expiration time in seconds.
-    """
-
-    def __init__(self):
-        if not config.jwt_secret:
-            raise ValueError(
-                "JWT secret key not configured. Set LIGHTAPI_JWT_SECRET environment variable."
-            )
-        self.secret_key = config.jwt_secret
-        self.algorithm = "HS256"
-        self.expiration = 3600  # 1 hour default
-
-    def authenticate(self, request):
-        """
-        Authenticate a request using JWT token.
-        Automatically allows OPTIONS requests for CORS preflight.
-
-        Args:
-            request: The HTTP request object.
-
-        Returns:
-            bool: True if authentication succeeds, False otherwise.
-        """
-        # Skip authentication for OPTIONS requests (CORS preflight)
-        if request.method == "OPTIONS":
-            return True
+        return JSONResponse({"error": "authentication failed"}, status_code=401)
 
         auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
+        if not auth_header or not auth_header.lower().startswith("basic "):
             return False
 
-        token = auth_header.split(" ")[1]
         try:
-            payload = self.decode_token(token)
-            request.state.user = payload
-            return True
-        except jwt.InvalidTokenError:
+            import base64
+
+            token = auth_header.split(" ", 1)[1]
+            decoded = base64.b64decode(token).decode("utf-8")
+        except (ValueError, IndexError, UnicodeDecodeError):
             return False
 
-    def generate_token(self, payload: Dict, expiration: Optional[int] = None) -> str:
-        """
-        Generate a JWT token.
+        parts = decoded.split(":", 1)
+        if len(parts) != 2:
+            return False
 
-        Args:
-            payload: The data to encode in the token.
-            expiration: Token expiration time in seconds.
+        username, password = parts[0], parts[1]
+        from lightapi._registry import get_login_validator
 
-        Returns:
-            str: The encoded JWT token.
-        """
-        exp_seconds = expiration or self.expiration
-        token_data = {
-            **payload,
-            "exp": datetime.utcnow() + timedelta(seconds=exp_seconds),
-        }
-        return jwt.encode(token_data, self.secret_key, algorithm=self.algorithm)
+        validator = get_login_validator()
+        if validator is None:
+            return False
 
-    def decode_token(self, token: str) -> Dict:
-        """
-        Decode and verify a JWT token.
+        try:
+            payload = validator(username, password)
+        except Exception:
+            return False
 
-        Args:
-            token: The JWT token to decode.
+        if payload is None:
+            return False
 
-        Returns:
-            dict: The decoded token payload.
-
-        Raises:
-            jwt.InvalidTokenError: If the token is invalid or expired.
-        """
-        return jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+        request.state.user = payload
+        return True
 
 
 class AllowAny:

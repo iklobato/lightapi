@@ -9,6 +9,20 @@ from lightapi.exceptions import ConfigurationError
 class _Config:
     """Configuration used by JWTAuthentication and other components."""
 
+    VALID_JWT_ALGORITHMS = frozenset(
+        {
+            "HS256",
+            "HS384",
+            "HS512",
+            "RS256",
+            "RS384",
+            "RS512",
+            "ES256",
+            "ES384",
+            "ES512",
+        }
+    )
+
     def __init__(self) -> None:
         self._overrides: dict[str, Any] = {}
 
@@ -25,6 +39,16 @@ class _Config:
     def jwt_secret(self) -> str | None:
         return self._get("jwt_secret", "LIGHTAPI_JWT_SECRET")
 
+    @property
+    def jwt_algorithm(self) -> str:
+        algorithm = self._get("jwt_algorithm", "LIGHTAPI_JWT_ALGORITHM", "HS256")
+        if algorithm not in self.VALID_JWT_ALGORITHMS:
+            raise ConfigurationError(
+                f"Invalid JWT algorithm '{algorithm}'. "
+                f"Valid algorithms are: {sorted(self.VALID_JWT_ALGORITHMS)}"
+            )
+        return algorithm
+
 
 config = _Config()
 
@@ -36,6 +60,9 @@ class Authentication:
         self,
         backend: type | None = None,
         permission: type | dict[str, type] | None = None,
+        jwt_expiration: int | None = None,
+        jwt_extra_claims: list[str] | None = None,
+        jwt_algorithm: str | None = None,
     ) -> None:
         from lightapi.auth import AllowAny
 
@@ -43,6 +70,34 @@ class Authentication:
         self.permission: type | dict[str, type] = (
             permission if permission is not None else AllowAny
         )
+        self.jwt_expiration = jwt_expiration
+
+        # Validate jwt_extra_claims - reject reserved claims
+        if jwt_extra_claims:
+            RESERVED_CLAIMS = {"exp", "iat", "nbf", "iss", "sub", "aud", "jti"}
+            reserved_found = []
+            for claim in jwt_extra_claims:
+                if claim in RESERVED_CLAIMS:
+                    reserved_found.append(claim)
+
+            if reserved_found:
+                raise ConfigurationError(
+                    f"JWT extra claims cannot include reserved claims: "
+                    f"{reserved_found}. Reserved claims are: {sorted(RESERVED_CLAIMS)}"
+                )
+
+        self.jwt_extra_claims = jwt_extra_claims
+
+        # Validate jwt_algorithm if provided
+        if (
+            jwt_algorithm is not None
+            and jwt_algorithm not in config.VALID_JWT_ALGORITHMS
+        ):
+            raise ConfigurationError(
+                f"Invalid JWT algorithm: '{jwt_algorithm}'. "
+                f"Must be one of: {sorted(config.VALID_JWT_ALGORITHMS)}"
+            )
+        self.jwt_algorithm = jwt_algorithm
 
 
 class Filtering:
