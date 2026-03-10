@@ -1,6 +1,12 @@
 """LightAPI v2 public API."""
 
-from lightapi.auth import AllowAny, IsAdminUser, IsAuthenticated, JWTAuthentication
+from lightapi.auth import (
+    AllowAny,
+    BasicAuthentication,
+    IsAdminUser,
+    IsAuthenticated,
+    JWTAuthentication,
+)
 from lightapi.cache import RedisCache
 from lightapi.config import Authentication, Cache, Filtering, Pagination, Serializer
 
@@ -33,6 +39,7 @@ __all__ = [
     "Pagination",
     "Serializer",
     # Auth
+    "BasicAuthentication",
     "JWTAuthentication",
     "AllowAny",
     "IsAuthenticated",

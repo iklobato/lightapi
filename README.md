@@ -304,6 +304,22 @@ class AdminOnlyEndpoint(RestEndpoint):
 2. Permission class `.has_permission(request)` — checks `request.state.user`
 3. Returns `401` if authentication fails, `403` if permission denied
 
+**Login and token endpoints:** When using `JWTAuthentication` or `BasicAuthentication`, pass `login_validator` to obtain automatic `/auth/login` and `/auth/token` endpoints:
+
+```python
+def my_validator(username: str, password: str):
+    # Return user payload dict or None
+    user = db.query(User).filter_by(username=username).first()
+    if user and user.check_password(password):
+        return {"sub": str(user.id), "is_admin": user.is_admin}
+    return None
+
+app = LightApi(engine=engine, login_validator=my_validator)
+app.register({"/secrets": ProtectedEndpoint})
+# POST /auth/login and POST /auth/token now accept {"username":"...","password":"..."}
+# JWT mode: 200 {"token":"...","user":{...}}; Basic-only: 200 {"user":{...}}
+```
+
 **Built-in permission classes:**
 
 | Class | Condition |
