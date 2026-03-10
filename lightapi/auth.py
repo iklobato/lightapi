@@ -1,6 +1,6 @@
 import base64
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import jwt
 from starlette.requests import Request

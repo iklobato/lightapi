@@ -140,35 +140,34 @@ class RateLimiter:
 
         return (False, None)
 
+    def get_rate_limit_response(
+        self, request: Request, window: str = "minute"
+    ) -> JSONResponse:
+        """Get standard rate limit exceeded response."""
+        # Determine window-specific values
+        if window == "hour":
+            limit = self.requests_per_hour
+            retry_after = 3600
+            reset_seconds = 3600
+        elif window == "day":
+            limit = self.requests_per_day
+            retry_after = 86400
+            reset_seconds = 86400
+        else:  # minute
+            limit = self.requests_per_minute
+            retry_after = 60
+            reset_seconds = 60
 
-def get_rate_limit_response(
-    self, request: Request, window: str = "minute"
-) -> JSONResponse:
-    """Get standard rate limit exceeded response."""
-    # Determine window-specific values
-    if window == "hour":
-        limit = self.requests_per_hour
-        retry_after = 3600
-        reset_seconds = 3600
-    elif window == "day":
-        limit = self.requests_per_day
-        retry_after = 86400
-        reset_seconds = 86400
-    else:  # minute
-        limit = self.requests_per_minute
-        retry_after = 60
-        reset_seconds = 60
-
-    return JSONResponse(
-        {
-            "error": "rate_limit_exceeded",
-            "detail": "Too many requests. Please try again later.",
-        },
-        status_code=429,
-        headers={
-            "Retry-After": str(retry_after),
-            "X-RateLimit-Limit": str(limit),
-            "X-RateLimit-Remaining": "0",
-            "X-RateLimit-Reset": str(int(time.time() + reset_seconds)),
-        },
-    )
+        return JSONResponse(
+            {
+                "error": "rate_limit_exceeded",
+                "detail": "Too many requests. Please try again later.",
+            },
+            status_code=429,
+            headers={
+                "Retry-After": str(retry_after),
+                "X-RateLimit-Limit": str(limit),
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": str(int(time.time() + reset_seconds)),
+            },
+        )

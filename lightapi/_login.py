@@ -12,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from .rate_limiter import RateLimiter
+
 # JWTAuthentication imported locally where needed to avoid circular import
 
 logger = logging.getLogger(__name__)
@@ -67,7 +69,10 @@ async def _read_body(request: Request) -> dict[str, Any]:
     """Read JSON body; return {} on empty or invalid."""
     try:
         body = await request.body()
-        return json.loads(body) if body else {}
+        if body:
+            result: dict[str, Any] = json.loads(body)
+            return result
+        return {}
     except (json.JSONDecodeError, TypeError):
         return {}
 
@@ -80,7 +85,7 @@ async def login_handler(
     jwt_expiration: int | None = None,
     jwt_extra_claims: list[str] | None = None,
     jwt_algorithm: str | None = None,
-    rate_limiter: Optional[Any] = None,
+    rate_limiter: Optional[RateLimiter] = None,
 ) -> JSONResponse:
     """
     Handle POST /auth/login and POST /auth/token.
@@ -91,7 +96,7 @@ async def login_handler(
     # Apply rate limiting if a rate limiter is provided
     if rate_limiter is not None:
         is_limited, window = rate_limiter.is_rate_limited(request, endpoint="auth")
-        if is_limited:
+        if is_limited and window is not None:
             return rate_limiter.get_rate_limit_response(request, window)
 
     if request.method != "POST":
