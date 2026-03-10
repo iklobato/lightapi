@@ -14,6 +14,11 @@ class RateLimiter:
     Simple in-memory rate limiter.
 
     Tracks requests by IP address and endpoint.
+
+    NOTE: This implementation uses process-local counters. In a multi-process
+    deployment (e.g., with multiple workers), rate limiting will not be shared
+    across processes. For production use with multiple workers, consider using
+    a shared storage backend like Redis.
     """
 
     def __init__(
@@ -108,13 +113,14 @@ class RateLimiter:
         client_ip = self._get_client_ip(request)
         current_time = time.time()
 
-        # Check each window
+        # Check all windows first before incrementing
         windows = [
             ("minute", self.requests_per_minute),
             ("hour", self.requests_per_hour),
             ("day", self.requests_per_day),
         ]
 
+        # First pass: check all windows
         for window_name, limit in windows:
             window_seconds = self._get_window_seconds(window_name)
             window_key = f"{endpoint}:{window_name}" if endpoint else window_name
@@ -129,16 +135,17 @@ class RateLimiter:
                 # Don't count this request since it's being blocked
                 return (True, window_name)
 
-            # Add current request
+        # Second pass: increment all windows (only if request is allowed)
+        for window_name, _ in windows:
+            window_seconds = self._get_window_seconds(window_name)
+            window_key = f"{endpoint}:{window_name}" if endpoint else window_name
             self._store[client_ip][window_key][current_time] = (
                 self._store[client_ip][window_key].get(current_time, 0) + 1
             )
 
         return (False, None)
 
-    def get_rate_limit_response(
-        self, request: Request, window: str = "minute"
-    ) -> JSONResponse:
+    def get_rate_limit_response(self, window: str = "minute") -> JSONResponse:
         """Get standard rate limit exceeded response."""
         # Determine window-specific values
         if window == "hour":

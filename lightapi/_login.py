@@ -92,7 +92,7 @@ async def login_handler(
     if rate_limiter is not None:
         is_limited, window = rate_limiter.is_rate_limited(request, endpoint="auth")
         if is_limited:
-            return rate_limiter.get_rate_limit_response(request, window)
+            return rate_limiter.get_rate_limit_response(window)
 
     if request.method != "POST":
         return JSONResponse(
