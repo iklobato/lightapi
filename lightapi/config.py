@@ -71,6 +71,21 @@ class Authentication:
             permission if permission is not None else AllowAny
         )
         self.jwt_expiration = jwt_expiration
+
+        # Validate jwt_extra_claims - reject reserved claims
+        if jwt_extra_claims:
+            RESERVED_CLAIMS = {"exp", "iat", "nbf", "iss", "sub", "aud", "jti"}
+            reserved_found = []
+            for claim in jwt_extra_claims:
+                if claim in RESERVED_CLAIMS:
+                    reserved_found.append(claim)
+
+            if reserved_found:
+                raise ConfigurationError(
+                    f"JWT extra claims cannot include reserved claims: "
+                    f"{reserved_found}. Reserved claims are: {sorted(RESERVED_CLAIMS)}"
+                )
+
         self.jwt_extra_claims = jwt_extra_claims
 
         # Validate jwt_algorithm if provided

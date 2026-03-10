@@ -425,13 +425,45 @@ def _build_meta_class(
         # Build per-method permission dict from the methods dict
         permission_map: dict[str, type] = {}
         method_auth_default = meta.authentication  # endpoint-level auth override
+
+        # Get default permission from defaults
+        default_permission = None
+        if defaults.authentication and defaults.authentication.permission:
+            default_permission = defaults.authentication.permission
+
         for method, method_cfg in meta.methods.items():
             cfg_auth = method_cfg.authentication if method_cfg else None
             src_auth = cfg_auth or method_auth_default
+
+            # Determine permission for this method
+            method_permission = None
+
+            # First, check method-specific auth
             if src_auth and src_auth.permission:
                 perm = src_auth.permission
                 if isinstance(perm, str):
-                    permission_map[method] = _resolve_name(perm)
+                    method_permission = _resolve_name(perm)
+                # Note: per-method auth in YAML dict can't have dict permissions
+                # only string permissions are supported in this path
+
+            # If no method-specific permission, check default permission
+            if method_permission is None and default_permission is not None:
+                if isinstance(default_permission, dict):
+                    # Default permission is a dict: check for method-specific default
+                    if method in default_permission:
+                        perm = default_permission[method]
+                        if isinstance(perm, str):
+                            method_permission = _resolve_name(perm)
+                else:
+                    # Default permission is a string or class
+                    if isinstance(default_permission, str):
+                        method_permission = _resolve_name(default_permission)
+                    else:
+                        method_permission = default_permission
+
+            if method_permission is not None:
+                permission_map[method] = method_permission
+
         if permission_map:
             # Merge auth settings similar to _make_authentication
             merged_backend = None

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict
-from typing import Any, Callable
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -168,30 +167,3 @@ class RateLimiter:
                 "X-RateLimit-Reset": str(int(time.time() + reset_seconds)),
             },
         )
-
-
-# Global rate limiter instance for auth endpoints
-_auth_rate_limiter = RateLimiter(
-    requests_per_minute=10,  # 10 requests per minute
-    requests_per_hour=100,  # 100 requests per hour
-    requests_per_day=1000,  # 1000 requests per day
-)
-
-
-def rate_limit_auth_endpoint(func: Callable) -> Callable:
-    """
-    Decorator to rate limit authentication endpoints.
-
-    Args:
-        func: The endpoint function to decorate.
-
-    Returns:
-        Decorated function with rate limiting.
-    """
-
-    async def wrapper(request: Request, *args: Any, **kwargs: Any) -> Any:
-        if _auth_rate_limiter.is_rate_limited(request, endpoint="auth"):
-            return _auth_rate_limiter.get_rate_limit_response(request)
-        return await func(request, *args, **kwargs)
-
-    return wrapper
