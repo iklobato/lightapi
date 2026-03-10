@@ -11,9 +11,13 @@ from starlette.responses import JSONResponse
 
 class RateLimiter:
     """
-    Simple in-memory rate limiter.
+        Simple in-memory rate limiter.
 
-    Tracks requests by IP address and endpoint.
+        Tracks requests by IP address and endpoint.
+    NOTE: This implementation uses process-local counters. In a multi-process
+        deployment (e.g., with multiple workers), rate limiting will not be shared
+        across processes. For production use with multiple workers, consider using
+        a shared storage backend like Redis.
     """
 
     def __init__(

@@ -114,7 +114,7 @@ class TestDeclarativeFormat:
                 meta:
                   methods: [GET, POST]
             """
-        app = _from_str(content)
+        app = _from_str(content, login_validator=_dummy_login_validator)
         assert "/articles" in app._endpoint_map
 
     def test_dynamic_fields_are_on_class_annotations(self):
@@ -129,7 +129,7 @@ class TestDeclarativeFormat:
                 meta:
                   methods: [GET]
             """
-        app = _from_str(content)
+        app = _from_str(content, login_validator=_dummy_login_validator)
         cls = self._route_cls(app, "/items2")
         assert "title" in cls.__annotations__
         assert "count" in cls.__annotations__
@@ -150,7 +150,7 @@ class TestDeclarativeFormat:
                 meta:
                   methods: [GET]
             """
-        app = _from_str(content)
+        app = _from_str(content, login_validator=_dummy_login_validator)
         cls = self._route_cls(app, "/secure")
         meta = cls.Meta
         assert hasattr(meta, "authentication")
@@ -175,7 +175,7 @@ class TestDeclarativeFormat:
                   authentication:
                     permission: AllowAny
             """
-        app = _from_str(content)
+        app = _from_str(content, login_validator=_dummy_login_validator)
         cls = self._route_cls(app, "/public")
         from lightapi.auth import AllowAny
 
@@ -198,7 +198,7 @@ class TestDeclarativeFormat:
                   authentication:
                     backend: JWTAuthentication
             """
-        app = _from_str(content)
+        app = _from_str(content, login_validator=_dummy_login_validator)
         cls = self._route_cls(app, "/itemsauth")
         from lightapi.auth import AllowAny, IsAdminUser
 
@@ -222,7 +222,7 @@ class TestDeclarativeFormat:
                     fields: [published]
                     ordering: [title]
             """
-        app = _from_str(content)
+        app = _from_str(content, login_validator=_dummy_login_validator)
         cls = self._route_cls(app, "/posts")
         from lightapi.filters import FieldFilter, OrderingFilter
 
@@ -247,7 +247,7 @@ class TestDeclarativeFormat:
                 meta:
                   methods: [GET]
             """
-        app = _from_str(content)
+        app = _from_str(content, login_validator=_dummy_login_validator)
         cls = self._route_cls(app, "/things")
         meta = cls.Meta
         assert hasattr(meta, "pagination")
@@ -276,7 +276,7 @@ class TestDeclarativeFormat:
               url: "sqlite:///:memory:"
             middleware: [CORSMiddleware]
             """
-        app = _from_str(content)
+        app = _from_str(content, login_validator=_dummy_login_validator)
         assert app is not None
 
     def test_from_config_kwargs_override_yaml(self):
@@ -332,7 +332,7 @@ class TestYamlAuthConfig:
                 meta:
                   methods: [GET]
             """
-        app = _from_str(content)
+        app = _from_str(content, login_validator=_dummy_login_validator)
         from starlette.testclient import TestClient
 
         client = TestClient(app.build_app())
@@ -396,7 +396,7 @@ class TestYamlAuthConfig:
                 meta:
                   methods: [GET]
             """
-        app = _from_str(content)
+        app = _from_str(content, login_validator=_dummy_login_validator)
         cls = app._endpoint_map["/x"]
         assert cls.Meta.authentication.jwt_expiration == 300
 
@@ -409,7 +409,7 @@ class TestYamlAuthConfig:
               authentication:
                 backend: JWTAuthentication
                 permission: IsAuthenticated
-                jwt_extra_claims: [sub, email]
+                jwt_extra_claims: [user_id, email]
             endpoints:
               - route: /x
                 fields:
@@ -417,9 +417,9 @@ class TestYamlAuthConfig:
                 meta:
                   methods: [GET]
             """
-        app = _from_str(content)
+        app = _from_str(content, login_validator=_dummy_login_validator)
         cls = app._endpoint_map["/x"]
-        assert cls.Meta.authentication.jwt_extra_claims == ["sub", "email"]
+        assert cls.Meta.authentication.jwt_extra_claims == ["user_id", "email"]
 
     def test_basic_authentication_from_yaml(self):
         """BasicAuthentication can be specified as backend in YAML."""
@@ -437,7 +437,7 @@ class TestYamlAuthConfig:
                 meta:
                   methods: [GET]
             """
-        app = _from_str(content)
+        app = _from_str(content, login_validator=_dummy_login_validator)
         from lightapi.auth import BasicAuthentication
 
         cls = app._endpoint_map["/items"]

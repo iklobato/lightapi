@@ -1,5 +1,6 @@
+import base64
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import jwt
 from starlette.requests import Request
@@ -29,22 +30,105 @@ class BaseAuthentication:
         """
         return True
 
+    def get_auth_error_response(self, request: Request) -> JSONResponse:
+        """
+        Get the response to return when authentication fails.
 
-def get_auth_error_response(self, request: Request) -> JSONResponse:
+        Args:
+            request: The HTTP request object.
+
+        Returns:
+            Response object for authentication error.
+        """
+        return JSONResponse({"error": "authentication failed"}, status_code=401)
+
+
+class JWTAuthentication(BaseAuthentication):
     """
-    Get the response to return when authentication fails.
+    JWT (JSON Web Token) based authentication.
 
-    Args:
-        request: The HTTP request object.
+    Authenticates requests using JWT tokens from the Authorization header.
+    Validates token signatures and expiration times.
+    Automatically skips authentication for OPTIONS requests (CORS preflight).
 
-    Returns:
-        Response object for authentication error.
+    Attributes:
+        secret_key: Secret key for signing tokens.
+        algorithm: JWT algorithm to use.
+        expiration: Token expiration time in seconds.
     """
-    return JSONResponse(
-        {"error": "authentication failed"},
-        status_code=401,
-        headers={"WWW-Authenticate": 'Basic realm="Restricted Area"'},
-    )
+
+    def __init__(
+        self,
+        secret_key: str | None = None,
+        algorithm: str | None = None,
+        expiration: int | None = None,
+    ):
+        self.secret_key = secret_key or config.jwt_secret
+        if not self.secret_key:
+            raise ValueError(
+                "JWT secret key not configured. Set LIGHTAPI_JWT_SECRET environment variable."
+            )
+
+        self.algorithm = algorithm or config.jwt_algorithm
+        self.expiration = expiration or 3600  # 1 hour default
+
+    def authenticate(self, request: Request) -> bool:
+        """
+        Authenticate a request using JWT token.
+        Automatically allows OPTIONS requests for CORS preflight.
+
+        Args:
+            request: The HTTP request object.
+
+        Returns:
+            bool: True if authentication succeeds, False otherwise.
+        """
+        # Skip authentication for OPTIONS requests (CORS preflight)
+        if request.method == "OPTIONS":
+            return True
+
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.lower().startswith("bearer "):
+            return False
+
+        try:
+            token = auth_header.split(" ", 1)[1]
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+        except (jwt.InvalidTokenError, ValueError, IndexError):
+            return False
+
+        request.state.user = payload
+        return True
+
+    def generate_token(
+        self, payload: dict[str, Any], expiration: int | None = None
+    ) -> str:
+        """
+        Generate a JWT token with the given payload.
+
+        Args:
+            payload: Dictionary of claims to include in the token.
+            expiration: Optional expiration time in seconds (overrides default).
+
+        Returns:
+            str: The encoded JWT token.
+
+        Raises:
+            ValueError: If payload contains 'exp' claim which will be overwritten.
+        """
+        # Check for 'exp' in payload since we overwrite it
+        if "exp" in payload:
+            raise ValueError(
+                "Payload contains 'exp' claim which will be overwritten. "
+                "Use the 'expiration' parameter instead."
+            )
+
+        exp_seconds = expiration or self.expiration
+        token_data = {
+            **payload,
+            "exp": datetime.utcnow() + timedelta(seconds=exp_seconds),
+        }
+        return jwt.encode(token_data, self.secret_key, algorithm=self.algorithm)
 
 
 class BasicAuthentication(BaseAuthentication):
@@ -52,7 +136,7 @@ class BasicAuthentication(BaseAuthentication):
     Basic (Base64) authentication.
 
     Authenticates requests using Authorization: Basic <base64(username:password)>.
-    Delegates credential validation to the app-level login_validator from the registry.
+    Delegates credential validation to the provided login_validator.
     """
 
     def __init__(
@@ -66,26 +150,27 @@ class BasicAuthentication(BaseAuthentication):
             return True
 
         auth_header = request.headers.get("Authorization")
-        if not auth_header:
+        if not auth_header or not auth_header.lower().startswith("basic "):
             return False
 
-        # Use the shared Basic auth parsing function
-        from lightapi._login import _parse_basic_header
-
-        credentials = _parse_basic_header(auth_header)
-        if credentials is None:
+        try:
+            token = auth_header.split(" ", 1)[1]
+            decoded = base64.b64decode(token).decode("utf-8")
+        except (ValueError, IndexError, UnicodeDecodeError):
             return False
 
-        username, password = credentials
-        from lightapi._registry import get_login_validator
+        parts = decoded.split(":", 1)
+        if len(parts) != 2:
+            return False
 
+        username, password = parts[0], parts[1]
         validator = self.login_validator or get_login_validator()
         if validator is None:
             return False
 
         try:
             payload = validator(username, password)
-        except Exception:
+        except (ValueError, TypeError, RuntimeError):
             return False
 
         if payload is None:
@@ -104,47 +189,17 @@ class BasicAuthentication(BaseAuthentication):
         Returns:
             Response object for authentication error.
         """
-        return JSONResponse({"error": "authentication failed"}, status_code=401)
-
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.lower().startswith("basic "):
-            return False
-
-        try:
-            import base64
-
-            token = auth_header.split(" ", 1)[1]
-            decoded = base64.b64decode(token).decode("utf-8")
-        except (ValueError, IndexError, UnicodeDecodeError):
-            return False
-
-        parts = decoded.split(":", 1)
-        if len(parts) != 2:
-            return False
-
-        username, password = parts[0], parts[1]
-        from lightapi._registry import get_login_validator
-
-        validator = get_login_validator()
-        if validator is None:
-            return False
-
-        try:
-            payload = validator(username, password)
-        except Exception:
-            return False
-
-        if payload is None:
-            return False
-
-        request.state.user = payload
-        return True
+        return JSONResponse(
+            {"error": "authentication failed"},
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="Restricted Area"'},
+        )
 
 
 class AllowAny:
     """Permits all requests regardless of authentication state."""
 
-    def has_permission(self, request: Request) -> bool:
+    def has_permission(self, _request: Request) -> bool:
         return True
 
 

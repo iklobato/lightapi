@@ -112,9 +112,16 @@ def _resolve_callable(dotted_path: str) -> Any:
 
     try:
         sig = inspect.signature(fn)
-    except ValueError:
-        # Some callables (e.g., builtins) don't have inspectable signatures
-        return fn
+    except (ValueError, TypeError) as exc:
+        # Only allow specific cases where signature inspection legitimately fails
+        if hasattr(fn, "__name__") and fn.__name__ in ("<lambda>",):
+            # Lambdas can't be properly inspected in some Python versions
+            return fn
+        # For other cases, raise a clear error about the validation function
+        raise ValueError(
+            f"Login validation function {fn!r} cannot be inspected: {exc}. "
+            f"Ensure it's a regular Python function with inspectable signature."
+        ) from exc
 
     # Count required positional parameters
     required_params = 0
