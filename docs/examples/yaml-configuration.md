@@ -24,6 +24,7 @@ defaults:
     permission: IsAuthenticated
     jwt_expiration: 3600
     jwt_extra_claims: [sub, email]
+    jwt_algorithm: HS256
   pagination:
     style: page_number
     page_size: 20
@@ -140,6 +141,7 @@ python -c "from lightapi import LightApi; LightApi.from_config('lightapi.yaml').
 | `defaults.authentication.permission` | string | Permission class name. |
 | `defaults.authentication.jwt_expiration` | int | JWT token expiration in seconds (JWT only). |
 | `defaults.authentication.jwt_extra_claims` | list | Claims to include in token payload (JWT only). |
+| `defaults.authentication.jwt_algorithm` | string | JWT algorithm (HS256, HS384, HS512, RS256, RS384, RS512, ES256, ES384, ES512). |
 | `auth.auth_path` | string | Path prefix for `/login` and `/token` (default `/auth`). |
 | `auth.login_validator` | string | Dotted path to credential validator callable (e.g. `myapp.validators.check_user`). |
 | `defaults.pagination.style` | string | `page_number` or `cursor`. |

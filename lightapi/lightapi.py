@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
 import logging
 import os
 import warnings
-from typing import Any
+from typing import Any, Callable, Dict, Optional
 
 import uvicorn
 from sqlalchemy import create_engine
@@ -18,8 +19,16 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from lightapi._registry import get_registry_and_metadata, set_engine
+from lightapi._registry import (
+    get_registry_and_metadata,
+    set_engine,
+    set_login_validator,
+)
+from lightapi.auth import AllowAny, BasicAuthentication, JWTAuthentication
+from lightapi.cache import get_cached, invalidate_cache_prefix, set_cached
 from lightapi.exceptions import ConfigurationError
+from lightapi.rest import RestEndpoint
+from lightapi.yaml_loader import load_config
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +72,7 @@ class LightApi:
 
         # Detect async engine — drives session strategy and startup validation
         try:
+            importlib.import_module("sqlalchemy.ext.asyncio")
             from sqlalchemy.ext.asyncio import AsyncEngine
 
             self._async: bool = isinstance(engine, AsyncEngine)
@@ -75,9 +85,8 @@ class LightApi:
         self._cors_origins: list[str] = cors_origins or []
         self._login_validator = login_validator
         self._auth_path = auth_path
+        self._auth_rate_limiter = None
         if login_validator is not None:
-            from lightapi._registry import set_login_validator
-
             set_login_validator(login_validator)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -91,7 +100,6 @@ class LightApi:
             mapping: ``{"/path": EndpointClass}`` dictionary.
                 Each class must be a ``RestEndpoint`` subclass.
         """
-        from lightapi.rest import RestEndpoint
 
         for path, cls in mapping.items():
             if not (isinstance(cls, type) and issubclass(cls, RestEndpoint)):
@@ -153,7 +161,6 @@ class LightApi:
             self._endpoint_map[path] = cls
 
         # Auto-register /auth/login and /auth/token when JWT or Basic auth is used
-        from lightapi.auth import BasicAuthentication, JWTAuthentication
 
         auth_backends: set[type] = set()
         jwt_config_expiration: int | None = None
@@ -174,6 +181,12 @@ class LightApi:
                     jwt_config_algorithm = getattr(auth_cfg, "jwt_algorithm", None)
 
         if auth_backends & {JWTAuthentication, BasicAuthentication}:
+            # Initialize rate limiter if not already created
+            if self._auth_rate_limiter is None:
+                from lightapi.rate_limiter import RateLimiter
+
+                self._auth_rate_limiter = RateLimiter()
+
             if self._login_validator is None:
                 raise ConfigurationError(
                     "login_validator is required when using JWTAuthentication "
@@ -181,6 +194,20 @@ class LightApi:
                 )
             has_jwt = JWTAuthentication in auth_backends
             auth_path = self._auth_path.rstrip("/")
+
+            # Check if auth routes already exist
+            login_path = f"{auth_path}/login"
+            token_path = f"{auth_path}/token"
+
+            # Remove existing auth routes if any
+            self._routes = [
+                route
+                for route in self._routes
+                if not (
+                    isinstance(route, Route) and route.path in {login_path, token_path}
+                )
+            ]
+
             login_endpoint = self._make_login_endpoint(
                 has_jwt=has_jwt,
                 jwt_expiration=jwt_config_expiration,
@@ -190,7 +217,7 @@ class LightApi:
             self._routes.insert(
                 0,
                 Route(
-                    f"{auth_path}/login",
+                    login_path,
                     login_endpoint,
                     methods=["POST"],
                 ),
@@ -198,7 +225,7 @@ class LightApi:
             self._routes.insert(
                 1,
                 Route(
-                    f"{auth_path}/token",
+                    token_path,
                     login_endpoint,
                     methods=["POST"],
                 ),
@@ -225,6 +252,7 @@ class LightApi:
                 jwt_expiration=jwt_expiration,
                 jwt_extra_claims=jwt_extra_claims,
                 jwt_algorithm=jwt_algorithm,
+                rate_limiter=self._auth_rate_limiter,
             )
 
         return handler
@@ -242,7 +270,9 @@ class LightApi:
             if pre_result is not None:
                 return pre_result
 
-            auth_result = _check_auth(cls, request)
+            auth_result = _check_auth(
+                cls, request, login_validator=self._login_validator
+            )
             if auth_result is not None:
                 return auth_result
 
@@ -299,7 +329,9 @@ class LightApi:
             if pre_result is not None:
                 return pre_result
 
-            auth_result = _check_auth(cls, request)
+            auth_result = _check_auth(
+                cls, request, login_validator=self._login_validator
+            )
             if auth_result is not None:
                 return auth_result
 
@@ -416,7 +448,6 @@ class LightApi:
 
         Kwargs override YAML values (e.g. engine=..., database_url=...).
         """
-        from lightapi.yaml_loader import load_config
 
         return load_config(cls, config_path, **kwargs)
 
@@ -511,7 +542,6 @@ def _validate_async_dependencies(engine: Any) -> None:
 
 async def _read_body(request: Request) -> dict[str, Any]:
     """Read and parse JSON body; return {} on failure."""
-    import json
 
     try:
         body = await request.body()
@@ -520,9 +550,12 @@ async def _read_body(request: Request) -> dict[str, Any]:
         return {}
 
 
-def _check_auth(cls: type, request: Request) -> Response | None:
+def _check_auth(
+    cls: type,
+    request: Request,
+    login_validator: Optional[Callable[[str, str], Dict[str, Any] | None]] = None,
+) -> Response | None:
     """Run authentication + permission checks; return 401/403 response or None."""
-    from lightapi.auth import AllowAny
 
     auth_cfg = cls._meta.get("authentication")
     if auth_cfg is None:
@@ -552,6 +585,8 @@ def _check_auth(cls: type, request: Request) -> Response | None:
                 expiration=getattr(auth_cfg, "jwt_expiration", None),
                 algorithm=getattr(auth_cfg, "jwt_algorithm", None),
             )
+        elif backend.__name__ == "BasicAuthentication":
+            authenticator = backend(login_validator=login_validator)
         else:
             authenticator = backend()
 
@@ -603,7 +638,6 @@ async def _run_post_middlewares(
 
 def _maybe_cached(cls: type, request: Request, fn: Any) -> Response:
     """Serve from Redis cache (GET only) or call fn() and populate cache."""
-    from lightapi.cache import get_cached, set_cached
 
     cache_cfg = cls._meta.get("cache")
     if cache_cfg is None:
@@ -634,7 +668,6 @@ def _maybe_invalidate_cache(cls: type, request: Request) -> None:
     cache_cfg = cls._meta.get("cache")
     if cache_cfg is None:
         return
-    from lightapi.cache import invalidate_cache_prefix
 
     invalidate_cache_prefix(_cache_key_prefix(cls))
 

@@ -100,6 +100,38 @@ def _resolve_callable(dotted_path: str) -> Any:
         ) from exc
     if not callable(fn):
         raise ConfigurationError(f"login_validator '{dotted_path}' is not callable.")
+
+    # Validate signature: must be sync function with exactly 2 positional args
+    import inspect
+
+    if inspect.iscoroutinefunction(fn):
+        raise ConfigurationError(
+            f"login_validator '{dotted_path}' is async, but sync function required. "
+            f"Login validation must be a synchronous function."
+        )
+
+    try:
+        sig = inspect.signature(fn)
+    except ValueError:
+        # Some callables (e.g., builtins) don't have inspectable signatures
+        return fn
+
+    # Count required positional parameters
+    required_params = 0
+    for param in sig.parameters.values():
+        if param.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        ):
+            if param.default is inspect.Parameter.empty:
+                required_params += 1
+
+    if required_params != 2:
+        raise ConfigurationError(
+            f"login_validator '{dotted_path}' must accept exactly 2 required "
+            f"positional parameters (username, password), got {required_params}"
+        )
+
     return fn
 
 
@@ -401,22 +433,32 @@ def _build_meta_class(
                 if isinstance(perm, str):
                     permission_map[method] = _resolve_name(perm)
         if permission_map:
-            # Determine shared backend and JWT opts (from endpoint auth or defaults)
-            src = meta.authentication or defaults.authentication
-            backend_name = (meta.authentication and meta.authentication.backend) or (
-                defaults.authentication and defaults.authentication.backend
-            )
-            jwt_exp = src.jwt_expiration if src else None
-            jwt_claims = src.jwt_extra_claims if src else None
-            jwt_algo = src.jwt_algorithm if src else None
+            # Merge auth settings similar to _make_authentication
+            merged_backend = None
+            merged_jwt_expiration = None
+            merged_jwt_extra_claims = None
+            merged_jwt_algorithm = None
+
+            for source in (defaults.authentication, meta.authentication):
+                if source is None:
+                    continue
+                if source.backend is not None:
+                    merged_backend = source.backend
+                if source.jwt_expiration is not None:
+                    merged_jwt_expiration = source.jwt_expiration
+                if source.jwt_extra_claims is not None:
+                    merged_jwt_extra_claims = source.jwt_extra_claims
+                if source.jwt_algorithm is not None:
+                    merged_jwt_algorithm = source.jwt_algorithm
+
             from lightapi.config import Authentication
 
             attrs["authentication"] = Authentication(
-                backend=_resolve_name(backend_name) if backend_name else None,
+                backend=_resolve_name(merged_backend) if merged_backend else None,
                 permission=permission_map,
-                jwt_expiration=jwt_exp,
-                jwt_extra_claims=jwt_claims,
-                jwt_algorithm=jwt_algo,
+                jwt_expiration=merged_jwt_expiration,
+                jwt_extra_claims=merged_jwt_extra_claims,
+                jwt_algorithm=merged_jwt_algorithm,
             )
     else:
         # Simple auth: endpoint overrides defaults

@@ -1,11 +1,13 @@
+import base64
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import jwt
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from ._registry import LoginValidator
+from ._login import _parse_basic_header
+from ._registry import LoginValidator, get_login_validator
 from .config import config
 
 
@@ -159,8 +161,14 @@ class BasicAuthentication(BaseAuthentication):
     Basic (Base64) authentication.
 
     Authenticates requests using Authorization: Basic <base64(username:password)>.
-    Delegates credential validation to the app-level login_validator from the registry.
+    Delegates credential validation to the provided login_validator.
     """
+
+    def __init__(
+        self,
+        login_validator: Optional[LoginValidator] = None,
+    ) -> None:
+        self.login_validator = login_validator
 
     def authenticate(self, request: Request) -> bool:
         if request.method == "OPTIONS":
@@ -171,16 +179,12 @@ class BasicAuthentication(BaseAuthentication):
             return False
 
         # Use the shared Basic auth parsing function
-        from lightapi._login import _parse_basic_header
-
         credentials = _parse_basic_header(auth_header)
         if credentials is None:
             return False
 
         username, password = credentials
-        from lightapi._registry import get_login_validator
-
-        validator = get_login_validator()
+        validator = self.login_validator or get_login_validator()
         if validator is None:
             return False
 
@@ -208,12 +212,10 @@ class BasicAuthentication(BaseAuthentication):
         return JSONResponse({"error": "authentication failed"}, status_code=401)
 
         auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Basic "):
+        if not auth_header or not auth_header.lower().startswith("basic "):
             return False
 
         try:
-            import base64
-
             token = auth_header.split(" ", 1)[1]
             decoded = base64.b64decode(token).decode("utf-8")
         except (ValueError, IndexError, UnicodeDecodeError):
@@ -224,8 +226,6 @@ class BasicAuthentication(BaseAuthentication):
             return False
 
         username, password = parts[0], parts[1]
-        from lightapi._registry import get_login_validator
-
         validator = get_login_validator()
         if validator is None:
             return False

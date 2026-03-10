@@ -9,17 +9,19 @@ from lightapi.exceptions import ConfigurationError
 class _Config:
     """Configuration used by JWTAuthentication and other components."""
 
-    VALID_JWT_ALGORITHMS = {
-        "HS256",
-        "HS384",
-        "HS512",
-        "RS256",
-        "RS384",
-        "RS512",
-        "ES256",
-        "ES384",
-        "ES512",
-    }
+    VALID_JWT_ALGORITHMS = frozenset(
+        {
+            "HS256",
+            "HS384",
+            "HS512",
+            "RS256",
+            "RS384",
+            "RS512",
+            "ES256",
+            "ES384",
+            "ES512",
+        }
+    )
 
     def __init__(self) -> None:
         self._overrides: dict[str, Any] = {}
@@ -70,6 +72,16 @@ class Authentication:
         )
         self.jwt_expiration = jwt_expiration
         self.jwt_extra_claims = jwt_extra_claims
+
+        # Validate jwt_algorithm if provided
+        if (
+            jwt_algorithm is not None
+            and jwt_algorithm not in config.VALID_JWT_ALGORITHMS
+        ):
+            raise ConfigurationError(
+                f"Invalid JWT algorithm: '{jwt_algorithm}'. "
+                f"Must be one of: {sorted(config.VALID_JWT_ALGORITHMS)}"
+            )
         self.jwt_algorithm = jwt_algorithm
 
 

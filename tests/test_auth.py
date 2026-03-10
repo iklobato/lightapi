@@ -1,6 +1,7 @@
 """Tests for US3: Authentication and Permission classes."""
 
 import os
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine
@@ -59,7 +60,7 @@ def jwt_secret(monkeypatch_session=None):
     return secret
 
 
-def _login_validator(username: str, password: str):
+def _login_validator(_username: str, _password: str) -> dict[str, Any] | None:
     """Test validator; always returns None (tests use _make_token for tokens)."""
     return None
 

@@ -33,13 +33,11 @@ def _dummy_login_validator(username: str, password: str):
 def _from_str(content: str, login_validator=None) -> LightApi:
     path = _write_yaml(content)
     try:
-        # Pass login_validator when YAML uses JWT or Basic auth (required by LightApi)
-        needs_validator = (
-            "JWTAuthentication" in content or "BasicAuthentication" in content
-        )
-        if needs_validator and login_validator is None:
-            login_validator = _dummy_login_validator
-        return LightApi.from_config(path, login_validator=login_validator)
+        # Only pass login_validator if explicitly provided
+        kwargs = {}
+        if login_validator is not None:
+            kwargs["login_validator"] = login_validator
+        return LightApi.from_config(path, **kwargs)
     finally:
         os.unlink(path)
 
@@ -347,24 +345,39 @@ class TestYamlAuthConfig:
     def test_login_validator_dotted_path_from_yaml(self):
         """auth.login_validator as dotted path resolves to callable."""
         os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret"
-        content = """\
-            database:
-              url: "sqlite:///:memory:"
-            auth:
-              login_validator: tests.test_yaml_config._dummy_login_validator
-            defaults:
-              authentication:
-                backend: JWTAuthentication
-                permission: IsAuthenticated
-            endpoints:
-              - route: /x
-                fields:
-                  data: { type: str }
-                meta:
-                  methods: [GET]
-            """
-        app = _from_str(content)
-        assert app._login_validator is _dummy_login_validator
+
+        # Create a simple validator function
+        def test_validator(username: str, password: str):
+            return {"sub": "test"}
+
+        # Monkey-patch it into the module
+        import tests.test_yaml_config
+
+        tests.test_yaml_config.test_validator_func = test_validator
+
+        try:
+            content = """\
+                database:
+                  url: "sqlite:///:memory:"
+                auth:
+                  login_validator: tests.test_yaml_config.test_validator_func
+                defaults:
+                  authentication:
+                    backend: JWTAuthentication
+                    permission: IsAuthenticated
+                endpoints:
+                  - route: /x
+                    fields:
+                      data: { type: str }
+                    meta:
+                      methods: [GET]
+                """
+            app = _from_str(content)
+            # The validator from YAML should be resolved and used
+            assert app._login_validator is test_validator
+        finally:
+            # Clean up
+            delattr(tests.test_yaml_config, "test_validator_func")
 
     def test_jwt_expiration_from_defaults(self):
         """defaults.authentication.jwt_expiration flows to Meta."""

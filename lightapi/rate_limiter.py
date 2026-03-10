@@ -63,28 +63,36 @@ class RateLimiter:
 
     def _get_window_seconds(self, window: str) -> int:
         """Convert window name to seconds."""
-        if window == "minute":
+        # Extract window name from key (e.g., "auth:minute" -> "minute")
+        window_name = window.split(":")[-1] if ":" in window else window
+
+        if window_name == "minute":
             return 60
-        elif window == "hour":
+        elif window_name == "hour":
             return 3600
-        elif window == "day":
+        elif window_name == "day":
             return 86400
         else:
             return 60
 
     def _get_client_ip(self, request: Request) -> str:
         """Extract client IP from request."""
-        # Try common headers for proxy setups
+        # Always prefer the actual client host for security
+        if request.client and request.client.host:
+            return request.client.host
+
+        # Fallback to headers only if client host is not available
         for header in ("X-Forwarded-For", "X-Real-IP", "X-Client-IP"):
             if header in request.headers:
                 ip = request.headers[header].split(",")[0].strip()
                 if ip:
                     return ip
 
-        # Fall back to client host
-        return request.client.host if request.client else "0.0.0.0"
+        return "0.0.0.0"
 
-    def is_rate_limited(self, request: Request, endpoint: str = "") -> bool:
+    def is_rate_limited(
+        self, request: Request, endpoint: str = ""
+    ) -> tuple[bool, str | None]:
         """
         Check if request should be rate limited.
 
@@ -93,7 +101,8 @@ class RateLimiter:
             endpoint: Optional endpoint identifier for per-endpoint limiting.
 
         Returns:
-            bool: True if rate limited, False otherwise.
+            tuple[bool, str | None]: (True if rate limited, window name) or
+            (False, None)
         """
         self._cleanup_old_entries()
 
@@ -118,17 +127,34 @@ class RateLimiter:
                     count += request_count
 
             if count >= limit:
-                return True
+                # Don't count this request since it's being blocked
+                return (True, window_name)
 
             # Add current request
             self._store[client_ip][window_key][current_time] = (
                 self._store[client_ip][window_key].get(current_time, 0) + 1
             )
 
-        return False
+        return (False, None)
 
-    def get_rate_limit_response(self, request: Request) -> JSONResponse:
+    def get_rate_limit_response(
+        self, request: Request, window: str = "minute"
+    ) -> JSONResponse:
         """Get standard rate limit exceeded response."""
+        # Determine window-specific values
+        if window == "hour":
+            limit = self.requests_per_hour
+            retry_after = 3600
+            reset_seconds = 3600
+        elif window == "day":
+            limit = self.requests_per_day
+            retry_after = 86400
+            reset_seconds = 86400
+        else:  # minute
+            limit = self.requests_per_minute
+            retry_after = 60
+            reset_seconds = 60
+
         return JSONResponse(
             {
                 "error": "rate_limit_exceeded",
@@ -136,10 +162,10 @@ class RateLimiter:
             },
             status_code=429,
             headers={
-                "Retry-After": "60",  # Retry after 60 seconds
-                "X-RateLimit-Limit": str(self.requests_per_minute),
+                "Retry-After": str(retry_after),
+                "X-RateLimit-Limit": str(limit),
                 "X-RateLimit-Remaining": "0",
-                "X-RateLimit-Reset": str(int(time.time() + 60)),
+                "X-RateLimit-Reset": str(int(time.time() + reset_seconds)),
             },
         )
 

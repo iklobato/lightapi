@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.auth import JWTAuthentication
-from lightapi.rate_limiter import rate_limit_auth_endpoint
+# JWTAuthentication imported locally where needed to avoid circular import
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def _parse_basic_header(auth_header: str) -> tuple[str, str] | None:
 
     Returns (username, password) or None if malformed.
     """
-    if not auth_header.startswith("Basic "):
+    if not auth_header.lower().startswith("basic "):
         return None
     try:
         token = auth_header.split(" ", 1)[1]
@@ -65,8 +65,6 @@ async def _parse_credentials(request: Request) -> tuple[str, str] | None:
 
 async def _read_body(request: Request) -> dict[str, Any]:
     """Read JSON body; return {} on empty or invalid."""
-    import json
-
     try:
         body = await request.body()
         return json.loads(body) if body else {}
@@ -74,7 +72,6 @@ async def _read_body(request: Request) -> dict[str, Any]:
         return {}
 
 
-@rate_limit_auth_endpoint
 async def login_handler(
     request: Request,
     *,
@@ -83,6 +80,7 @@ async def login_handler(
     jwt_expiration: int | None = None,
     jwt_extra_claims: list[str] | None = None,
     jwt_algorithm: str | None = None,
+    rate_limiter: Optional[Any] = None,
 ) -> JSONResponse:
     """
     Handle POST /auth/login and POST /auth/token.
@@ -90,7 +88,11 @@ async def login_handler(
     Returns 422 for body validation, 401 for malformed Basic or invalid credentials,
     500 for validator exception, 200 with token+user (JWT) or user only (Basic).
     """
-    from pydantic import ValidationError
+    # Apply rate limiting if a rate limiter is provided
+    if rate_limiter is not None:
+        is_limited, window = rate_limiter.is_rate_limited(request, endpoint="auth")
+        if is_limited:
+            return rate_limiter.get_rate_limit_response(request, window)
 
     if request.method != "POST":
         return JSONResponse(
@@ -118,6 +120,8 @@ async def login_handler(
         return JSONResponse({"detail": "Invalid credentials"}, status_code=401)
 
     if has_jwt:
+        from lightapi.auth import JWTAuthentication
+
         jwt_auth = JWTAuthentication(algorithm=jwt_algorithm)
         if jwt_extra_claims and isinstance(payload, dict):
             token_payload = {k: payload[k] for k in jwt_extra_claims if k in payload}
