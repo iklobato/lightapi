@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from lightapi.exceptions import ConfigurationError
 from lightapi.constants import (
@@ -14,6 +14,9 @@ from lightapi.constants import (
     VALID_PAGINATION_STYLES,
     RESERVED_JWT_CLAIMS,
 )
+
+if TYPE_CHECKING:
+    from lightapi.rate_limiter import RateLimiter
 
 
 @dataclass
@@ -68,10 +71,15 @@ class Authentication:
     jwt_expiration: int | None = None
     jwt_extra_claims: tuple[str, ...] = field(default_factory=tuple)
     jwt_algorithm: str | None = None
+    rate_limiter: "RateLimiter | None" = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        # Lazy import to avoid circular imports
+        pass
 
     @property
     def permission_value(self) -> type:
-        from lightapi.auth import AllowAny
+        from lightapi.authentication import AllowAny
 
         return self.permission or AllowAny
 

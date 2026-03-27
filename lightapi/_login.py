@@ -82,12 +82,12 @@ async def _read_body(request: Request) -> dict[str, Any]:
 async def login_handler(
     request: Request,
     *,
-    login_validator: Callable[[str, str], dict[str, Any] | None],
     has_jwt: bool,
     jwt_expiration: int | None = None,
     jwt_extra_claims: list[str] | None = None,
     jwt_algorithm: str | None = None,
     rate_limiter: Optional[Any] = None,
+    auth_backend: Optional[Any] = None,
 ) -> JSONResponse:
     """
     Handle POST /auth/login and POST /auth/token.
@@ -123,11 +123,18 @@ async def login_handler(
         )
 
     username, password = creds
-    try:
-        payload = login_validator(username, password)
-    except Exception as e:
-        logger.exception("login_validator raised: %s", e)
-        raise
+
+    # Use auth_backend's validate_credentials if provided
+    payload = None
+    if auth_backend is not None:
+        try:
+            payload = auth_backend.validate_credentials(username, password)
+        except Exception as e:
+            logger.exception("validate_credentials raised: %s", e)
+            return JSONResponse(
+                {RESPONSE_KEY_DETAIL: "Internal server error"},
+                status_code=500,
+            )
 
     if payload is None:
         return JSONResponse(
@@ -136,7 +143,7 @@ async def login_handler(
         )
 
     if has_jwt:
-        from lightapi.auth import JWTAuthentication
+        from lightapi.authentication import JWTAuthentication
 
         jwt_auth = JWTAuthentication(algorithm=jwt_algorithm)
         if jwt_extra_claims and isinstance(payload, dict):

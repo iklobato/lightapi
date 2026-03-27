@@ -8,7 +8,7 @@ import json
 import logging
 import os
 import warnings
-from typing import Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 import uvicorn
 from sqlalchemy import create_engine
@@ -19,8 +19,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from lightapi.session_manager import LoginValidator, SessionManager
-from lightapi.auth import AllowAny, BasicAuthentication, JWTAuthentication
+from lightapi.session_manager import SessionManager
+from lightapi.authentication import AllowAny, BasicAuthentication, JWTAuthentication
 from lightapi.cache import get_cached, invalidate_cache_prefix, set_cached
 from lightapi.constants import (
     HTTPStatus,
@@ -29,6 +29,9 @@ from lightapi.constants import (
 from lightapi.exceptions import ConfigurationError
 from lightapi.rest import RestEndpoint
 from lightapi.yaml_loader import load_config
+
+if TYPE_CHECKING:
+    from lightapi.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +54,13 @@ class LightApi:
         self,
         engine: Any = None,
         database_url: str | None = None,
-        mode: str = "sync",  # "sync" or "async"
+        mode: str | None = None,  # Auto-detected if not provided
         cors_origins: list[str] | None = None,
         middlewares: list[type] | None = None,
-        login_validator: Any = None,
         auth_path: str = "/auth",
         session_manager: SessionManager | None = None,
-        rate_limiter: dict[str, int] | None = None,
+        rate_limiter: "RateLimiter | dict[str, int] | None" = None,
+        login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
     ) -> None:
         if engine is None and database_url:
             engine = create_engine(database_url)
@@ -70,43 +73,44 @@ class LightApi:
                 )
             engine = create_engine(url)
 
-        # Validate mode
-        if mode not in ("sync", "async"):
-            raise ConfigurationError(f"mode must be 'sync' or 'async', got '{mode}'")
-
-        if mode == "async":
-            try:
-                importlib.import_module("sqlalchemy.ext.asyncio")
-                from sqlalchemy.ext.asyncio import AsyncEngine
-
-                if not isinstance(engine, AsyncEngine):
-                    raise ConfigurationError(
-                        f"mode='async' requires AsyncEngine, got {type(engine).__name__}"
-                    )
-            except ImportError:
-                raise ConfigurationError(
-                    "mode='async' requires async dependencies. "
-                    "Install: uv add 'lightapi[async]'"
-                )
-
+        # Store engine first (we'll detect mode later)
         self._engine = engine
-        self._mode = mode
+
+        # Use explicit mode if provided, otherwise will be auto-detected in register()
+        if mode is not None:
+            if mode not in ("sync", "async"):
+                raise ConfigurationError(
+                    f"mode must be 'sync' or 'async', got '{mode}'"
+                )
+            self._mode = mode
+        else:
+            self._mode = "sync"  # Will be auto-detected in register()
 
         # Create session manager
         self._session_manager = session_manager or SessionManager(engine)
 
-        # Create login validator
-        self._login_validator = (
-            LoginValidator(login_validator) if login_validator else None
-        )
+        # Store login_validator for backward compatibility
+        self._login_validator = login_validator
+
+        # Rate limiter setup
+        self._rate_limiter_global: RateLimiter | None = None
+        if rate_limiter is not None:
+            from lightapi.rate_limiter import RateLimiter as RL
+
+            if isinstance(rate_limiter, RL):
+                self._rate_limiter_global = rate_limiter
+            elif isinstance(rate_limiter, dict):
+                self._rate_limiter_global = RL(
+                    requests_per_minute=rate_limiter.get("requests_per_minute", 1000),
+                    requests_per_hour=rate_limiter.get("requests_per_hour", 10000),
+                    requests_per_day=rate_limiter.get("requests_per_day", 100000),
+                )
 
         self._routes: list[Route] = []
         self._endpoint_map: dict[str, type] = {}
         self._middlewares: list[type] = middlewares or []
         self._cors_origins: list[str] = cors_origins or []
         self._auth_path = auth_path
-        self._auth_rate_limiter = None
-        self._rate_limiter_config = rate_limiter or {}
 
     # ─────────────────────────────────────────────────────────────────────────
     # Registration
@@ -120,6 +124,7 @@ class LightApi:
                 Each class must be a ``RestEndpoint`` subclass.
         """
 
+        # First pass: detect if any endpoint has async methods to auto-set mode
         for path, cls in mapping.items():
             if not (isinstance(cls, type) and issubclass(cls, RestEndpoint)):
                 raise ConfigurationError(
@@ -127,6 +132,43 @@ class LightApi:
                     f"got {cls!r}."
                 )
 
+            # Auto-detect mode from async methods
+            if self._mode == "sync":
+                for method_name in (
+                    "queryset",
+                    "get",
+                    "post",
+                    "put",
+                    "patch",
+                    "delete",
+                ):
+                    method = getattr(cls, method_name, None)
+                    # Check if it's a coroutine function (skip non-callable like SQLAlchemy Select)
+                    if (
+                        method is not None
+                        and callable(method)
+                        and asyncio.iscoroutinefunction(method)
+                    ):
+                        self._mode = "async"
+                        break
+
+        # Validate mode if explicitly set
+        if self._mode == "async":
+            try:
+                importlib.import_module("sqlalchemy.ext.asyncio")
+                from sqlalchemy.ext.asyncio import AsyncEngine
+
+                if not isinstance(self._engine, AsyncEngine):
+                    raise ConfigurationError(
+                        f"mode='async' requires AsyncEngine, got {type(self._engine).__name__}"
+                    )
+            except ImportError:
+                raise ConfigurationError(
+                    "mode='async' requires async dependencies. "
+                    "Install: uv add 'lightapi[async]'"
+                )
+
+        for path, cls in mapping.items():
             # Inject session manager into endpoint class
             cls._session_manager = self._session_manager
 
@@ -236,36 +278,59 @@ class LightApi:
                     )
                     jwt_config_algorithm = getattr(auth_cfg, "jwt_algorithm", None)
 
-        if auth_backends & {JWTAuthentication, BasicAuthentication}:
-            # Initialize rate limiter if not already created
-            if self._auth_rate_limiter is None:
+        # Check if any endpoint has authentication configured
+        auth_backends_list = []
+        for cls in self._endpoint_map.values():
+            auth_cfg = getattr(cls, "_meta", {}).get("authentication")
+            if auth_cfg and auth_cfg.backend:
+                # Store login_validator in auth_cfg for use by _check_auth
+                # Use object.__setattr__ to bypass frozen dataclass restriction
+                object.__setattr__(auth_cfg, "_login_validator", self._login_validator)
+
+                # Store backend instance with its config
+                backend = auth_cfg.backend
+                # Initialize backend with appropriate parameters based on type
+                if backend.__name__ == "JWTAuthentication":
+                    backend_instance = backend(
+                        expiration=getattr(auth_cfg, "jwt_expiration", None),
+                        algorithm=getattr(auth_cfg, "jwt_algorithm", None),
+                        rate_limiter=getattr(auth_cfg, "rate_limiter", None),
+                    )
+                elif backend.__name__ == "BasicAuthentication":
+                    backend_instance = backend(
+                        rate_limiter=getattr(auth_cfg, "rate_limiter", None),
+                        login_validator=self._login_validator,
+                    )
+                else:
+                    backend_instance = backend()
+                auth_backends_list.append((cls, auth_cfg, backend_instance))
+
+        # Auto-register /auth/login and /auth/token when JWT or Basic auth is used
+        has_auth_backends = any(
+            isinstance(auth[2], (JWTAuthentication, BasicAuthentication))
+            for auth in auth_backends_list
+        )
+
+        if has_auth_backends:
+            # Use global rate limiter if set, otherwise create default
+            rate_limiter = self._rate_limiter_global
+            if rate_limiter is None:
                 from lightapi.rate_limiter import RateLimiter
 
-                self._auth_rate_limiter = RateLimiter(
-                    requests_per_minute=self._rate_limiter_config.get(
-                        "requests_per_minute", 1000
-                    ),
-                    requests_per_hour=self._rate_limiter_config.get(
-                        "requests_per_hour", 10000
-                    ),
-                    requests_per_day=self._rate_limiter_config.get(
-                        "requests_per_day", 100000
-                    ),
+                rate_limiter = RateLimiter(
+                    requests_per_minute=1000,
+                    requests_per_hour=10000,
+                    requests_per_day=100000,
                 )
 
-            if self._login_validator is None:
-                raise ConfigurationError(
-                    "login_validator is required when using JWTAuthentication "
-                    "or BasicAuthentication. Pass it to LightApi(login_validator=...)."
-                )
-            has_jwt = JWTAuthentication in auth_backends
+            has_jwt = any(
+                isinstance(auth[2], JWTAuthentication) for auth in auth_backends_list
+            )
             auth_path = self._auth_path.rstrip("/")
 
-            # Check if auth routes already exist
             login_path = f"{auth_path}/login"
             token_path = f"{auth_path}/token"
 
-            # Remove existing auth routes if any
             self._routes = [
                 route
                 for route in self._routes
@@ -279,6 +344,7 @@ class LightApi:
                 jwt_expiration=jwt_config_expiration,
                 jwt_extra_claims=jwt_config_extra_claims,
                 jwt_algorithm=jwt_config_algorithm,
+                rate_limiter=rate_limiter,
             )
             self._routes.insert(
                 0,
@@ -304,21 +370,36 @@ class LightApi:
         jwt_expiration: int | None,
         jwt_extra_claims: list[str] | None,
         jwt_algorithm: str | None,
+        rate_limiter: "RateLimiter",
     ) -> Any:
         """Create the login/token handler with captured config."""
         from lightapi._login import login_handler
+        from lightapi.authentication import JWTAuthentication
 
-        login_validator = self._login_validator
+        # Create auth backend that wraps login_validator for validate_credentials
+        auth_backend = JWTAuthentication()
+
+        # Override validate_credentials to use login_validator if provided
+        original_validate = auth_backend.validate_credentials
+
+        def wrapped_validate(username: str, password: str) -> dict[str, Any] | None:
+            # Try login_validator first if provided
+            if self._login_validator is not None:
+                return self._login_validator(username, password)
+            # Otherwise try the original method
+            return original_validate(username, password)
+
+        auth_backend.validate_credentials = wrapped_validate
 
         async def handler(request: Request) -> Response:
             return await login_handler(
                 request,
-                login_validator=login_validator,
                 has_jwt=has_jwt,
                 jwt_expiration=jwt_expiration,
                 jwt_extra_claims=jwt_extra_claims,
                 jwt_algorithm=jwt_algorithm,
-                rate_limiter=self._auth_rate_limiter,
+                rate_limiter=rate_limiter,
+                auth_backend=auth_backend,
             )
 
         return handler
@@ -336,38 +417,37 @@ class LightApi:
             if pre_result is not None:
                 return pre_result
 
-            auth_result = _check_auth(
-                cls, request, login_validator=self._login_validator
-            )
+            auth_result = _check_auth(cls, request)
             if auth_result is not None:
                 return auth_result
 
             if request.method == "GET":
                 get_override = getattr(cls, "get", None)
                 if get_override and asyncio.iscoroutinefunction(get_override):
-                    response = await get_override(endpoint, request)
+                    result = await get_override(endpoint, request)
                 elif is_async:
-                    response = await endpoint._list_async(request)
+                    result = await endpoint._list_async(request)
                 else:
-                    response = _maybe_cached(
-                        cls, request, lambda: endpoint.list(request)
-                    )
+                    result = _maybe_cached(cls, request, lambda: endpoint.list(request))
             elif request.method == "POST":
                 data = await _read_body(request)
                 post_override = getattr(cls, "post", None)
                 if post_override and asyncio.iscoroutinefunction(post_override):
-                    response = await post_override(endpoint, request)
+                    result = await post_override(endpoint, request)
                 elif is_async:
-                    response = await endpoint._create_async(data)
+                    result = await endpoint._create_async(data)
                 else:
-                    response = endpoint.create(data)
+                    result = endpoint.create(data)
             else:
                 allowed = ", ".join(sorted(cls._allowed_methods & {"GET", "POST"}))
-                response = JSONResponse(
+                result = JSONResponse(
                     {RESPONSE_KEY_DETAIL: f"Method Not Allowed. Allowed: {allowed}"},
                     status_code=HTTPStatus.METHOD_NOT_ALLOWED,
                     headers={"Allow": allowed},
                 )
+
+            # Wrap dict responses in JSONResponse
+            response = _wrap_dict_response(result)
 
             if not is_async:
                 _maybe_invalidate_cache(cls, request)
@@ -395,20 +475,18 @@ class LightApi:
             if pre_result is not None:
                 return pre_result
 
-            auth_result = _check_auth(
-                cls, request, login_validator=self._login_validator
-            )
+            auth_result = _check_auth(cls, request)
             if auth_result is not None:
                 return auth_result
 
             if request.method == "GET":
                 get_override = getattr(cls, "get", None)
                 if get_override and asyncio.iscoroutinefunction(get_override):
-                    response = await get_override(endpoint, request)
+                    result = await get_override(endpoint, request)
                 elif is_async:
-                    response = await endpoint._retrieve_async(request, pk)
+                    result = await endpoint._retrieve_async(request, pk)
                 else:
-                    response = _maybe_cached(
+                    result = _maybe_cached(
                         cls, request, lambda: endpoint.retrieve(request, pk)
                     )
             elif request.method in {"PUT", "PATCH"}:
@@ -416,28 +494,31 @@ class LightApi:
                 partial = request.method == "PATCH"
                 put_override = getattr(cls, "put" if not partial else "patch", None)
                 if put_override and asyncio.iscoroutinefunction(put_override):
-                    response = await put_override(endpoint, request)
+                    result = await put_override(endpoint, request)
                 elif is_async:
-                    response = await endpoint._update_async(data, pk, partial=partial)
+                    result = await endpoint._update_async(data, pk, partial=partial)
                 else:
-                    response = endpoint.update(data, pk, partial=partial)
+                    result = endpoint.update(data, pk, partial=partial)
             elif request.method == "DELETE":
                 delete_override = getattr(cls, "delete", None)
                 if delete_override and asyncio.iscoroutinefunction(delete_override):
-                    response = await delete_override(endpoint, request)
+                    result = await delete_override(endpoint, request)
                 elif is_async:
-                    response = await endpoint._destroy_async(request, pk)
+                    result = await endpoint._destroy_async(request, pk)
                 else:
-                    response = endpoint.destroy(request, pk)
+                    result = endpoint.destroy(request, pk)
             else:
                 allowed = ", ".join(
                     sorted(cls._allowed_methods & {"GET", "PUT", "PATCH", "DELETE"})
                 )
-                response = JSONResponse(
+                result = JSONResponse(
                     {RESPONSE_KEY_DETAIL: f"Method Not Allowed. Allowed: {allowed}"},
                     status_code=HTTPStatus.METHOD_NOT_ALLOWED,
                     headers={"Allow": allowed},
                 )
+
+            # Wrap dict responses in JSONResponse
+            response = _wrap_dict_response(result)
 
             if not is_async:
                 _maybe_invalidate_cache(cls, request)
@@ -658,7 +739,6 @@ async def _read_body(request: Request) -> dict[str, Any]:
 def _check_auth(
     cls: type,
     request: Request,
-    login_validator: Optional[Callable[[str, str], Dict[str, Any] | None]] = None,
 ) -> Response | None:
     """Run authentication + permission checks; return 401/403 response or None."""
 
@@ -684,14 +764,24 @@ def _check_auth(
         perm_cls = AllowAny
 
     if backend is not None:
-        # Pass JWT configuration if backend is JWTAuthentication
+        # Create authenticator with config based on backend type
+        # Note: We need to access self._login_validator from the LightApi instance
+        # but _check_auth is a standalone function. For now, we'll rely on the
+        # authentication backend's validate_credentials method being overridden
+        # or use the login_validator from the global config
+        login_validator = getattr(auth_cfg, "_login_validator", None)
+
         if backend.__name__ == "JWTAuthentication":
             authenticator = backend(
                 expiration=getattr(auth_cfg, "jwt_expiration", None),
                 algorithm=getattr(auth_cfg, "jwt_algorithm", None),
+                rate_limiter=getattr(auth_cfg, "rate_limiter", None),
             )
         elif backend.__name__ == "BasicAuthentication":
-            authenticator = backend(login_validator=login_validator)
+            authenticator = backend(
+                rate_limiter=getattr(auth_cfg, "rate_limiter", None),
+                login_validator=login_validator,
+            )
         else:
             authenticator = backend()
 
@@ -787,3 +877,10 @@ def _cache_key(cls: type, request: Request) -> str:
 
 def _cache_key_prefix(cls: type) -> str:
     return f"lightapi:{cls.__name__}:"
+
+
+def _wrap_dict_response(result: Any) -> Response:
+    """Wrap dict responses in JSONResponse, leave Response unchanged."""
+    if isinstance(result, dict):
+        return JSONResponse(result)
+    return result
