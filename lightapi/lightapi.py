@@ -19,13 +19,13 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from lightapi._registry import (
-    get_registry_and_metadata,
-    set_engine,
-    set_login_validator,
-)
+from lightapi.session_manager import LoginValidator, SessionManager
 from lightapi.auth import AllowAny, BasicAuthentication, JWTAuthentication
 from lightapi.cache import get_cached, invalidate_cache_prefix, set_cached
+from lightapi.constants import (
+    HTTPStatus,
+    RESPONSE_KEY_DETAIL,
+)
 from lightapi.exceptions import ConfigurationError
 from lightapi.rest import RestEndpoint
 from lightapi.yaml_loader import load_config
@@ -51,10 +51,13 @@ class LightApi:
         self,
         engine: Any = None,
         database_url: str | None = None,
+        mode: str = "sync",  # "sync" or "async"
         cors_origins: list[str] | None = None,
         middlewares: list[type] | None = None,
         login_validator: Any = None,
         auth_path: str = "/auth",
+        session_manager: SessionManager | None = None,
+        rate_limiter: dict[str, int] | None = None,
     ) -> None:
         if engine is None and database_url:
             engine = create_engine(database_url)
@@ -67,27 +70,43 @@ class LightApi:
                 )
             engine = create_engine(url)
 
+        # Validate mode
+        if mode not in ("sync", "async"):
+            raise ConfigurationError(f"mode must be 'sync' or 'async', got '{mode}'")
+
+        if mode == "async":
+            try:
+                importlib.import_module("sqlalchemy.ext.asyncio")
+                from sqlalchemy.ext.asyncio import AsyncEngine
+
+                if not isinstance(engine, AsyncEngine):
+                    raise ConfigurationError(
+                        f"mode='async' requires AsyncEngine, got {type(engine).__name__}"
+                    )
+            except ImportError:
+                raise ConfigurationError(
+                    "mode='async' requires async dependencies. "
+                    "Install: uv add 'lightapi[async]'"
+                )
+
         self._engine = engine
-        set_engine(engine)
+        self._mode = mode
 
-        # Detect async engine — drives session strategy and startup validation
-        try:
-            importlib.import_module("sqlalchemy.ext.asyncio")
-            from sqlalchemy.ext.asyncio import AsyncEngine
+        # Create session manager
+        self._session_manager = session_manager or SessionManager(engine)
 
-            self._async: bool = isinstance(engine, AsyncEngine)
-        except ImportError:
-            self._async = False
+        # Create login validator
+        self._login_validator = (
+            LoginValidator(login_validator) if login_validator else None
+        )
 
         self._routes: list[Route] = []
         self._endpoint_map: dict[str, type] = {}
         self._middlewares: list[type] = middlewares or []
         self._cors_origins: list[str] = cors_origins or []
-        self._login_validator = login_validator
         self._auth_path = auth_path
         self._auth_rate_limiter = None
-        if login_validator is not None:
-            set_login_validator(login_validator)
+        self._rate_limiter_config = rate_limiter or {}
 
     # ─────────────────────────────────────────────────────────────────────────
     # Registration
@@ -107,8 +126,44 @@ class LightApi:
                     f"register() value for '{path}' must be a RestEndpoint subclass, "
                     f"got {cls!r}."
                 )
+
+            # Inject session manager into endpoint class
+            cls._session_manager = self._session_manager
+
+            # Re-map table if it was mapped to a different metadata during class definition
+            if not getattr(cls, "_reflect_deferred", False):
+                from lightapi.rest import _map_imperatively
+
+                # Check if already mapped to a different metadata
+                existing_model = getattr(cls, "_model_class", None)
+                if existing_model is not None:
+                    # Check if mapped to different metadata
+                    from sqlalchemy import inspect as sa_inspect
+
+                    try:
+                        mapper = sa_inspect(existing_model)
+                        if mapper.local_table is not None:
+                            if (
+                                mapper.local_table.metadata
+                                is not self._session_manager.metadata
+                            ):
+                                # Re-map with correct metadata
+                                _map_imperatively(
+                                    cls,
+                                    cls.__name__,
+                                    all_columns=getattr(cls, "_all_columns", []),
+                                    meta_obj=getattr(cls, "Meta", None),
+                                    session_manager=self._session_manager,
+                                )
+                    except Exception:
+                        pass
+
+            # Log registration for transparency
+            logger.info(f"Registering endpoint {path} -> {cls.__name__}")
+            logger.debug(f"  SQLAlchemy metadata: {cls._meta}")
+
             # Warn if endpoint defines async queryset but engine is sync
-            if not self._async:
+            if self._mode == "sync":
                 qs = cls.__dict__.get("queryset")
                 if qs is None:
                     qs = getattr(cls, "queryset", None)
@@ -129,9 +184,10 @@ class LightApi:
                 _map_reflected(
                     cls,
                     cls.__name__,
-                    meta_obj=meta_obj,
-                    partial=partial,
-                    extra_columns=extra_cols,
+                    meta_obj,
+                    partial,
+                    extra_cols,
+                    session_manager=self._session_manager,
                 )
                 if getattr(cls, "_schema_deferred", False):
                     from sqlalchemy import inspect as sa_inspect
@@ -185,7 +241,17 @@ class LightApi:
             if self._auth_rate_limiter is None:
                 from lightapi.rate_limiter import RateLimiter
 
-                self._auth_rate_limiter = RateLimiter()
+                self._auth_rate_limiter = RateLimiter(
+                    requests_per_minute=self._rate_limiter_config.get(
+                        "requests_per_minute", 1000
+                    ),
+                    requests_per_hour=self._rate_limiter_config.get(
+                        "requests_per_hour", 10000
+                    ),
+                    requests_per_day=self._rate_limiter_config.get(
+                        "requests_per_day", 100000
+                    ),
+                )
 
             if self._login_validator is None:
                 raise ConfigurationError(
@@ -259,7 +325,7 @@ class LightApi:
 
     def _make_collection_handler(self, cls: type) -> Any:
         app_middlewares = self._middlewares
-        is_async = self._async
+        is_async = self._mode == "async"
 
         async def handler(request: Request) -> Response:
             endpoint = cls()
@@ -298,8 +364,8 @@ class LightApi:
             else:
                 allowed = ", ".join(sorted(cls._allowed_methods & {"GET", "POST"}))
                 response = JSONResponse(
-                    {"detail": f"Method Not Allowed. Allowed: {allowed}"},
-                    status_code=405,
+                    {RESPONSE_KEY_DETAIL: f"Method Not Allowed. Allowed: {allowed}"},
+                    status_code=HTTPStatus.METHOD_NOT_ALLOWED,
                     headers={"Allow": allowed},
                 )
 
@@ -317,7 +383,7 @@ class LightApi:
 
     def _make_detail_handler(self, cls: type) -> Any:
         app_middlewares = self._middlewares
-        is_async = self._async
+        is_async = self._mode == "async"
 
         async def handler(request: Request) -> Response:
             pk: int = request.path_params["id"]
@@ -368,8 +434,8 @@ class LightApi:
                     sorted(cls._allowed_methods & {"GET", "PUT", "PATCH", "DELETE"})
                 )
                 response = JSONResponse(
-                    {"detail": f"Method Not Allowed. Allowed: {allowed}"},
-                    status_code=405,
+                    {RESPONSE_KEY_DETAIL: f"Method Not Allowed. Allowed: {allowed}"},
+                    status_code=HTTPStatus.METHOD_NOT_ALLOWED,
                     headers={"Allow": allowed},
                 )
 
@@ -397,12 +463,12 @@ class LightApi:
         reload: bool = False,
     ) -> None:
         """Create tables, build the Starlette ASGI app and start uvicorn."""
-        if self._async:
+        if self._mode == "async":
             _validate_async_dependencies(self._engine)
         self._create_tables()
         self._check_cache_connections()
 
-        on_startup = [self._async_create_tables] if self._async else []
+        on_startup = [self._async_create_tables] if self._mode == "async" else []
         app = Starlette(debug=debug, routes=self._routes, on_startup=on_startup)
 
         if self._cors_origins:
@@ -431,7 +497,7 @@ class LightApi:
         """
         self._create_tables()
         self._check_cache_connections()
-        on_startup = [self._async_create_tables] if self._async else []
+        on_startup = [self._async_create_tables] if self._mode == "async" else []
         return Starlette(routes=self._routes, on_startup=on_startup)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -451,14 +517,41 @@ class LightApi:
 
         return load_config(cls, config_path, **kwargs)
 
+    @classmethod
+    def from_dict(cls, config: dict[str, Any], **kwargs: Any) -> "LightApi":
+        """Create a LightApi instance from a Python dictionary.
+
+        Simpler alternative to YAML config for programmatic setup.
+
+        Example::
+
+            config = {
+                "database_url": "sqlite:///db.sqlite3",
+                "endpoints": {
+                    "/books": {
+                        "fields": {"title": str, "author": str},
+                        "auth": "jwt",
+                    },
+                    "/authors": {
+                        "fields": {"name": str},
+                    },
+                },
+                "cors": ["https://myapp.com"],
+            }
+            app = LightApi.from_dict(config)
+        """
+        from lightapi._dict_config_loader import load_from_dict
+
+        return load_from_dict(cls, config, **kwargs)
+
     # ─────────────────────────────────────────────────────────────────────────
     # Internal helpers
     # ─────────────────────────────────────────────────────────────────────────
 
     def _create_tables(self) -> None:
-        _, metadata = get_registry_and_metadata()
+        metadata = self._session_manager.metadata
         try:
-            if self._async:
+            if self._mode == "async":
                 # For async engines, table creation must run inside the same event loop
                 # that will serve requests (uvicorn's loop), so we defer it to on_startup
                 # unless we are already inside a running loop (pytest-asyncio).
@@ -479,14 +572,26 @@ class LightApi:
                     # that build_app() adds. Nothing to do here.
                     pass
             else:
-                metadata.create_all(bind=self._engine)
-                logger.info("Tables created/verified against %s", self._engine.url)
+                # For sync mode or async engines in sync context
+                if self._mode == "async":
+                    # Use sync engine for async engines
+                    from sqlalchemy.ext.asyncio import AsyncEngine
+
+                    if isinstance(self._engine, AsyncEngine):
+                        engine = self._engine.sync_engine
+                    else:
+                        engine = self._engine
+                else:
+                    engine = self._engine
+
+                metadata.create_all(bind=engine)
+                logger.info("Tables created/verified against %s", engine.url)
         except Exception as exc:
             logger.warning("Table creation warning: %s", exc)
 
     async def _async_create_tables(self) -> None:
         """Called on server startup; creates tables inside the running event loop."""
-        _, metadata = get_registry_and_metadata()
+        metadata = self._session_manager.metadata
         try:
             async with self._engine.begin() as conn:
                 await conn.run_sync(metadata.create_all)
@@ -592,15 +697,18 @@ def _check_auth(
 
         if not authenticator.authenticate(request):
             return JSONResponse(
-                {"detail": "Authentication credentials invalid."}, status_code=401
+                {RESPONSE_KEY_DETAIL: "Authentication credentials invalid."},
+                status_code=HTTPStatus.UNAUTHORIZED,
             )
 
     if perm_cls is not None:
         perm = perm_cls()
         if not perm.has_permission(request):
             return JSONResponse(
-                {"detail": "You do not have permission to perform this action."},
-                status_code=403,
+                {
+                    RESPONSE_KEY_DETAIL: "You do not have permission to perform this action."
+                },
+                status_code=HTTPStatus.FORBIDDEN,
             )
 
     return None

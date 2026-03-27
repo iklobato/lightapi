@@ -33,6 +33,11 @@ class RateLimiter:
         self._cleanup_interval = 300  # Cleanup every 5 minutes
         self._last_cleanup = time.time()
 
+    def reset(self) -> None:
+        """Reset all rate limit tracking. Useful for testing."""
+        self._store.clear()
+        self._last_cleanup = time.time()
+
     def _cleanup_old_entries(self) -> None:
         """Remove old entries to prevent memory leak."""
         current_time = time.time()
