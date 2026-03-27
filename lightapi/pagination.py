@@ -3,14 +3,79 @@ from __future__ import annotations
 import base64
 import json
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
+from lightapi.constants import (
+    PAGE_PARAM,
+    RESPONSE_KEY_COUNT,
+    RESPONSE_KEY_PAGES,
+    RESPONSE_KEY_NEXT,
+    RESPONSE_KEY_PREVIOUS,
+    RESPONSE_KEY_RESULTS,
+    CURSOR_PARAM,
+    VALID_PAGINATION_STYLES,
+)
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
+
+class PaginatorProtocol(Protocol):
+    """Protocol for pagination strategies."""
+
+    def paginate(
+        self,
+        request: Request,
+        qs: Any,
+        session: Session,
+        page_size: int,
+    ) -> tuple[list[Any], int] | tuple[list[Any], str | None]:
+        """Paginate a queryset."""
+        ...
+
+    def wrap(
+        self,
+        request: Request,
+        results: list[Any],
+        total: int = ...,
+        page: int = ...,
+        page_size: int = ...,
+        next_cursor: str | None = ...,
+        prev_cursor: str | None = ...,
+    ) -> dict[str, Any]:
+        """Wrap results in pagination response."""
+        ...
+
+
+class PaginatorFactory:
+    """Factory to create paginator instances based on configuration."""
+
+    @staticmethod
+    def create(style: str = "page_number") -> PaginatorProtocol:
+        """Create a paginator instance based on the style.
+
+        Args:
+            style: Pagination style ("page_number" or "cursor")
+
+        Returns:
+            A paginator instance implementing PaginatorProtocol
+
+        Raises:
+            ValueError: If style is not recognized
+        """
+        if style not in VALID_PAGINATION_STYLES:
+            raise ValueError(
+                f"Unknown pagination style: {style}. "
+                f"Valid styles: {VALID_PAGINATION_STYLES}"
+            )
+
+        if style == "cursor":
+            return CursorPaginator()
+        return PageNumberPaginator()
 
 
 def encode_cursor(last_id: int) -> str:
@@ -31,12 +96,12 @@ class PageNumberPaginator:
         session: Session,
         page_size: int,
     ) -> tuple[list[Any], int]:
-        page = max(1, int(request.query_params.get("page", 1)))
+        page = max(1, int(request.query_params.get(PAGE_PARAM, 1)))
         offset = (page - 1) * page_size
         count_stmt = select(func.count()).select_from(qs.subquery())
         total: int = session.execute(count_stmt).scalar_one()
         rows = session.execute(qs.limit(page_size).offset(offset)).scalars().all()
-        return rows, total
+        return list(rows), total
 
     async def paginate_async(
         self,
@@ -46,7 +111,7 @@ class PageNumberPaginator:
         page_size: int,
     ) -> tuple[list[Any], int]:
         """Async mirror of paginate(); uses await session.execute()."""
-        page = max(1, int(request.query_params.get("page", 1)))
+        page = max(1, int(request.query_params.get(PAGE_PARAM, 1)))
         offset = (page - 1) * page_size
         count_stmt = select(func.count()).select_from(qs.subquery())
         total: int = (await session.execute(count_stmt)).scalar_one()
@@ -69,17 +134,17 @@ class PageNumberPaginator:
         next_url = None
         prev_url = None
         if page < pages:
-            params["page"] = str(page + 1)
+            params[PAGE_PARAM] = str(page + 1)
             next_url = base + "?" + "&".join(f"{k}={v}" for k, v in params.items())
         if page > 1:
-            params["page"] = str(page - 1)
+            params[PAGE_PARAM] = str(page - 1)
             prev_url = base + "?" + "&".join(f"{k}={v}" for k, v in params.items())
         return {
-            "count": total,
-            "pages": pages,
-            "next": next_url,
-            "previous": prev_url,
-            "results": results,
+            RESPONSE_KEY_COUNT: total,
+            RESPONSE_KEY_PAGES: pages,
+            RESPONSE_KEY_NEXT: next_url,
+            RESPONSE_KEY_PREVIOUS: prev_url,
+            RESPONSE_KEY_RESULTS: results,
         }
 
 
@@ -93,7 +158,7 @@ class CursorPaginator:
         session: Session,
         page_size: int,
     ) -> tuple[list[Any], str | None]:
-        cursor_str = request.query_params.get("cursor")
+        cursor_str = request.query_params.get(CURSOR_PARAM)
         if cursor_str:
             try:
                 last_id = decode_cursor(cursor_str)
@@ -127,7 +192,7 @@ class CursorPaginator:
         page_size: int,
     ) -> tuple[list[Any], str | None]:
         """Async mirror of paginate(); uses await session.execute()."""
-        cursor_str = request.query_params.get("cursor")
+        cursor_str = request.query_params.get(CURSOR_PARAM)
         if cursor_str:
             try:
                 last_id = decode_cursor(cursor_str)
@@ -161,82 +226,7 @@ class CursorPaginator:
         prev_cursor: str | None,
     ) -> dict[str, Any]:
         return {
-            "next": next_cursor,
-            "previous": prev_cursor,
-            "results": results,
+            RESPONSE_KEY_NEXT: next_cursor,
+            RESPONSE_KEY_PREVIOUS: prev_cursor,
+            RESPONSE_KEY_RESULTS: results,
         }
-
-
-class Paginator:
-    """
-    Base class for pagination.
-
-    Provides methods for limiting, offsetting, and sorting database queries.
-    Can be subclassed to implement custom pagination behavior.
-
-    Attributes:
-        limit: Maximum number of records to return.
-        offset: Number of records to skip.
-        sort: Whether to apply sorting.
-    """
-
-    limit = 10
-    offset = 0
-    sort = False
-
-    def paginate(self, queryset: Any) -> list[Any]:
-        """
-        Apply pagination to a database query.
-
-        Limits the number of results, applies offset, and
-        optionally sorts the queryset.
-
-        Args:
-            queryset: The SQLAlchemy query to paginate.
-
-        Returns:
-            The paginated list of results.
-        """
-        request_limit = self.get_limit()
-        request_offset = self.get_offset()
-
-        if self.sort:
-            queryset = self.apply_sorting(queryset)
-
-        return queryset.limit(request_limit).offset(request_offset).all()
-
-    def get_limit(self) -> int:
-        """
-        Get the limit for pagination.
-
-        Override this method to implement dynamic limits based on the request.
-
-        Returns:
-            int: The maximum number of records to return.
-        """
-        return self.limit
-
-    def get_offset(self) -> int:
-        """
-        Get the offset for pagination.
-
-        Override this method to implement dynamic offsets based on the request.
-
-        Returns:
-            int: The number of records to skip.
-        """
-        return self.offset
-
-    def apply_sorting(self, queryset: Any) -> Any:
-        """
-        Apply sorting to the queryset.
-
-        Override this method to implement custom sorting logic.
-
-        Args:
-            queryset: The SQLAlchemy query to sort.
-
-        Returns:
-            The sorted query.
-        """
-        return queryset

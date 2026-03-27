@@ -2,15 +2,59 @@ from __future__ import annotations
 
 import datetime
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, Callable
 
 from pydantic import ConfigDict, create_model
 from pydantic.fields import FieldInfo
 
+from lightapi.constants import AUTO_FIELDS
 from lightapi.exceptions import ConfigurationError, SerializationError
 
 logger = logging.getLogger(__name__)
-_AUTO_FIELDS = frozenset({"id", "created_at", "updated_at", "version"})
+_AUTO_FIELDS = AUTO_FIELDS
+
+# Type registry for extensible column type mapping (OCP)
+_TYPE_ANNOTATION_REGISTRY: dict[type, Callable[[Any], type]] = {}
+
+
+class SchemaHelper:
+    """Helper class for schema operations.
+
+    Provides a unified interface for serialization, field projection,
+    and row-to-dict conversion.
+    """
+
+    @staticmethod
+    def normalise_serializer(
+        serializer: object,
+    ) -> tuple[list[str] | None, list[str] | None, list[str] | None]:
+        """Return (fields, read, write) from any Serializer form."""
+        return normalise_serializer(serializer)
+
+    @staticmethod
+    def resolve_fields(cls: type, method: str) -> list[str] | None:
+        """Return the field list to project for the given HTTP method."""
+        return resolve_fields(cls, method)
+
+    @staticmethod
+    def row_to_dict(row: Any) -> dict[str, Any]:
+        """Convert a SQLAlchemy row or ORM instance to a plain dict."""
+        return _row_to_dict(row)
+
+    @staticmethod
+    def apply_fields(d: dict[str, Any], fields: list[str] | None) -> dict[str, Any]:
+        """Project a dict to only the requested field names."""
+        return _apply_fields(d, fields)
+
+
+def register_column_type(db_type: type, annotation_fn: Callable[[Any], type]) -> None:
+    """Register a column type to annotation mapping for extensibility.
+
+    Args:
+        db_type: SQLAlchemy column type class
+        annotation_fn: Function that takes column and returns Pydantic annotation
+    """
+    _TYPE_ANNOTATION_REGISTRY[db_type] = annotation_fn
 
 
 def normalise_serializer(
