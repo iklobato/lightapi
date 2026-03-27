@@ -21,7 +21,7 @@ def _make_widget_app(engine):
         class Meta:
             authentication = Authentication(permission=AllowAny)
 
-    app = LightApi(engine=engine)
+    app = LightApi(engine=engine, mode="async")
     app.register({"/widgets": Widget})
     return app
 
@@ -38,7 +38,7 @@ def _make_sync_endpoint_app(engine):
         def queryset(self, request):
             return sa_select(type(self)._model_class)
 
-    app = LightApi(engine=engine)
+    app = LightApi(engine=engine, mode="async")
     app.register({"/cats": Cat})
     return app
 
