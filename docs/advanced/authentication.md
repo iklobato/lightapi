@@ -39,7 +39,8 @@ Any request that does not carry a valid `Authorization: Bearer <token>` header n
 ## Authentication class
 
 ```python
-from lightapi import Authentication, JWTAuthentication, IsAuthenticated
+from lightapi import Authentication
+from lightapi.authentication import JWTAuthentication, IsAuthenticated
 
 Authentication(
     backend=JWTAuthentication,   # Authentication backend class
@@ -104,7 +105,8 @@ Allows access only if `JWTAuthentication.authenticate()` returns `True` (valid t
 Allows access only if the token payload contains `"is_admin": true`.
 
 ```python
-from lightapi import Authentication, JWTAuthentication, IsAdminUser
+from lightapi import Authentication
+from lightapi.authentication import JWTAuthentication, IsAdminUser
 
 class AdminEndpoint(RestEndpoint):
     name: str

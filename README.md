@@ -281,7 +281,7 @@ Use `Meta.authentication` with a backend and an optional permission class:
 ```python
 import os
 from lightapi import RestEndpoint, Authentication, Field
-from lightapi import JWTAuthentication, IsAuthenticated, IsAdminUser
+from lightapi.authentication import JWTAuthentication, IsAuthenticated, IsAdminUser
 
 os.environ["LIGHTAPI_JWT_SECRET"] = "your-secret-key"
 
@@ -304,7 +304,26 @@ class AdminOnlyEndpoint(RestEndpoint):
 2. Permission class `.has_permission(request)` — checks `request.state.user`
 3. Returns `401` if authentication fails, `403` if permission denied
 
-**Login and token endpoints:** When using `JWTAuthentication` or `BasicAuthentication`, pass `login_validator` to obtain automatic `/auth/login` and `/auth/token` endpoints:
+**Custom authentication:** Subclass `JWTAuthentication` or `BasicAuthentication` and override `validate_credentials()`:
+
+```python
+from lightapi.authentication import JWTAuthentication
+
+class MyAuthBackend(JWTAuthentication):
+    async def validate_credentials(self, username: str, password: str) -> dict | None:
+        # Custom validation logic - query your database, check LDAP, etc.
+        user = await self.get_user_from_db(username)
+        if user and await user.verify_password(password):
+            return {"sub": str(user.id), "is_admin": user.is_admin}
+        return None
+
+class ProtectedEndpoint(RestEndpoint):
+    secret: str = Field(min_length=1)
+    class Meta:
+        authentication = Authentication(backend=MyAuthBackend)
+```
+
+**Login and token endpoints:** When using `JWTAuthentication` or `BasicAuthentication`, pass `login_validator` to obtain automatic `/auth/login` and `/auth/token` endpoints (backward compatible):
 
 ```python
 def my_validator(username: str, password: str):
@@ -318,6 +337,25 @@ app = LightApi(engine=engine, login_validator=my_validator)
 app.register({"/secrets": ProtectedEndpoint})
 # POST /auth/login and POST /auth/token now accept {"username":"...","password":"..."}
 # JWT mode: 200 {"token":"...","user":{...}}; Basic-only: 200 {"user":{...}}
+```
+
+**Rate limiting:** Add per-endpoint rate limiting via `Authentication` config or global rate limiter:
+
+```python
+from lightapi import RestEndpoint, Authentication
+from lightapi.authentication import JWTAuthentication
+
+class LimitedEndpoint(RestEndpoint):
+    data: str = Field(min_length=1)
+    class Meta:
+        # Per-endpoint: 5 requests per minute
+        authentication = Authentication(
+            backend=JWTAuthentication,
+            rate_limiter={"requests": 5, "window": 60}
+        )
+
+# Or global rate limiter (applied to all endpoints)
+app = LightApi(engine=engine, rate_limiter={"requests": 100, "window": 60})
 ```
 
 **Built-in permission classes:**
@@ -630,7 +668,7 @@ class OrderEndpoint(RestEndpoint):
 
 ### Async Method Overrides
 
-Override individual HTTP verbs with `async def`:
+Override individual HTTP verbs with `async def`. Mode is auto-detected — no explicit `mode="async"` needed:
 
 ```python
 class ProductEndpoint(RestEndpoint):
@@ -647,6 +685,8 @@ class ProductEndpoint(RestEndpoint):
         # custom query, external call, etc.
         return await self._list_async(request)
 ```
+
+**Auto-detect mode:** LightAPI automatically detects whether an endpoint method is sync or async by checking if it's a coroutine function. Simply define `async def get()` and the framework will use async execution.
 
 **Built-in async CRUD helpers** available on every `RestEndpoint`:
 
@@ -825,11 +865,13 @@ Override these methods to customise behaviour. Both `def` (sync) and `async def`
 | `update` | `(data, pk, partial)` | `UPDATE WHERE id=pk AND version=N RETURNING` |
 | `destroy` | `(request, pk)` | `DELETE WHERE id=pk` |
 | `queryset` | `(request)` | Returns base `select(cls._model_class)` |
-| `get` | `(request)` | Override GET (collection or detail) |
-| `post` | `(request)` | Override POST |
-| `put` | `(request)` | Override PUT |
-| `patch` | `(request)` | Override PATCH |
+| `get` | `(request)` | Override GET (collection or detail) — can return `dict` |
+| `post` | `(request)` | Override POST — can return `dict` |
+| `put` | `(request)` | Override PUT — can return `dict` |
+| `patch` | `(request)` | Override PATCH — can return `dict` |
 | `delete` | `(request)` | Override DELETE |
+
+**Return dict or Response:** Endpoint override methods can return either a `dict` (auto-wrapped to `JSONResponse`) or a Starlette `Response` object:
 
 **Async CRUD helpers** (available when using an async engine):
 

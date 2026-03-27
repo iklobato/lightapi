@@ -100,7 +100,8 @@ Allows access only if the JWT payload contains `"is_admin": true`.
 Pass a `dict[str, type]` to apply different permission classes per HTTP method:
 
 ```python
-from lightapi import Authentication, JWTAuthentication, IsAuthenticated, IsAdminUser, AllowAny
+from lightapi import Authentication
+from lightapi.authentication import JWTAuthentication, IsAuthenticated, IsAdminUser, AllowAny
 
 class ArticleEndpoint(RestEndpoint):
     title: str
