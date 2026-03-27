@@ -12,6 +12,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from lightapi.constants import (
+    HTTPStatus,
+    RESPONSE_KEY_DETAIL,
+    RESPONSE_KEY_TOKEN,
+    RESPONSE_KEY_USER,
+)
+
 # JWTAuthentication imported locally where needed to avoid circular import
 
 logger = logging.getLogger(__name__)
@@ -96,18 +103,24 @@ async def login_handler(
 
     if request.method != "POST":
         return JSONResponse(
-            {"detail": "method not allowed"},
-            status_code=405,
+            {RESPONSE_KEY_DETAIL: "method not allowed"},
+            status_code=HTTPStatus.METHOD_NOT_ALLOWED,
             headers={"Allow": "POST"},
         )
 
     try:
         creds = await _parse_credentials(request)
     except ValidationError as exc:
-        return JSONResponse({"detail": exc.errors()}, status_code=422)
+        return JSONResponse(
+            {RESPONSE_KEY_DETAIL: exc.errors()},
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+        )
 
     if creds is None:
-        return JSONResponse({"detail": "Invalid credentials"}, status_code=401)
+        return JSONResponse(
+            {RESPONSE_KEY_DETAIL: "Invalid credentials"},
+            status_code=HTTPStatus.UNAUTHORIZED,
+        )
 
     username, password = creds
     try:
@@ -117,7 +130,10 @@ async def login_handler(
         raise
 
     if payload is None:
-        return JSONResponse({"detail": "Invalid credentials"}, status_code=401)
+        return JSONResponse(
+            {RESPONSE_KEY_DETAIL: "Invalid credentials"},
+            status_code=HTTPStatus.UNAUTHORIZED,
+        )
 
     if has_jwt:
         from lightapi.auth import JWTAuthentication
@@ -130,6 +146,6 @@ async def login_handler(
         else:
             token_payload = payload
         token = jwt_auth.generate_token(token_payload, expiration=jwt_expiration)
-        return JSONResponse({"token": token, "user": payload})
+        return JSONResponse({RESPONSE_KEY_TOKEN: token, RESPONSE_KEY_USER: payload})
 
-    return JSONResponse({"user": payload})
+    return JSONResponse({RESPONSE_KEY_USER: payload})

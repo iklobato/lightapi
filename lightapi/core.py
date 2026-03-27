@@ -34,8 +34,6 @@ class Response(JSONResponse):
             media_type: HTTP media type.
             content_type: HTTP content type (alias for media_type).
         """
-        self._test_content = content
-
         media_type = content_type or media_type or "application/json"
 
         super().__init__(
@@ -44,74 +42,6 @@ class Response(JSONResponse):
             headers=headers or {},
             media_type=media_type,
         )
-
-    def __getattribute__(self, name):
-        """Override attribute access to provide test compatibility for body."""
-        if name == "body":
-            import inspect
-
-            frame = inspect.currentframe()
-            in_test = False
-            try:
-                while frame:
-                    if frame.f_code.co_filename:
-                        filename = frame.f_code.co_filename
-                        if (
-                            "test" in filename.lower()
-                            or "testclient" in filename.lower()
-                            or frame.f_code.co_name in ["json", "response_data"]
-                        ):
-                            in_test = True
-                            break
-                    frame = frame.f_back
-            finally:
-                del frame
-
-            if in_test:
-                try:
-                    test_content = super().__getattribute__("_test_content")
-                    if test_content is not None:
-                        return test_content
-                except AttributeError:
-                    pass
-
-            try:
-                return super().__getattribute__("body")
-            except AttributeError:
-                try:
-                    actual_body = super().__getattribute__("_body")
-                    if actual_body is not None:
-                        return actual_body
-                except AttributeError:
-                    pass
-
-                try:
-                    test_content = super().__getattribute__("_test_content")
-                    if test_content is not None and in_test:
-                        return test_content
-                except AttributeError:
-                    pass
-
-                return b""
-
-        return super().__getattribute__(name)
-
-    def decode(self):
-        """
-        Decode the body content for tests that expect this method.
-        """
-        if hasattr(self, "_test_content") and self._test_content is not None:
-            if isinstance(self._test_content, dict):
-                return json.dumps(self._test_content)
-            return str(self._test_content)
-
-        try:
-            body = super().body
-            if isinstance(body, bytes):
-                return body.decode("utf-8")
-            return str(body) if body is not None else json.dumps({})
-        except (AttributeError, UnicodeDecodeError, TypeError):
-            return json.dumps({})
 
 
 class Middleware:
@@ -186,12 +116,6 @@ class CORSMiddleware(Middleware):
 
         all_headers = {**response.headers, **cors_headers}
 
-        if hasattr(response, "_test_content"):
-            return JSONResponse(
-                response._test_content,
-                status_code=response.status_code,
-                headers=all_headers,
-            )
         try:
             content = response.body
             if isinstance(content, bytes):

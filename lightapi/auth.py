@@ -1,11 +1,10 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 import jwt
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from ._registry import LoginValidator, get_login_validator
 from .config import config
 
 
@@ -57,7 +56,7 @@ class BasicAuthentication(BaseAuthentication):
 
     def __init__(
         self,
-        login_validator: Optional[LoginValidator] = None,
+        login_validator: Optional[Any] = None,
     ) -> None:
         self.login_validator = login_validator
 
@@ -77,9 +76,8 @@ class BasicAuthentication(BaseAuthentication):
             return False
 
         username, password = credentials
-        from lightapi._registry import get_login_validator
 
-        validator = self.login_validator or get_login_validator()
+        validator = self.login_validator
         if validator is None:
             return False
 
@@ -106,40 +104,6 @@ class BasicAuthentication(BaseAuthentication):
         """
         return JSONResponse({"error": "authentication failed"}, status_code=401)
 
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.lower().startswith("basic "):
-            return False
-
-        try:
-            import base64
-
-            token = auth_header.split(" ", 1)[1]
-            decoded = base64.b64decode(token).decode("utf-8")
-        except (ValueError, IndexError, UnicodeDecodeError):
-            return False
-
-        parts = decoded.split(":", 1)
-        if len(parts) != 2:
-            return False
-
-        username, password = parts[0], parts[1]
-        from lightapi._registry import get_login_validator
-
-        validator = get_login_validator()
-        if validator is None:
-            return False
-
-        try:
-            payload = validator(username, password)
-        except Exception:
-            return False
-
-        if payload is None:
-            return False
-
-        request.state.user = payload
-        return True
-
 
 class AllowAny:
     """Permits all requests regardless of authentication state."""
@@ -161,3 +125,68 @@ class IsAdminUser:
     def has_permission(self, request: Request) -> bool:
         user = getattr(request.state, "user", None)
         return isinstance(user, dict) and user.get("is_admin") is True
+
+
+class JWTAuthentication(BaseAuthentication):
+    """JWT token authentication."""
+
+    def __init__(self, algorithm: str = None, expiration: int = None):
+        self.algorithm = algorithm
+        self.expiration = expiration
+
+    def authenticate(self, request: Request) -> bool:
+        if request.method == "OPTIONS":
+            return True
+
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.lower().startswith("bearer "):
+            return False
+
+        token = auth_header.split(" ", 1)[1]
+        try:
+            # Get secret from config
+            secret = config.jwt_secret_value
+            if not secret:
+                return False
+
+            payload = jwt.decode(
+                token,
+                secret,
+                algorithms=[config.jwt_algorithm_value],
+                options={"verify_exp": True},
+            )
+        except jwt.InvalidTokenError:
+            return False
+
+        request.state.user = payload
+        return True
+
+    def get_auth_error_response(self, request: Request) -> JSONResponse:
+        return JSONResponse(
+            {"detail": "Authentication credentials invalid."},
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    def generate_token(
+        self, payload: dict[str, Any], expiration: int | None = None
+    ) -> str:
+        """Generate a JWT token."""
+        secret = config.jwt_secret_value
+        if not secret:
+            raise ValueError("JWT secret not configured")
+
+        if expiration is None:
+            # Default to 1 hour if not configured
+            expiration = 3600
+
+        payload_copy = payload.copy()
+        payload_copy["exp"] = datetime.now(timezone.utc) + timedelta(seconds=expiration)
+
+        algorithm = self.algorithm or config.jwt_algorithm_value
+
+        return jwt.encode(
+            payload_copy,
+            secret,
+            algorithm=algorithm,
+        )

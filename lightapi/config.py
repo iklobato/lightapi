@@ -1,138 +1,121 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass, field
 from typing import Any
 
 from lightapi.exceptions import ConfigurationError
+from lightapi.constants import (
+    DEFAULT_JWT_ALGORITHM,
+    DEFAULT_JWT_EXPIRATION,
+    DEFAULT_PAGE_SIZE,
+    DEFAULT_CACHE_TTL,
+    VALID_JWT_ALGORITHMS,
+    VALID_PAGINATION_STYLES,
+    RESERVED_JWT_CLAIMS,
+)
 
 
-class _Config:
-    """Configuration used by JWTAuthentication and other components."""
+@dataclass
+class Config:
+    """Configuration for LightAPI.
 
-    VALID_JWT_ALGORITHMS = frozenset(
-        {
-            "HS256",
-            "HS384",
-            "HS512",
-            "RS256",
-            "RS384",
-            "RS512",
-            "ES256",
-            "ES384",
-            "ES512",
-        }
-    )
+    Can be instantiated with custom values or loaded from environment.
+    """
 
-    def __init__(self) -> None:
-        self._overrides: dict[str, Any] = {}
-
-    def update(self, **kwargs: Any) -> None:
-        self._overrides.update(kwargs)
-
-    def _get(self, key: str, env_key: str, default: Any = None) -> Any:
-        if key in self._overrides:
-            return self._overrides[key]
-        val = os.environ.get(env_key)
-        return val if val is not None else default
+    jwt_secret: str | None = None
+    jwt_algorithm: str = DEFAULT_JWT_ALGORITHM
+    jwt_expiration: int = DEFAULT_JWT_EXPIRATION
 
     @property
-    def jwt_secret(self) -> str | None:
-        return self._get("jwt_secret", "LIGHTAPI_JWT_SECRET")
+    def jwt_secret_value(self) -> str | None:
+        if self.jwt_secret is not None:
+            return self.jwt_secret
+        return os.environ.get("LIGHTAPI_JWT_SECRET")
 
     @property
-    def jwt_algorithm(self) -> str:
-        algorithm = self._get("jwt_algorithm", "LIGHTAPI_JWT_ALGORITHM", "HS256")
-        if algorithm not in self.VALID_JWT_ALGORITHMS:
+    def jwt_algorithm_value(self) -> str:
+        algorithm = self.jwt_algorithm or os.environ.get(
+            "LIGHTAPI_JWT_ALGORITHM", DEFAULT_JWT_ALGORITHM
+        )
+        if algorithm not in VALID_JWT_ALGORITHMS:
             raise ConfigurationError(
                 f"Invalid JWT algorithm '{algorithm}'. "
-                f"Valid algorithms are: {sorted(self.VALID_JWT_ALGORITHMS)}"
+                f"Valid algorithms are: {sorted(VALID_JWT_ALGORITHMS)}"
             )
         return algorithm
 
+    def update(self, **kwargs: Any) -> None:
+        """Update configuration values."""
+        if "jwt_secret" in kwargs:
+            self.jwt_secret = kwargs["jwt_secret"]
+        if "jwt_algorithm" in kwargs:
+            self.jwt_algorithm = kwargs["jwt_algorithm"]
+        if "jwt_expiration" in kwargs:
+            self.jwt_expiration = kwargs["jwt_expiration"]
 
-config = _Config()
+
+# Default global config instance for backward compatibility
+config = Config()
 
 
+@dataclass(frozen=True)
 class Authentication:
     """Authentication configuration for a RestEndpoint."""
 
-    def __init__(
-        self,
-        backend: type | None = None,
-        permission: type | dict[str, type] | None = None,
-        jwt_expiration: int | None = None,
-        jwt_extra_claims: list[str] | None = None,
-        jwt_algorithm: str | None = None,
-    ) -> None:
+    backend: type | None = None
+    permission: type | None = None
+    jwt_expiration: int | None = None
+    jwt_extra_claims: tuple[str, ...] = field(default_factory=tuple)
+    jwt_algorithm: str | None = None
+
+    @property
+    def permission_value(self) -> type:
         from lightapi.auth import AllowAny
 
-        self.backend = backend
-        self.permission: type | dict[str, type] = (
-            permission if permission is not None else AllowAny
-        )
-        self.jwt_expiration = jwt_expiration
-
-        # Validate jwt_extra_claims - reject reserved claims
-        if jwt_extra_claims:
-            RESERVED_CLAIMS = {"exp", "iat", "nbf", "iss", "sub", "aud", "jti"}
-            reserved_found = []
-            for claim in jwt_extra_claims:
-                if claim in RESERVED_CLAIMS:
-                    reserved_found.append(claim)
-
-            if reserved_found:
-                raise ConfigurationError(
-                    f"JWT extra claims cannot include reserved claims: "
-                    f"{reserved_found}. Reserved claims are: {sorted(RESERVED_CLAIMS)}"
-                )
-
-        self.jwt_extra_claims = jwt_extra_claims
-
-        # Validate jwt_algorithm if provided
-        if (
-            jwt_algorithm is not None
-            and jwt_algorithm not in config.VALID_JWT_ALGORITHMS
-        ):
-            raise ConfigurationError(
-                f"Invalid JWT algorithm: '{jwt_algorithm}'. "
-                f"Must be one of: {sorted(config.VALID_JWT_ALGORITHMS)}"
-            )
-        self.jwt_algorithm = jwt_algorithm
+        return self.permission or AllowAny
 
 
+@dataclass(frozen=True)
 class Filtering:
     """Filtering configuration for a RestEndpoint."""
 
-    def __init__(
-        self,
-        backends: list[type] | None = None,
-        fields: list[str] | None = None,
-        search: list[str] | None = None,
-        ordering: list[str] | None = None,
-    ) -> None:
-        self.backends: list[type] = backends or []
-        self.fields: list[str] = fields or []
-        self.search: list[str] = search or []
-        self.ordering: list[str] = ordering or []
+    backends: tuple[type, ...] = field(default_factory=tuple)
+    fields: tuple[str, ...] = field(default_factory=tuple)
+    search: tuple[str, ...] = field(default_factory=tuple)
+    ordering: tuple[str, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
 class Pagination:
     """Pagination configuration for a RestEndpoint."""
 
-    VALID_STYLES = ("page_number", "cursor")
+    style: str = "page_number"
+    page_size: int = DEFAULT_PAGE_SIZE
 
-    def __init__(self, style: str = "page_number", page_size: int = 20) -> None:
-        if style not in self.VALID_STYLES:
+    def __post_init__(self):
+        if self.style not in VALID_PAGINATION_STYLES:
             raise ConfigurationError(
-                f"Pagination style '{style}' is invalid. "
-                f"Choose from: {self.VALID_STYLES}"
+                f"Pagination style '{self.style}' is invalid. "
+                f"Choose from: {VALID_PAGINATION_STYLES}"
             )
-        if page_size < 1:
+        if self.page_size < 1:
             raise ConfigurationError("Pagination page_size must be a positive integer.")
-        self.style = style
-        self.page_size = page_size
 
 
+@dataclass(frozen=True)
+class Cache:
+    """Response caching configuration for a RestEndpoint."""
+
+    ttl: int = DEFAULT_CACHE_TTL
+    vary_on: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self):
+        if self.ttl < 1:
+            raise ConfigurationError("Cache ttl must be a positive integer (seconds).")
+
+
+# Serializer has complex __init_subclass__ logic, keep as is
 class Serializer:
     """Field-projection configuration for a RestEndpoint.
 
@@ -164,8 +147,6 @@ class Serializer:
         read: list[str] | None = None,
         write: list[str] | None = None,
     ) -> None:
-        # When instantiated as a subclass, class-level attributes take precedence
-        # over None defaults so that form-4 (subclass) serializers work correctly.
         cls_dict = type(self).__dict__
         resolved_fields = fields if fields is not None else cls_dict.get("fields")
         resolved_read = read if read is not None else cls_dict.get("read")
@@ -180,13 +161,3 @@ class Serializer:
         self.fields = resolved_fields
         self.read = resolved_read
         self.write = resolved_write
-
-
-class Cache:
-    """Response caching configuration for a RestEndpoint."""
-
-    def __init__(self, ttl: int, vary_on: list[str] | None = None) -> None:
-        if ttl < 1:
-            raise ConfigurationError("Cache ttl must be a positive integer (seconds).")
-        self.ttl = ttl
-        self.vary_on: list[str] = vary_on or []

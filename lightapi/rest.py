@@ -38,6 +38,13 @@ except ImportError:
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from lightapi.constants import (
+    AUTO_FIELDS,
+    HTTPStatus,
+    RESPONSE_KEY_DETAIL,
+    RESPONSE_KEY_RESULTS,
+    PAGE_PARAM,
+)
 from lightapi.exceptions import ConfigurationError
 from lightapi.schema import (
     SchemaFactory,
@@ -47,7 +54,7 @@ from lightapi.schema import (
     resolve_fields,
 )
 
-_AUTO_FIELDS = frozenset({"id", "created_at", "updated_at", "version"})
+_AUTO_FIELDS = AUTO_FIELDS
 
 _TYPE_MAP: dict[Any, Any] = {
     str: String,
@@ -272,13 +279,22 @@ def _map_imperatively(
     name: str,
     all_columns: list[Column],
     meta_obj: Any,
+    session_manager: Any = None,
 ) -> None:
-    """Register the class as a SQLAlchemy mapped entity using the app-level registry."""
+    """Register the class as a SQLAlchemy mapped entity."""
     from pydantic.fields import FieldInfo
+    from sqlalchemy import MetaData
+    from sqlalchemy.orm import registry
 
-    from lightapi._registry import get_registry_and_metadata
+    if session_manager is not None:
+        registry = session_manager.registry
+        metadata = session_manager.metadata
+    else:
+        # Use global shared metadata for backward compatibility
+        from lightapi.session_manager import _GLOBAL_METADATA, _GLOBAL_REGISTRY
 
-    registry, metadata = get_registry_and_metadata()
+        metadata = _GLOBAL_METADATA
+        registry = _GLOBAL_REGISTRY
 
     table_name = getattr(meta_obj, "table", None) or f"{name.lower()}s"
 
@@ -318,6 +334,7 @@ def _map_reflected(
     meta_obj: Any,
     partial: bool,
     extra_columns: list[Column] | None = None,
+    session_manager: Any = None,
 ) -> None:
     """Map a RestEndpoint to an existing database table via reflection.
 
@@ -327,10 +344,15 @@ def _map_reflected(
     """
     from sqlalchemy import Table
 
-    from lightapi._registry import get_engine, get_registry_and_metadata
-
-    registry, metadata = get_registry_and_metadata()
-    engine = get_engine()
+    if session_manager is not None:
+        registry = session_manager.registry
+        metadata = session_manager.metadata
+        engine = session_manager.engine
+    else:
+        raise RuntimeError(
+            "session_manager is required for reflection. "
+            "Ensure LightApi.register() was called with a properly configured app."
+        )
 
     table_name = (
         getattr(meta_obj, "table", None)
@@ -452,9 +474,17 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     # ── CRUD helpers ──────────────────────────────────────────────────────────
 
     def _get_engine(self) -> Any:
-        from lightapi._registry import get_engine
+        cls = type(self)
+        session_manager = getattr(cls, "_session_manager", None)
 
-        engine = get_engine()
+        if session_manager is None:
+            raise RuntimeError(
+                "No session_manager configured. "
+                "Ensure LightApi.register() was called with a properly configured app."
+            )
+
+        engine = session_manager.engine
+
         # Sync callers use the sync engine; if an AsyncEngine was registered, unwrap it.
         try:
             from sqlalchemy.ext.asyncio import AsyncEngine as _AE
@@ -534,7 +564,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
             instances = session.execute(qs).scalars().all()
             results = [self._serialize_row(inst, "GET") for inst in instances]
-            return JSONResponse({"results": results})
+            return JSONResponse({RESPONSE_KEY_RESULTS: results})
 
     def retrieve(self, request: Request, pk: int) -> Response:
         """Handle GET /{path}/{id}."""
@@ -551,7 +581,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                 .first()
             )
             if instance is None:
-                return JSONResponse({"detail": "not found"}, status_code=404)
+                return JSONResponse(
+                    {RESPONSE_KEY_DETAIL: "not found"}, status_code=HTTPStatus.NOT_FOUND
+                )
             return JSONResponse(self._serialize_row(instance, "GET"))
 
     def create(self, data: dict[str, Any]) -> Response:
@@ -564,7 +596,10 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         try:
             validated = cls.__schema_create__.model_validate(data)
         except ValidationError as exc:
-            return JSONResponse({"detail": exc.errors()}, status_code=422)
+            return JSONResponse(
+                {RESPONSE_KEY_DETAIL: exc.errors()},
+                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            )
 
         with Session(engine) as session:
             now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
@@ -581,7 +616,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             )  # re-loads all columns (including DB-generated ones)
             response_data = self._serialize_row(instance, "POST")
             session.commit()
-            return JSONResponse(response_data, status_code=201)
+            return JSONResponse(response_data, status_code=HTTPStatus.CREATED)
 
     def update(self, data: dict[str, Any], pk: int, partial: bool = False) -> Response:
         """Handle PUT/PATCH /{path}/{id} with optimistic locking."""
@@ -592,11 +627,11 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         if client_version is None:
             return JSONResponse(
                 {
-                    "detail": [
+                    RESPONSE_KEY_DETAIL: [
                         {"loc": ["version"], "msg": "Field required", "type": "missing"}
                     ]
                 },
-                status_code=422,
+                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
             )
 
         engine = self._get_engine()
@@ -634,7 +669,10 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                     if k not in _AUTO_FIELDS
                 }
         except ValidationError as exc:
-            return JSONResponse({"detail": exc.errors()}, status_code=422)
+            return JSONResponse(
+                {RESPONSE_KEY_DETAIL: exc.errors()},
+                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            )
 
         update_data.pop("version", None)
 
@@ -659,8 +697,14 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                 ).first()
                 session.rollback()
                 if not exists:
-                    return JSONResponse({"detail": "not found"}, status_code=404)
-                return JSONResponse({"detail": "version conflict"}, status_code=409)
+                    return JSONResponse(
+                        {RESPONSE_KEY_DETAIL: "not found"},
+                        status_code=HTTPStatus.NOT_FOUND,
+                    )
+                return JSONResponse(
+                    {RESPONSE_KEY_DETAIL: "version conflict"},
+                    status_code=HTTPStatus.CONFLICT,
+                )
             # Re-fetch so all columns (including updated_at/version) are current
             instance = (
                 session.execute(
@@ -687,9 +731,11 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             )
             result = session.execute(stmt).first()
             if result is None:
-                return JSONResponse({"detail": "not found"}, status_code=404)
+                return JSONResponse(
+                    {RESPONSE_KEY_DETAIL: "not found"}, status_code=HTTPStatus.NOT_FOUND
+                )
             session.commit()
-            return Response(status_code=204)
+            return Response(status_code=HTTPStatus.NO_CONTENT)
 
     # ── Async queryset resolver ───────────────────────────────────────────────
 
@@ -710,9 +756,16 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     def _get_async_engine(self) -> Any:
         """Return the raw (AsyncEngine) engine for async session creation."""
-        from lightapi._registry import get_engine
+        cls = type(self)
+        session_manager = getattr(cls, "_session_manager", None)
 
-        return get_engine()
+        if session_manager is None:
+            raise RuntimeError(
+                "No session_manager configured. "
+                "Ensure LightApi.register() was called with a properly configured app."
+            )
+
+        return session_manager.engine
 
     # ── Async CRUD ────────────────────────────────────────────────────────────
 
@@ -771,7 +824,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                 .first()
             )
             if instance is None:
-                return JSONResponse({"detail": "not found"}, status_code=404)
+                return JSONResponse(
+                    {RESPONSE_KEY_DETAIL: "not found"}, status_code=HTTPStatus.NOT_FOUND
+                )
             return JSONResponse(self._serialize_row(instance, "GET"))
 
     async def _create_async(self, data: dict[str, Any]) -> Response:
@@ -785,7 +840,10 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         try:
             validated = cls.__schema_create__.model_validate(data)
         except ValidationError as exc:
-            return JSONResponse({"detail": exc.errors()}, status_code=422)
+            return JSONResponse(
+                {RESPONSE_KEY_DETAIL: exc.errors()},
+                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            )
 
         async with get_async_session(engine) as session:
             now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
@@ -799,7 +857,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             await session.flush()
             await session.refresh(instance)
             response_data = self._serialize_row(instance, "POST")
-            return JSONResponse(response_data, status_code=201)
+            return JSONResponse(response_data, status_code=HTTPStatus.CREATED)
 
     async def _update_async(
         self, data: dict[str, Any], pk: int, partial: bool = False
@@ -813,11 +871,11 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         if client_version is None:
             return JSONResponse(
                 {
-                    "detail": [
+                    RESPONSE_KEY_DETAIL: [
                         {"loc": ["version"], "msg": "Field required", "type": "missing"}
                     ]
                 },
-                status_code=422,
+                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
             )
 
         engine = self._get_async_engine()
@@ -853,7 +911,10 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                     if k not in _AUTO_FIELDS
                 }
         except ValidationError as exc:
-            return JSONResponse({"detail": exc.errors()}, status_code=422)
+            return JSONResponse(
+                {RESPONSE_KEY_DETAIL: exc.errors()},
+                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            )
 
         update_data.pop("version", None)
 
@@ -880,8 +941,14 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                 ).first()
                 await session.rollback()
                 if not exists:
-                    return JSONResponse({"detail": "not found"}, status_code=404)
-                return JSONResponse({"detail": "version conflict"}, status_code=409)
+                    return JSONResponse(
+                        {RESPONSE_KEY_DETAIL: "not found"},
+                        status_code=HTTPStatus.NOT_FOUND,
+                    )
+                return JSONResponse(
+                    {RESPONSE_KEY_DETAIL: "version conflict"},
+                    status_code=HTTPStatus.CONFLICT,
+                )
             instance = (
                 (
                     await session.execute(
@@ -908,5 +975,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             )
             result = (await session.execute(stmt)).first()
             if result is None:
-                return JSONResponse({"detail": "not found"}, status_code=404)
-            return Response(status_code=204)
+                return JSONResponse(
+                    {RESPONSE_KEY_DETAIL: "not found"}, status_code=HTTPStatus.NOT_FOUND
+                )
+            return Response(status_code=HTTPStatus.NO_CONTENT)
