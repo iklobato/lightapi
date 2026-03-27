@@ -17,7 +17,6 @@ from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
 from lightapi import LightApi, RestEndpoint
-from lightapi._registry import set_engine
 from lightapi.exceptions import ConfigurationError
 from lightapi.fields import Field as LField
 
@@ -134,8 +133,6 @@ class TestFullReflection:
                 reflect = True
                 table = "legacytable"
 
-        set_engine(engine)
-
         app_instance = LightApi(engine=engine)
         app_instance.register({"/legacy": LegacyEndpoint})
         app = app_instance.build_app()
@@ -165,7 +162,7 @@ class TestFullReflection:
 class TestReflectFullCrud:
     def test_reflect_post_creates_row(self):
         engine = _make_engine_with_products_table()
-        set_engine(engine)
+
 
         class ProductEndpoint(RestEndpoint):
             class Meta:
@@ -189,7 +186,7 @@ class TestReflectFullCrud:
 
     def test_reflect_put_updates_business_fields(self):
         engine = _make_engine_with_products_table()
-        set_engine(engine)
+
 
         class ProductEndpoint(RestEndpoint):
             class Meta:
@@ -225,7 +222,7 @@ class TestReflectFullCrud:
 
     def test_reflect_get_list_and_retrieve(self):
         engine = _make_engine_with_products_table()
-        set_engine(engine)
+
 
         class ProductEndpoint(RestEndpoint):
             class Meta:
@@ -255,7 +252,7 @@ class TestReflectFullCrud:
 
     def test_reflect_patch_partial_update(self):
         engine = _make_engine_with_products_table()
-        set_engine(engine)
+
 
         class ProductEndpoint(RestEndpoint):
             class Meta:
@@ -285,7 +282,7 @@ class TestReflectFullCrud:
 
     def test_reflect_delete_returns_204(self):
         engine = _make_engine_with_products_table()
-        set_engine(engine)
+
 
         class ProductEndpoint(RestEndpoint):
             class Meta:
@@ -312,7 +309,7 @@ class TestReflectFullCrud:
 
     def test_reflect_put_version_conflict_409(self):
         engine = _make_engine_with_products_table()
-        set_engine(engine)
+
 
         class ProductEndpoint(RestEndpoint):
             class Meta:
@@ -344,7 +341,7 @@ class TestReflectFullCrud:
 
     def test_reflect_put_missing_version_422(self):
         engine = _make_engine_with_products_table()
-        set_engine(engine)
+
 
         class ProductEndpoint(RestEndpoint):
             class Meta:
@@ -373,7 +370,7 @@ class TestReflectFullCrud:
 class TestPartialReflection:
     def test_partial_reflect_appends_new_columns(self):
         engine = _make_engine_with_partial_table()
-        set_engine(engine)
+
 
         class PartialDocEndpoint(RestEndpoint):
             notes: str = LField(default="")
@@ -404,7 +401,7 @@ class TestPartialReflection:
 
     def test_partial_reflect_full_crud(self):
         engine = _make_engine_with_partial_table()
-        set_engine(engine)
+
 
         class PartialDocEndpoint(RestEndpoint):
             notes: str = LField(default="")
@@ -449,7 +446,7 @@ class TestPartialReflection:
     def test_partial_reflect_type_conflict_raises(self):
         """Table price=Integer, endpoint price=str → ConfigurationError."""
         engine = _make_engine_with_price_integer_table()
-        set_engine(engine)
+
 
         class TypeConflictEndpoint(RestEndpoint):
             price: str = LField(min_length=1)

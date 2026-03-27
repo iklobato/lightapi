@@ -20,6 +20,14 @@ from lightapi import (
 from lightapi._login import LoginRequest
 from lightapi.exceptions import ConfigurationError
 from lightapi.fields import Field as LField
+from lightapi.rate_limiter import RateLimiter
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Reset rate limiter before each test to ensure test isolation."""
+    limiter = RateLimiter()
+    limiter.reset()
 
 
 def _valid_validator(username: str, password: str):
@@ -56,7 +64,11 @@ def jwt_client():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    app = LightApi(engine=engine, login_validator=_valid_validator)
+    app = LightApi(
+        engine=engine,
+        login_validator=_valid_validator,
+        rate_limiter={"requests_per_minute": 1000},
+    )
     app.register({"/secrets": JWTProtectedEndpoint})
     return TestClient(app.build_app())
 
@@ -68,7 +80,11 @@ def basic_client():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    app = LightApi(engine=engine, login_validator=_valid_validator)
+    app = LightApi(
+        engine=engine,
+        login_validator=_valid_validator,
+        rate_limiter={"requests_per_minute": 1000},
+    )
     app.register({"/items": BasicProtectedEndpoint})
     return TestClient(app.build_app())
 
