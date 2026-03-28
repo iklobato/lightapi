@@ -48,7 +48,7 @@ app.run()
 ## Generating tokens with roles
 
 ```python
-from lightapi.auth import JWTAuthentication
+from lightapi.authentication import JWTAuthentication
 
 auth = JWTAuthentication()
 

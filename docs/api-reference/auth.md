@@ -124,7 +124,7 @@ class ArticleEndpoint(RestEndpoint):
 Implement to create a custom authentication backend:
 
 ```python
-from lightapi.auth import BaseAuthentication
+from lightapi.authentication import BaseAuthentication
 
 class ApiKeyAuthentication(BaseAuthentication):
     def authenticate(self, request) -> bool:
@@ -137,7 +137,7 @@ class ApiKeyAuthentication(BaseAuthentication):
 Implement to create a custom permission class:
 
 ```python
-from lightapi.auth import BasePermission
+from lightapi.authentication import BasePermission
 
 class IsOwner(BasePermission):
     def has_permission(self, request) -> bool:

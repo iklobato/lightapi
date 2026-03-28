@@ -71,7 +71,7 @@ async def test_reflect_true_with_async_engine_uses_run_sync(pre_populated_engine
     class ReflectedItem(RestEndpoint):
         class Meta:
             reflect = True
-            table_name = "preexisting_items"
+            table = "preexisting_items"
             authentication = Authentication(permission=AllowAny)
 
     app = LightApi(engine=pre_populated_engine, mode="async")
@@ -91,7 +91,7 @@ async def test_reflected_columns_available(pre_populated_engine):
     class ReflectedItem2(RestEndpoint):
         class Meta:
             reflect = True
-            table_name = "preexisting_items"
+            table = "preexisting_items"
             authentication = Authentication(permission=AllowAny)
 
     app = LightApi(engine=pre_populated_engine, mode="async")

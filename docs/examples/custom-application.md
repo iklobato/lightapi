@@ -97,7 +97,7 @@ curl http://localhost:8000/items
 
 # Authenticated POST — requires JWT
 TOKEN=$(python -c "
-from lightapi.auth import JWTAuthentication
+from lightapi.authentication import JWTAuthentication
 import os; os.environ['LIGHTAPI_JWT_SECRET']='dev-secret'
 auth = JWTAuthentication()
 print(auth.generate_token({'sub': '1', 'is_admin': False}))

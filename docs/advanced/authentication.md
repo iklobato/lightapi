@@ -150,7 +150,7 @@ class ArticleEndpoint(RestEndpoint):
 Subclass `BaseAuthentication` to implement your own logic:
 
 ```python
-from lightapi.auth import BaseAuthentication
+from lightapi.authentication import BaseAuthentication
 
 class ApiKeyAuthentication(BaseAuthentication):
     def authenticate(self, request) -> bool:
@@ -173,7 +173,7 @@ class SecureEndpoint(RestEndpoint):
 Subclass `BasePermission` to implement your own access control:
 
 ```python
-from lightapi.auth import BasePermission
+from lightapi.authentication import BasePermission
 
 class IsOwner(BasePermission):
     def has_permission(self, request) -> bool:

@@ -576,7 +576,7 @@ class LightApi:
         self._create_tables()
         self._check_cache_connections()
 
-        on_startup = [self._async_create_tables] if self._mode == "async" else []
+        on_startup = [self._create_tables] if self._mode == "async" else []
         app = Starlette(debug=debug, routes=self._routes, on_startup=on_startup)
 
         if self._cors_origins:
@@ -605,7 +605,7 @@ class LightApi:
         """
         self._create_tables()
         self._check_cache_connections()
-        on_startup = [self._async_create_tables] if self._mode == "async" else []
+        on_startup = [self._create_tables] if self._mode == "async" else []
         return Starlette(routes=self._routes, on_startup=on_startup)
 
     # ─────────────────────────────────────────────────────────────────────────

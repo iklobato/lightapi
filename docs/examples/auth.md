@@ -40,7 +40,7 @@ All requests to `/posts` now require `Authorization: Bearer <token>`.
 `JWTAuthentication` ships with a `generate_token` method:
 
 ```python
-from lightapi.auth import JWTAuthentication
+from lightapi.authentication import JWTAuthentication
 
 auth = JWTAuthentication()
 token = auth.generate_token({"sub": "42", "is_admin": False})

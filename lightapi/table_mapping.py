@@ -87,7 +87,8 @@ class ReflectedTableBuilder:
         engine = session_manager.engine
         table_name = TableNameResolver.resolve(meta_obj, name, session_manager)
 
-        if getattr(engine, "__class__.__name__", "").startswith("Async"):
+        is_async = hasattr(engine, "sync_engine")
+        if is_async:
             table = self._reflect_async(engine, metadata, table_name)
         else:
             table = self._reflect_sync(engine, metadata, table_name)
@@ -161,7 +162,15 @@ class TableMapper:
         registry_obj, metadata = self._get_registry_and_metadata(session_manager)
 
         if session_manager is not None and hasattr(session_manager, "engine"):
-            metadata.create_all(session_manager.engine)
+            engine = session_manager.engine
+            is_async = getattr(session_manager, "_is_async", False)
+            if is_async:
+                pass
+            elif hasattr(engine, "sync_engine"):
+                engine = engine.sync_engine
+                metadata.create_all(engine)
+            else:
+                metadata.create_all(engine)
 
         registry_obj.map_imperatively(cls, table)
         cls._model_class = cls  # type: ignore[attr-defined]
