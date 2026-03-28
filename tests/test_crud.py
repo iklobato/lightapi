@@ -14,7 +14,7 @@ class BookEndpoint(RestEndpoint):
     author: str = LField(min_length=1)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def client():
     engine = create_engine(
         "sqlite:///:memory:",

@@ -44,6 +44,7 @@ def client():
         login_validator=lambda u, p: {"sub": "1", "username": u}
         if u == "admin" and p == "secret"
         else None,
+        use_test_isolation=True,
     )
     app.register({"/books": BookEndpoint})
     with TestClient(app.build_app()) as client:

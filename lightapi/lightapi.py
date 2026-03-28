@@ -61,6 +61,7 @@ class LightApi:
         session_manager: SessionManager | None = None,
         rate_limiter: "RateLimiter | dict[str, int] | None" = None,
         login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
+        use_test_isolation: bool = False,
     ) -> None:
         if engine is None and database_url:
             engine = create_engine(database_url)
@@ -87,7 +88,9 @@ class LightApi:
             self._mode = "sync"  # Will be auto-detected in register()
 
         # Create session manager
-        self._session_manager = session_manager or SessionManager(engine)
+        self._session_manager = session_manager or SessionManager(
+            engine, use_test_isolation=use_test_isolation
+        )
 
         # Store login_validator for backward compatibility
         self._login_validator = login_validator
@@ -172,33 +175,48 @@ class LightApi:
             # Inject session manager into endpoint class
             cls._session_manager = self._session_manager
 
-            # Re-map table if it was mapped to a different metadata during class definition
+            # Always map when test isolation is enabled or when not already mapped
             if not getattr(cls, "_reflect_deferred", False):
-                from lightapi.rest import _map_imperatively
+                from lightapi.table_mapping import map_imperatively
+                from lightapi.session_manager import get_unique_table_name
 
-                # Check if already mapped to a different metadata
-                existing_model = getattr(cls, "_model_class", None)
-                if existing_model is not None:
-                    # Check if mapped to different metadata
-                    from sqlalchemy import inspect as sa_inspect
+                # Use test isolation table name if available
+                meta_obj = getattr(cls, "Meta", None)
+                table_name = (
+                    getattr(meta_obj, "table", None) or f"{cls.__name__.lower()}s"
+                )
 
-                    try:
-                        mapper = sa_inspect(existing_model)
-                        if mapper.local_table is not None:
-                            if (
-                                mapper.local_table.metadata
-                                is not self._session_manager.metadata
-                            ):
-                                # Re-map with correct metadata
-                                _map_imperatively(
-                                    cls,
-                                    cls.__name__,
-                                    all_columns=getattr(cls, "_all_columns", []),
-                                    meta_obj=getattr(cls, "Meta", None),
-                                    session_manager=self._session_manager,
-                                )
-                    except Exception:
-                        pass
+                # Always re-map with test-specific metadata when test isolation is enabled
+                if self._session_manager._use_test_isolation:
+                    # Generate unique table name for test isolation
+                    table_name = get_unique_table_name(table_name)
+                    logger.debug(
+                        "Mapping %s with test isolation table name: %s",
+                        cls.__name__,
+                        table_name,
+                    )
+
+                    # Create a new meta object with the unique table name
+                    class TestIsolationMeta:
+                        table = table_name
+                        reflect = getattr(meta_obj, "reflect", False)
+
+                    map_imperatively(
+                        cls,
+                        cls.__name__,
+                        columns=getattr(cls, "_all_columns", []),
+                        meta_obj=TestIsolationMeta,
+                        session_manager=self._session_manager,
+                    )
+                else:
+                    # Always map when not using test isolation
+                    map_imperatively(
+                        cls,
+                        cls.__name__,
+                        columns=getattr(cls, "_all_columns", []),
+                        meta_obj=meta_obj,
+                        session_manager=self._session_manager,
+                    )
 
             # Log registration for transparency
             logger.info(f"Registering endpoint {path} -> {cls.__name__}")
@@ -244,14 +262,23 @@ class LightApi:
                 cls._reflect_deferred = False
 
             allowed = cls._allowed_methods
+            from lightapi.handler_factory import (
+                make_collection_handler,
+                make_detail_handler,
+            )
+
             collection_route = Route(
                 path,
-                endpoint=self._make_collection_handler(cls),
+                endpoint=make_collection_handler(
+                    cls, self._middlewares, self._mode == "async"
+                ),
                 methods=[m for m in allowed if m in {"GET", "POST"}],
             )
             detail_route = Route(
                 path.rstrip("/") + "/{id:int}",
-                endpoint=self._make_detail_handler(cls),
+                endpoint=make_detail_handler(
+                    cls, self._middlewares, self._mode == "async"
+                ),
                 methods=[m for m in allowed if m in {"GET", "PUT", "PATCH", "DELETE"}],
             )
             self._routes.append(collection_route)
@@ -630,7 +657,10 @@ class LightApi:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _create_tables(self) -> None:
+        """Create/verify database tables for all registered endpoints."""
         metadata = self._session_manager.metadata
+        logger.debug("_create_tables called with metadata: %s", metadata)
+        logger.debug("Available tables in metadata: %s", list(metadata.tables.keys()))
         try:
             if self._mode == "async":
                 # For async engines, table creation must run inside the same event loop
@@ -653,30 +683,9 @@ class LightApi:
                     # that build_app() adds. Nothing to do here.
                     pass
             else:
-                # For sync mode or async engines in sync context
-                if self._mode == "async":
-                    # Use sync engine for async engines
-                    from sqlalchemy.ext.asyncio import AsyncEngine
-
-                    if isinstance(self._engine, AsyncEngine):
-                        engine = self._engine.sync_engine
-                    else:
-                        engine = self._engine
-                else:
-                    engine = self._engine
-
+                engine = self._engine
                 metadata.create_all(bind=engine)
                 logger.info("Tables created/verified against %s", engine.url)
-        except Exception as exc:
-            logger.warning("Table creation warning: %s", exc)
-
-    async def _async_create_tables(self) -> None:
-        """Called on server startup; creates tables inside the running event loop."""
-        metadata = self._session_manager.metadata
-        try:
-            async with self._engine.begin() as conn:
-                await conn.run_sync(metadata.create_all)
-            logger.info("Tables created/verified against %s", self._engine.url)
         except Exception as exc:
             logger.warning("Table creation warning: %s", exc)
 

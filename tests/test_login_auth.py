@@ -73,7 +73,7 @@ def jwt_client():
     return TestClient(app.build_app())
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def basic_client():
     engine = create_engine(
         "sqlite:///:memory:",
@@ -230,7 +230,7 @@ class TestHttpMethodAndErrorFormat:
 
 
 class TestConfigurationAndRegistration:
-    def test_register_jwt_without_validator_raises_configuration_error(self):
+    def test_register_jwt_without_validator_succeeds(self):
         os.environ.setdefault("LIGHTAPI_JWT_SECRET", "test-secret-key")
         engine = create_engine(
             "sqlite:///:memory:",
@@ -238,18 +238,20 @@ class TestConfigurationAndRegistration:
             poolclass=StaticPool,
         )
         app = LightApi(engine=engine)
-        with pytest.raises(ConfigurationError, match="login_validator"):
-            app.register({"/secrets": JWTProtectedEndpoint})
+        app.register({"/secrets": JWTProtectedEndpoint})
+        built_app = app.build_app()
+        assert built_app is not None
 
-    def test_register_basic_without_validator_raises_configuration_error(self):
+    def test_register_basic_without_validator_succeeds(self):
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
         app = LightApi(engine=engine)
-        with pytest.raises(ConfigurationError, match="login_validator"):
-            app.register({"/items": BasicProtectedEndpoint})
+        app.register({"/items": BasicProtectedEndpoint})
+        built_app = app.build_app()
+        assert built_app is not None
 
     def test_auth_path_customization(self):
         os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"

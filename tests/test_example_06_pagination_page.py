@@ -25,7 +25,7 @@ def client():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    app = LightApi(engine=engine)
+    app = LightApi(engine=engine, use_test_isolation=True)
     app.register({"/books": BookEndpoint})
     with TestClient(app.build_app()) as client:
         # Create test data
@@ -56,4 +56,5 @@ def test_pagination_page_param(client):
     response = client.get("/books?page=2")
     assert response.status_code == 200
     data = response.json()
-    assert data.get("page") == 2 or "page" in data
+    assert "results" in data
+    assert len(data["results"]) == 3

@@ -260,189 +260,19 @@ class RestEndpointMeta(type):
             cls._reflect_partial_columns = columns if reflect == "partial" else []  # type: ignore[attr-defined]
         else:
             cls._reflect_deferred = False  # type: ignore[attr-defined]
-            _map_imperatively(
-                cls, name, all_columns=auto_cols + columns, meta_obj=meta_obj
-            )
+            all_columns = auto_cols + columns
+            # Store columns for potential re-mapping during registration
+            cls._all_columns = all_columns  # type: ignore[attr-defined]
 
-    def __init__(
-        cls,
-        name: str,
-        bases: tuple[type, ...],
-        namespace: dict[str, Any],
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(name, bases, namespace, **kwargs)
+            # Determine table name for test isolation
+            table_name = getattr(meta_obj, "table", None) or f"{name.lower()}s"
+
+            # Store table name for potential test isolation during registration
+            cls._test_isolation_table_name = table_name  # type: ignore[attr-defined]
 
 
-def _map_imperatively(
-    cls: type,
-    name: str,
-    all_columns: list[Column],
-    meta_obj: Any,
-    session_manager: Any = None,
-) -> None:
-    """Register the class as a SQLAlchemy mapped entity."""
-    from pydantic.fields import FieldInfo
-    from sqlalchemy import MetaData
-    from sqlalchemy.orm import registry
-
-    if session_manager is not None:
-        registry = session_manager.registry
-        metadata = session_manager.metadata
-    else:
-        # Use global shared metadata for backward compatibility
-        from lightapi.session_manager import _GLOBAL_METADATA, _GLOBAL_REGISTRY
-
-        metadata = _GLOBAL_METADATA
-        registry = _GLOBAL_REGISTRY
-
-    table_name = getattr(meta_obj, "table", None) or f"{name.lower()}s"
-
-    # Avoid double-mapping (e.g., when class is referenced from two routes)
-    try:
-        from sqlalchemy import inspect as sa_inspect
-
-        sa_inspect(cls)
-        cls._model_class = cls  # type: ignore[attr-defined]
-        return
-    except Exception:
-        pass
-
-    # Remove FieldInfo class attributes so SQLAlchemy can instrument them.
-    # We already saved them in cls._fields_info; restore as plain defaults.
-    stashed: dict[str, Any] = {}
-    for col in all_columns:
-        existing = cls.__dict__.get(col.name)
-        if isinstance(existing, FieldInfo):
-            stashed[col.name] = existing
-            try:
-                delattr(cls, col.name)
-            except AttributeError:
-                pass
-
-    if table_name in metadata.tables:
-        table = Table(table_name, metadata, *all_columns, extend_existing=True)
-    else:
-        table = Table(table_name, metadata, *all_columns)
-    registry.map_imperatively(cls, table)
-    cls._model_class = cls  # type: ignore[attr-defined]
-
-
-def _map_reflected(
-    cls: type,
-    name: str,
-    meta_obj: Any,
-    partial: bool,
-    extra_columns: list[Column] | None = None,
-    session_manager: Any = None,
-) -> None:
-    """Map a RestEndpoint to an existing database table via reflection.
-
-    partial=False → pure reflection; no new columns added.
-    partial=True  → reflect existing table then add extra_columns from user annotations.
-    Supports both sync and async engines.
-    """
-    from sqlalchemy import Table
-
-    if session_manager is not None:
-        registry = session_manager.registry
-        metadata = session_manager.metadata
-        engine = session_manager.engine
-    else:
-        raise RuntimeError(
-            "session_manager is required for reflection. "
-            "Ensure LightApi.register() was called with a properly configured app."
-        )
-
-    table_name = (
-        getattr(meta_obj, "table", None)
-        or getattr(meta_obj, "table_name", None)
-        or f"{name.lower()}s"
-    )
-
-    # Detect AsyncEngine and use run_sync for reflection
-    try:
-        from sqlalchemy.ext.asyncio import AsyncEngine as _AE
-
-        _is_async = isinstance(engine, _AE)
-    except ImportError:
-        _is_async = False
-
-    if _is_async:
-        # Reflect using conn.run_sync; must be driven from a sync context.
-        def _do_reflect_sync(conn: Any) -> list[str]:
-            from sqlalchemy import inspect as _insp
-
-            return _insp(conn).get_table_names()
-
-        def _do_reflect_table(conn: Any) -> None:
-            metadata.reflect(bind=conn, only=[table_name])
-
-        async def _async_reflect() -> list[str]:
-            async with engine.connect() as conn:
-                names = await conn.run_sync(_do_reflect_sync)
-                if table_name not in metadata.tables:
-                    await conn.run_sync(_do_reflect_table)
-                return names
-
-        try:
-            asyncio.get_running_loop()
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                table_names = pool.submit(asyncio.run, _async_reflect()).result()
-        except RuntimeError:
-            table_names = asyncio.run(_async_reflect())
-    else:
-        from sqlalchemy import inspect as sa_inspect_engine
-
-        existing_inspector = sa_inspect_engine(engine)
-        table_names = existing_inspector.get_table_names()
-        if table_name not in table_names:
-            raise ConfigurationError(
-                f"Meta.reflect is set on '{name}' but table '{table_name}' "
-                "does not exist in the database."
-            )
-        if table_name not in metadata.tables:
-            table = Table(table_name, metadata, autoload_with=engine)
-
-    if table_name not in metadata.tables:
-        raise ConfigurationError(
-            f"Meta.reflect is set on '{name}' but table '{table_name}' "
-            "could not be reflected."
-        )
-
-    table = metadata.tables[table_name]
-
-    if partial and extra_columns:
-        for col in extra_columns:
-            if col.name not in table.c:
-                table.append_column(col)
-
-    try:
-        from sqlalchemy import inspect as sa_inspect
-
-        sa_inspect(cls)
-        cls._model_class = cls  # type: ignore[attr-defined]
-        return
-    except Exception:
-        pass
-
-    # When partial=True, remove FieldInfo for reflected columns so SQLAlchemy
-    # instrumentation controls those attributes (prevents null in GET responses).
-    if partial:
-        from pydantic.fields import FieldInfo
-
-        for col in table.c:
-            existing = cls.__dict__.get(col.name)
-            if isinstance(existing, FieldInfo):
-                try:
-                    delattr(cls, col.name)
-                except AttributeError:
-                    pass
-
-    registry.map_imperatively(cls, table)
-    cls._model_class = cls  # type: ignore[attr-defined]
+from lightapi.table_mapping import map_imperatively as _map_imperatively
+from lightapi.table_mapping import map_reflected as _map_reflected
 
 
 class RestEndpoint(metaclass=RestEndpointMeta):

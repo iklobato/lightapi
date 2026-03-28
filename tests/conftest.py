@@ -14,7 +14,13 @@ def engine() -> Engine:
 def app(engine: Engine):
     from lightapi import LightApi
 
-    return LightApi(engine=engine)
+    return LightApi(engine=engine, use_test_isolation=True)
+
+
+@pytest.fixture(autouse=True)
+def cleanup_registries():
+    """Placeholder cleanup - actual cleanup handled by test isolation."""
+    yield
 
 
 @pytest_asyncio.fixture
@@ -42,6 +48,6 @@ async def async_app(async_engine):
         class Meta:
             authentication = Authentication(permission=AllowAny)
 
-    app = LightApi(engine=async_engine)
+    app = LightApi(engine=async_engine, use_test_isolation=True)
     app.register({"/items": _AsyncItem})
     return app

@@ -33,7 +33,7 @@ def client():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    app = LightApi(engine=engine)
+    app = LightApi(engine=engine, use_test_isolation=True)
     app.register({"/books": BookEndpoint})
     with TestClient(app.build_app()) as client:
         # Create test data
