@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   publish:
-    name: Build & push iklobato/lightapi
+    name: Build & push iklob1/lightapi
     runs-on: ubuntu-latest
 
     steps:
@@ -58,7 +58,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: iklobato/lightapi
+          images: iklob1/lightapi
           tags: |
             # On a v*.*.* tag → :0.1.21, :0.1, :latest
             type=semver,pattern={{version}}

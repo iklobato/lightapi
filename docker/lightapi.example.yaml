@@ -3,7 +3,7 @@
 #   docker run --rm -p 8000:8000 \
 #       -v "$(pwd)/lightapi.example.yaml:/app/lightapi.yaml:ro" \
 #       -e DATABASE_URL=sqlite:////app/data.db \
-#       iklobato/lightapi:latest
+#       iklob1/lightapi:latest
 #
 # See https://iklobato.github.io/lightapi/getting-started/configuration/ for
 # the full YAML schema (auth, filtering, pagination, per-method permissions,

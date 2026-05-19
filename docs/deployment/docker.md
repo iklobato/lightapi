@@ -1,6 +1,6 @@
 ---
 title: Docker Deployment
-description: Run a fully-configured LightAPI server in seconds with the official iklobato/lightapi image
+description: Run a fully-configured LightAPI server in seconds with the official iklob1/lightapi image
 ---
 
 # Docker Deployment
@@ -9,9 +9,9 @@ The official image bundles LightAPI, its async extras, and PostgreSQL drivers.
 Mount a YAML config and a database URL — no Python code or build step required.
 
 ```
-iklobato/lightapi:latest
-iklobato/lightapi:<version>      # e.g. 0.1.21
-iklobato/lightapi:master         # rolling head of master
+iklob1/lightapi:latest
+iklob1/lightapi:<version>      # e.g. 0.1.21
+iklob1/lightapi:master         # rolling head of master
 ```
 
 The image is multi-arch (`linux/amd64`, `linux/arm64`) and is built from the
@@ -45,7 +45,7 @@ at the repository root.
     docker run --rm -p 8000:8000 \
         -v "$(pwd)/lightapi.yaml:/app/lightapi.yaml:ro" \
         -e DATABASE_URL=sqlite:////app/data.db \
-        iklobato/lightapi:latest
+        iklob1/lightapi:latest
     ```
 
 3. Use the API:
@@ -96,7 +96,7 @@ docker run -d --name lightapi \
     -v "$(pwd)/lightapi.yaml:/app/lightapi.yaml:ro" \
     -v lightapi-data:/app \
     -e DATABASE_URL=sqlite:////app/data.db \
-    iklobato/lightapi:latest
+    iklob1/lightapi:latest
 ```
 
 ### PostgreSQL via docker compose
@@ -105,7 +105,7 @@ docker run -d --name lightapi \
 # docker-compose.yml
 services:
   api:
-    image: iklobato/lightapi:latest
+    image: iklob1/lightapi:latest
     ports:
       - "8000:8000"
     environment:
@@ -149,7 +149,7 @@ docker run --rm -p 8000:8000 \
     -e DATABASE_URL=sqlite:////app/data.db \
     -e LIGHTAPI_REDIS_URL=redis://redis:6379/0 \
     --network my-net \
-    iklobato/lightapi:latest
+    iklob1/lightapi:latest
 ```
 
 If Redis is unreachable, LightAPI logs a `RuntimeWarning` once at startup
@@ -186,7 +186,7 @@ docker run --rm -p 8000:8000 \
     -e PYTHONPATH=/app \
     -e DATABASE_URL=sqlite:////app/data.db \
     -e LIGHTAPI_JWT_SECRET=replace-me \
-    iklobato/lightapi:latest
+    iklob1/lightapi:latest
 ```
 
 `POST /auth/login` is auto-registered because at least one endpoint declares
@@ -200,7 +200,7 @@ If you need extra Python dependencies (a custom `login_validator`, custom
 middleware, etc.), extend the published image:
 
 ```dockerfile
-FROM iklobato/lightapi:0.1.21
+FROM iklob1/lightapi:0.1.21
 
 # Add your own modules — they must be importable from the YAML's dotted paths.
 COPY ./myapp /app/myapp
@@ -238,13 +238,13 @@ and pushes to Docker Hub. The workflow needs two repository secrets:
 
 | Secret | Value |
 |---|---|
-| `DOCKERHUB_USERNAME` | Your Docker Hub username (`iklobato`). |
-| `DOCKERHUB_TOKEN` | A Docker Hub access token with read+write scope on `iklobato/lightapi`. |
+| `DOCKERHUB_USERNAME` | Your Docker Hub username (`iklob1`). |
+| `DOCKERHUB_TOKEN` | A Docker Hub access token with read+write scope on `iklob1/lightapi`. |
 
 Tag schedule:
 
 | Event | Tags pushed |
 |---|---|
-| Push of `v0.1.21` | `iklobato/lightapi:0.1.21`, `:0.1`, `:latest` |
-| Push to `master` | `iklobato/lightapi:master` |
-| Manual `workflow_dispatch` | `iklobato/lightapi:manual-<run-number>` |
+| Push of `v0.1.21` | `iklob1/lightapi:0.1.21`, `:0.1`, `:latest` |
+| Push to `master` | `iklob1/lightapi:master` |
+| Manual `workflow_dispatch` | `iklob1/lightapi:manual-<run-number>` |
