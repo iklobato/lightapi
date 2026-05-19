@@ -22,7 +22,7 @@ class ProductEndpoint(RestEndpoint):
     price: Decimal = Field(gt=0, decimal_places=2)
     stock: int = Field(ge=0, default=0)
     description: Optional[str] = None
-    active: Optional[bool] = Field(None, default=True)
+    active: bool = Field(default=True)
 ```
 
 ## Type map
@@ -170,7 +170,7 @@ class OrderEndpoint(RestEndpoint):
 | `self.list(request)` | List all rows |
 | `self.retrieve(request, pk)` | Get one row by `pk` |
 | `self.create(data)` | Insert a row |
-| `self.update(request, pk, data)` | Full update with optimistic locking |
+| `self.update(data, pk, partial=False)` | Update with optimistic locking (`partial=True` for PATCH) |
 | `self.destroy(request, pk)` | Delete a row |
 
 ### Built-in async CRUD helpers
@@ -180,7 +180,7 @@ class OrderEndpoint(RestEndpoint):
 | `await self._list_async(request)` | Async list |
 | `await self._retrieve_async(request, pk)` | Async get by pk |
 | `await self._create_async(data)` | Async insert |
-| `await self._update_async(request, pk, data)` | Async update |
+| `await self._update_async(data, pk, partial=False)` | Async update (`partial=True` for PATCH) |
 | `await self._destroy_async(request, pk)` | Async delete |
 
 ## queryset scoping
@@ -227,12 +227,13 @@ app.register({"/users": LegacyUserEndpoint})
 
 ## Table name inference
 
-The table name is derived from the class name by converting to snake_case and pluralising:
+The table name defaults to the lowercased class name with `"s"` appended:
 
 | Class name | Table name |
 |------------|------------|
-| `UserEndpoint` | `users` |
-| `BlogPost` | `blog_posts` |
+| `UserEndpoint` | `userendpoints` |
+| `BlogPost` | `blogposts` |
 | `Article` | `articles` |
 
-Override with `Meta.table = "custom_name"`.
+Override with `Meta.table = "custom_name"` whenever you want a friendlier
+name (this is recommended for any endpoint that uses the `Endpoint` suffix).

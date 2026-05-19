@@ -18,8 +18,15 @@ from lightapi import (
     RestEndpoint,
 )
 from lightapi._login import LoginRequest
-from lightapi.exceptions import ConfigurationError
 from lightapi.fields import Field as LField
+from lightapi.rate_limiter import RateLimiter
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Reset rate limiter before each test to ensure test isolation."""
+    limiter = RateLimiter()
+    limiter.reset()
 
 
 def _valid_validator(username: str, password: str):
@@ -56,19 +63,27 @@ def jwt_client():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    app = LightApi(engine=engine, login_validator=_valid_validator)
+    app = LightApi(
+        engine=engine,
+        login_validator=_valid_validator,
+        rate_limiter={"requests_per_minute": 1000},
+    )
     app.register({"/secrets": JWTProtectedEndpoint})
     return TestClient(app.build_app())
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def basic_client():
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    app = LightApi(engine=engine, login_validator=_valid_validator)
+    app = LightApi(
+        engine=engine,
+        login_validator=_valid_validator,
+        rate_limiter={"requests_per_minute": 1000},
+    )
     app.register({"/items": BasicProtectedEndpoint})
     return TestClient(app.build_app())
 
@@ -214,7 +229,7 @@ class TestHttpMethodAndErrorFormat:
 
 
 class TestConfigurationAndRegistration:
-    def test_register_jwt_without_validator_raises_configuration_error(self):
+    def test_register_jwt_without_validator_succeeds(self):
         os.environ.setdefault("LIGHTAPI_JWT_SECRET", "test-secret-key")
         engine = create_engine(
             "sqlite:///:memory:",
@@ -222,18 +237,20 @@ class TestConfigurationAndRegistration:
             poolclass=StaticPool,
         )
         app = LightApi(engine=engine)
-        with pytest.raises(ConfigurationError, match="login_validator"):
-            app.register({"/secrets": JWTProtectedEndpoint})
+        app.register({"/secrets": JWTProtectedEndpoint})
+        built_app = app.build_app()
+        assert built_app is not None
 
-    def test_register_basic_without_validator_raises_configuration_error(self):
+    def test_register_basic_without_validator_succeeds(self):
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
         app = LightApi(engine=engine)
-        with pytest.raises(ConfigurationError, match="login_validator"):
-            app.register({"/items": BasicProtectedEndpoint})
+        app.register({"/items": BasicProtectedEndpoint})
+        built_app = app.build_app()
+        assert built_app is not None
 
     def test_auth_path_customization(self):
         os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"

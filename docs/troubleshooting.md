@@ -40,7 +40,7 @@ class GoodEndpoint(RestEndpoint):
 ```python
 import os
 os.environ["LIGHTAPI_JWT_SECRET"] = "your-secret"
-from lightapi.auth import JWTAuthentication
+from lightapi.authentication import JWTAuthentication
 auth = JWTAuthentication()
 token = auth.generate_token({"sub": "1", "is_admin": False})
 print(token)
@@ -233,7 +233,8 @@ Use `Meta.filtering` rather than filtering results in Python — let the databas
 ```python
 import os
 from sqlalchemy import create_engine
-from lightapi import LightApi, RestEndpoint, Field, Authentication, JWTAuthentication, IsAuthenticated
+from lightapi import LightApi, RestEndpoint, Field, Authentication
+from lightapi.authentication import JWTAuthentication, IsAuthenticated
 
 os.environ["LIGHTAPI_JWT_SECRET"] = "dev-secret"
 

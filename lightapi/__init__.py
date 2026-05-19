@@ -1,7 +1,9 @@
 """LightAPI v2 public API."""
 
-from lightapi.auth import (
+from lightapi.authentication import (
     AllowAny,
+    BaseAuthentication,
+    BasePermission,
     BasicAuthentication,
     IsAdminUser,
     IsAuthenticated,
@@ -22,6 +24,7 @@ from lightapi.fields import Field
 from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
 from lightapi.lightapi import LightApi
 from lightapi.methods import HttpMethod
+from lightapi.rate_limiter import RateLimiter
 from lightapi.rest import RestEndpoint
 from lightapi.schema import SchemaFactory
 from lightapi.session import get_async_session, get_sync_session  # noqa: E402
@@ -39,11 +42,15 @@ __all__ = [
     "Pagination",
     "Serializer",
     # Auth
+    "BaseAuthentication",
+    "BasePermission",
     "BasicAuthentication",
     "JWTAuthentication",
     "AllowAny",
     "IsAuthenticated",
     "IsAdminUser",
+    # Rate Limiter
+    "RateLimiter",
     # Filters
     "FieldFilter",
     "SearchFilter",

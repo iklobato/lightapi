@@ -56,7 +56,7 @@ Define `async def queryset` to scope the base query with async I/O or request-le
 from sqlalchemy import select
 from starlette.requests import Request
 from lightapi import RestEndpoint, Field
-from lightapi.auth import IsAuthenticated
+from lightapi.authentication import IsAuthenticated
 from lightapi.config import Authentication
 
 class OrderEndpoint(RestEndpoint):
@@ -314,7 +314,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine
 from pydantic import Field
 from lightapi import LightApi, RestEndpoint
-from lightapi.auth import AllowAny
+from lightapi.authentication import AllowAny
 from lightapi.config import Authentication
 
 @pytest_asyncio.fixture

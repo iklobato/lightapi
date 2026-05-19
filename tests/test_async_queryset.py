@@ -13,7 +13,7 @@ from lightapi.config import Authentication
 
 def _make_app(endpoint_cls):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    app = LightApi(engine=engine)
+    app = LightApi(engine=engine, mode="async")
     app.register({"/items": endpoint_cls})
     return app.build_app()
 

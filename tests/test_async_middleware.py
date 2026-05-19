@@ -21,7 +21,7 @@ def _make_app(middlewares, engine=None):
         class Meta:
             authentication = Authentication(permission=AllowAny)
 
-    app = LightApi(engine=engine, middlewares=middlewares)
+    app = LightApi(engine=engine, mode="async", middlewares=middlewares)
     app.register({"/items": Item})
     return app.build_app()
 

@@ -39,7 +39,8 @@ Any request that does not carry a valid `Authorization: Bearer <token>` header n
 ## Authentication class
 
 ```python
-from lightapi import Authentication, JWTAuthentication, IsAuthenticated
+from lightapi import Authentication
+from lightapi.authentication import JWTAuthentication, IsAuthenticated
 
 Authentication(
     backend=JWTAuthentication,   # Authentication backend class
@@ -70,9 +71,44 @@ Authorization: Bearer <jwt-token>
 
 The token payload is stored in `request.state.user` after successful authentication.
 
-### Generating tokens
+### Auto-registered login endpoint
 
-LightAPI does not include a login endpoint — you generate tokens in your own code:
+When any endpoint declares `Authentication(backend=JWTAuthentication)` (or
+`BasicAuthentication`), LightAPI automatically registers `POST /auth/login`
+and `POST /auth/token` (the same handler under both paths). The base path
+defaults to `/auth` and can be changed via `LightApi(auth_path="/api/auth")`.
+
+Pass a `login_validator(username, password) -> dict | None` to `LightApi(...)`
+to validate credentials:
+
+```python
+def login_validator(username: str, password: str):
+    if username == "admin" and password == "secret":
+        return {"sub": "1", "username": "admin", "is_admin": True}
+    return None
+
+app = LightApi(engine=engine, login_validator=login_validator)
+```
+
+The dict returned by the validator is the JWT payload. On JWT-protected apps,
+`POST /auth/login` returns `{"token": "<jwt>", "user": {...}}`; the client
+then sends `Authorization: Bearer <jwt>` on subsequent requests.
+
+```bash
+# 1. Log in to obtain a token
+curl -X POST http://localhost:8000/auth/login \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"admin","password":"secret"}'
+# → 200 {"token": "eyJhbGc...", "user": {"sub": "1", ...}}
+
+# 2. Call a protected endpoint
+curl -H 'Authorization: Bearer eyJhbGc...' http://localhost:8000/posts
+```
+
+### Generating tokens manually
+
+If you do not want to use `login_validator` and the auto-registered endpoint,
+issue tokens directly:
 
 ```python
 import jwt, os, datetime
@@ -104,7 +140,8 @@ Allows access only if `JWTAuthentication.authenticate()` returns `True` (valid t
 Allows access only if the token payload contains `"is_admin": true`.
 
 ```python
-from lightapi import Authentication, JWTAuthentication, IsAdminUser
+from lightapi import Authentication
+from lightapi.authentication import JWTAuthentication, IsAdminUser
 
 class AdminEndpoint(RestEndpoint):
     name: str
@@ -148,7 +185,7 @@ class ArticleEndpoint(RestEndpoint):
 Subclass `BaseAuthentication` to implement your own logic:
 
 ```python
-from lightapi.auth import BaseAuthentication
+from lightapi.authentication import BaseAuthentication
 
 class ApiKeyAuthentication(BaseAuthentication):
     def authenticate(self, request) -> bool:
@@ -171,7 +208,7 @@ class SecureEndpoint(RestEndpoint):
 Subclass `BasePermission` to implement your own access control:
 
 ```python
-from lightapi.auth import BasePermission
+from lightapi.authentication import BasePermission
 
 class IsOwner(BasePermission):
     def has_permission(self, request) -> bool:

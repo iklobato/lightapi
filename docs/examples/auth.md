@@ -35,12 +35,37 @@ app.run()
 
 All requests to `/posts` now require `Authorization: Bearer <token>`.
 
-## Generating tokens
+## Obtaining tokens
 
-`JWTAuthentication` ships with a `generate_token` method:
+When any endpoint declares JWT authentication, LightAPI auto-registers
+`POST /auth/login`. Pass a `login_validator` to `LightApi(...)` to plug in
+your credential check:
 
 ```python
-from lightapi.auth import JWTAuthentication
+def login_validator(username: str, password: str):
+    if username == "admin" and password == "secret":
+        return {"sub": "1", "username": "admin", "is_admin": True}
+    return None
+
+app = LightApi(engine=engine, login_validator=login_validator)
+app.register({"/posts": PostEndpoint})
+```
+
+```bash
+# Log in to get a token
+curl -X POST http://localhost:8000/auth/login \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"admin","password":"secret"}'
+# → 200 {"token": "<jwt>", "user": {"sub": "1", "is_admin": true, ...}}
+
+# Use the token
+curl -H 'Authorization: Bearer <jwt>' http://localhost:8000/posts
+```
+
+You can also issue tokens manually:
+
+```python
+from lightapi.authentication import JWTAuthentication
 
 auth = JWTAuthentication()
 token = auth.generate_token({"sub": "42", "is_admin": False})

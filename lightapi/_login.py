@@ -5,12 +5,18 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from collections.abc import Callable
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+
+from lightapi.constants import (
+    RESPONSE_KEY_DETAIL,
+    RESPONSE_KEY_TOKEN,
+    RESPONSE_KEY_USER,
+    HTTPStatus,
+)
 
 # JWTAuthentication imported locally where needed to avoid circular import
 
@@ -75,12 +81,12 @@ async def _read_body(request: Request) -> dict[str, Any]:
 async def login_handler(
     request: Request,
     *,
-    login_validator: Callable[[str, str], dict[str, Any] | None],
     has_jwt: bool,
     jwt_expiration: int | None = None,
     jwt_extra_claims: list[str] | None = None,
     jwt_algorithm: str | None = None,
     rate_limiter: Optional[Any] = None,
+    auth_backend: Optional[Any] = None,
 ) -> JSONResponse:
     """
     Handle POST /auth/login and POST /auth/token.
@@ -96,31 +102,47 @@ async def login_handler(
 
     if request.method != "POST":
         return JSONResponse(
-            {"detail": "method not allowed"},
-            status_code=405,
+            {RESPONSE_KEY_DETAIL: "method not allowed"},
+            status_code=HTTPStatus.METHOD_NOT_ALLOWED,
             headers={"Allow": "POST"},
         )
 
     try:
         creds = await _parse_credentials(request)
     except ValidationError as exc:
-        return JSONResponse({"detail": exc.errors()}, status_code=422)
+        return JSONResponse(
+            {RESPONSE_KEY_DETAIL: exc.errors()},
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+        )
 
     if creds is None:
-        return JSONResponse({"detail": "Invalid credentials"}, status_code=401)
+        return JSONResponse(
+            {RESPONSE_KEY_DETAIL: "Invalid credentials"},
+            status_code=HTTPStatus.UNAUTHORIZED,
+        )
 
     username, password = creds
-    try:
-        payload = login_validator(username, password)
-    except Exception as e:
-        logger.exception("login_validator raised: %s", e)
-        raise
+
+    # Use auth_backend's validate_credentials if provided
+    payload = None
+    if auth_backend is not None:
+        try:
+            payload = auth_backend.validate_credentials(username, password)
+        except Exception as e:
+            logger.exception("validate_credentials raised: %s", e)
+            return JSONResponse(
+                {RESPONSE_KEY_DETAIL: "Internal server error"},
+                status_code=500,
+            )
 
     if payload is None:
-        return JSONResponse({"detail": "Invalid credentials"}, status_code=401)
+        return JSONResponse(
+            {RESPONSE_KEY_DETAIL: "Invalid credentials"},
+            status_code=HTTPStatus.UNAUTHORIZED,
+        )
 
     if has_jwt:
-        from lightapi.auth import JWTAuthentication
+        from lightapi.authentication import JWTAuthentication
 
         jwt_auth = JWTAuthentication(algorithm=jwt_algorithm)
         if jwt_extra_claims and isinstance(payload, dict):
@@ -130,6 +152,6 @@ async def login_handler(
         else:
             token_payload = payload
         token = jwt_auth.generate_token(token_payload, expiration=jwt_expiration)
-        return JSONResponse({"token": token, "user": payload})
+        return JSONResponse({RESPONSE_KEY_TOKEN: token, RESPONSE_KEY_USER: payload})
 
-    return JSONResponse({"user": payload})
+    return JSONResponse({RESPONSE_KEY_USER: payload})

@@ -149,7 +149,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import create_async_engine
 from starlette.requests import Request
 from lightapi import LightApi, RestEndpoint, Field
-from lightapi.auth import AllowAny
+from lightapi.authentication import AllowAny
 from lightapi.config import Authentication
 
 class BookEndpoint(RestEndpoint):

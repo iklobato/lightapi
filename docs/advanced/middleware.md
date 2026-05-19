@@ -217,7 +217,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine
 from lightapi import LightApi, RestEndpoint
-from lightapi.auth import AllowAny
+from lightapi.authentication import AllowAny
 from lightapi.config import Authentication
 from lightapi.core import Middleware
 from pydantic import Field

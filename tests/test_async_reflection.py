@@ -71,10 +71,10 @@ async def test_reflect_true_with_async_engine_uses_run_sync(pre_populated_engine
     class ReflectedItem(RestEndpoint):
         class Meta:
             reflect = True
-            table_name = "preexisting_items"
+            table = "preexisting_items"
             authentication = Authentication(permission=AllowAny)
 
-    app = LightApi(engine=pre_populated_engine)
+    app = LightApi(engine=pre_populated_engine, mode="async")
     app.register({"/reflected": ReflectedItem})
     starlette_app = app.build_app()
 
@@ -91,10 +91,10 @@ async def test_reflected_columns_available(pre_populated_engine):
     class ReflectedItem2(RestEndpoint):
         class Meta:
             reflect = True
-            table_name = "preexisting_items"
+            table = "preexisting_items"
             authentication = Authentication(permission=AllowAny)
 
-    app = LightApi(engine=pre_populated_engine)
+    app = LightApi(engine=pre_populated_engine, mode="async")
     app.register({"/reflected2": ReflectedItem2})
     starlette_app = app.build_app()
 
@@ -118,7 +118,7 @@ class TestAsyncReflectFullCrud:
                 table = "async_products"
                 authentication = Authentication(permission=AllowAny)
 
-        app = LightApi(engine=async_products_engine)
+        app = LightApi(engine=async_products_engine, mode="async")
         app.register({"/async_products": AsyncProductEndpoint})
         starlette_app = app.build_app()
 
@@ -142,7 +142,7 @@ class TestAsyncReflectFullCrud:
                 table = "async_products"
                 authentication = Authentication(permission=AllowAny)
 
-        app = LightApi(engine=async_products_engine)
+        app = LightApi(engine=async_products_engine, mode="async")
         app.register({"/async_products": AsyncProductEndpoint})
         starlette_app = app.build_app()
 
@@ -183,7 +183,7 @@ class TestAsyncReflectFullCrud:
                 table = "async_products"
                 authentication = Authentication(permission=AllowAny)
 
-        app = LightApi(engine=async_products_engine)
+        app = LightApi(engine=async_products_engine, mode="async")
         app.register({"/async_products": AsyncProductEndpoint})
         starlette_app = app.build_app()
 

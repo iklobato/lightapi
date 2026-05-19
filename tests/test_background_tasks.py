@@ -43,7 +43,7 @@ def _build_app(tracker: list, use_async_fn: bool = False, multi: bool = False):
                 self.background(notify, body["id"])
             return item
 
-    app = LightApi(engine=engine)
+    app = LightApi(engine=engine, mode="async")
     app.register({"/items": BgItem})
     return app.build_app()
 

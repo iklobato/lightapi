@@ -69,6 +69,27 @@ After successful authentication, the decoded payload is stored in `request.state
 - OPTIONS requests are always allowed (CORS preflight compatibility).
 - Returns `401 Unauthorized` if the token is missing, malformed, or expired.
 
+### Auto-registered login endpoint
+
+When at least one endpoint configures `Authentication(backend=JWTAuthentication)`
+(or `BasicAuthentication`), LightAPI automatically registers
+`POST /auth/login` and `POST /auth/token`. Pass a `login_validator` callable
+to `LightApi(...)` to plug in your credential check:
+
+```python
+def login_validator(username: str, password: str):
+    if username == "admin" and password == "secret":
+        return {"sub": "1", "username": "admin", "is_admin": True}
+    return None
+
+app = LightApi(engine=engine, login_validator=login_validator)
+```
+
+The returned dict becomes the JWT payload. For JWT apps the response is
+`{"token": "<jwt>", "user": {...}}`. The login route is rate-limited — see
+[Rate Limiting](../advanced/rate-limiting.md). Override the base path via
+`LightApi(auth_path="/api/auth")`.
+
 ## Permission Classes
 
 ### `AllowAny`
@@ -100,7 +121,8 @@ Allows access only if the JWT payload contains `"is_admin": true`.
 Pass a `dict[str, type]` to apply different permission classes per HTTP method:
 
 ```python
-from lightapi import Authentication, JWTAuthentication, IsAuthenticated, IsAdminUser, AllowAny
+from lightapi import Authentication
+from lightapi.authentication import JWTAuthentication, IsAuthenticated, IsAdminUser, AllowAny
 
 class ArticleEndpoint(RestEndpoint):
     title: str
@@ -123,7 +145,7 @@ class ArticleEndpoint(RestEndpoint):
 Implement to create a custom authentication backend:
 
 ```python
-from lightapi.auth import BaseAuthentication
+from lightapi.authentication import BaseAuthentication
 
 class ApiKeyAuthentication(BaseAuthentication):
     def authenticate(self, request) -> bool:
@@ -136,7 +158,7 @@ class ApiKeyAuthentication(BaseAuthentication):
 Implement to create a custom permission class:
 
 ```python
-from lightapi.auth import BasePermission
+from lightapi.authentication import BasePermission
 
 class IsOwner(BasePermission):
     def has_permission(self, request) -> bool:

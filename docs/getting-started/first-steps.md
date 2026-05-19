@@ -30,13 +30,22 @@ class UserEndpoint(RestEndpoint):
     username: str = Field(min_length=3, max_length=50, unique=True, index=True)
     email: str = Field(min_length=5, unique=True)
     bio: Optional[str] = None
+
+    class Meta:
+        table = "users"   # override the default `userendpoints` table name
 ```
 
 LightAPI auto-generates:
-- A `users` table (derived from the class name) with columns `id`, `username`, `email`, `bio`, `created_at`, `updated_at`, `version`
+- A `users` table with columns `id`, `username`, `email`, `bio`, `created_at`, `updated_at`, `version`
 - A Pydantic create schema (excludes `id`, `created_at`, `updated_at`, `version`)
 - A Pydantic read schema (includes all columns including auto-injected ones)
 - `GET /users`, `POST /users`, `GET /users/{id}`, `PUT /users/{id}`, `PATCH /users/{id}`, `DELETE /users/{id}`
+
+!!! note "Default table names"
+    Without `Meta.table`, LightAPI lowercases the class name and appends `s` —
+    `UserEndpoint` would yield `userendpoints`. Set `Meta.table` whenever you
+    want a friendlier name (recommended for any class that uses the
+    `Endpoint` suffix).
 
 ## 3. Wiring Up the Application
 

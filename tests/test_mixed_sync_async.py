@@ -36,7 +36,7 @@ async def mixed_client():
             return sa_select(type(self)._model_class)
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    app = LightApi(engine=engine)
+    app = LightApi(engine=engine, mode="async")
     app.register({"/widgets": AsyncWidget, "/cats": SyncCategory})
     starlette_app = app.build_app()
     async with AsyncClient(

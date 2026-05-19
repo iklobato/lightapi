@@ -13,7 +13,7 @@ Covers every v2 feature in one runnable file:
   - Middleware — AuditMiddleware adds X-Response-Time header
   - Optimistic locking — PUT/PATCH require version; mismatch → 409
 
-Database: postgresql://postgres:postgres@localhost:5432/postgres
+Database: SQLite in-memory by default (swap DATABASE_URL for PostgreSQL).
 
 Usage
 -----
@@ -42,6 +42,7 @@ from typing import Optional
 
 from sqlalchemy import create_engine
 from sqlalchemy import select as sa_select
+from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
@@ -62,7 +63,7 @@ from lightapi import (
 from lightapi.fields import Field
 from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
 
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
+DATABASE_URL = "sqlite:///:memory:"
 
 # Set JWT secret before any endpoint class body is evaluated
 os.environ.setdefault("LIGHTAPI_JWT_SECRET", "demo-secret-key")
@@ -222,7 +223,11 @@ class TagEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
 
     app = LightApi(
         engine=engine,
