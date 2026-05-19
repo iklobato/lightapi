@@ -69,6 +69,27 @@ After successful authentication, the decoded payload is stored in `request.state
 - OPTIONS requests are always allowed (CORS preflight compatibility).
 - Returns `401 Unauthorized` if the token is missing, malformed, or expired.
 
+### Auto-registered login endpoint
+
+When at least one endpoint configures `Authentication(backend=JWTAuthentication)`
+(or `BasicAuthentication`), LightAPI automatically registers
+`POST /auth/login` and `POST /auth/token`. Pass a `login_validator` callable
+to `LightApi(...)` to plug in your credential check:
+
+```python
+def login_validator(username: str, password: str):
+    if username == "admin" and password == "secret":
+        return {"sub": "1", "username": "admin", "is_admin": True}
+    return None
+
+app = LightApi(engine=engine, login_validator=login_validator)
+```
+
+The returned dict becomes the JWT payload. For JWT apps the response is
+`{"token": "<jwt>", "user": {...}}`. The login route is rate-limited — see
+[Rate Limiting](../advanced/rate-limiting.md). Override the base path via
+`LightApi(auth_path="/api/auth")`.
+
 ## Permission Classes
 
 ### `AllowAny`

@@ -30,7 +30,7 @@ from lightapi import (
 class ArticleEndpoint(RestEndpoint):
     title: str = Field(min_length=1, max_length=200)
     body: str
-    published: Optional[bool] = Field(None, default=False)
+    published: bool = Field(default=False)
 
     class Meta:
         authentication = Authentication(
@@ -68,9 +68,17 @@ from blog.endpoints import ArticleEndpoint
 
 os.environ.setdefault("LIGHTAPI_JWT_SECRET", "dev-secret-change-me")
 
+
+def login_validator(username: str, password: str):
+    """Validate credentials and return the JWT payload."""
+    if username == "admin" and password == "secret":
+        return {"sub": "1", "username": "admin", "is_admin": True}
+    return None
+
+
 engine = create_engine(os.environ.get("DATABASE_URL", "sqlite:///blog.db"))
 
-app = LightApi(engine=engine)
+app = LightApi(engine=engine, login_validator=login_validator)
 app.register({"/articles": ArticleEndpoint})
 
 if __name__ == "__main__":
@@ -83,22 +91,20 @@ if __name__ == "__main__":
 python blog/main.py
 ```
 
-LightAPI creates the `articles` table automatically on first run.
+LightAPI creates the `articleendpoints` table on startup. Because the endpoint
+declares `JWTAuthentication`, the framework also auto-registers
+`POST /auth/login`.
 
-## Step 4 — Create a token
+## Step 4 — Log in to get a token
 
-LightAPI does not include a login endpoint. Generate a token in the Python shell:
-
-```python
-import jwt, datetime, os
-os.environ["LIGHTAPI_JWT_SECRET"] = "dev-secret-change-me"
-token = jwt.encode(
-    {"sub": "1", "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=1)},
-    "dev-secret-change-me",
-    algorithm="HS256",
-)
-print(token)
+```bash
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "secret"}'
+# → 200 {"token": "eyJhbGc...", "user": {"sub": "1", "username": "admin", "is_admin": true}}
 ```
+
+Capture the `token` field for the next step.
 
 ## Step 5 — Interact with the API
 

@@ -18,8 +18,14 @@ from lightapi import LightApi
 LightApi(
     engine=None,
     database_url: str | None = None,
+    mode: str | None = None,
     cors_origins: list[str] | None = None,
     middlewares: list[type] | None = None,
+    auth_path: str = "/auth",
+    session_manager: SessionManager | None = None,
+    rate_limiter: "RateLimiter | dict[str, int] | None" = None,
+    login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
+    use_test_isolation: bool = False,
 )
 ```
 
@@ -27,14 +33,21 @@ LightApi(
 |-----------|------|-------------|
 | `engine` | `Engine \| AsyncEngine` | SQLAlchemy engine (sync or async). |
 | `database_url` | `str \| None` | Creates a sync engine when no `engine` is provided. Falls back to `LIGHTAPI_DATABASE_URL`. Raises `ConfigurationError` if none are provided. |
+| `mode` | `str \| None` | `"sync"` or `"async"`. Auto-detected if omitted. |
 | `cors_origins` | `list[str] \| None` | CORS allowed origins. |
 | `middlewares` | `list[type] \| None` | `Middleware` subclasses applied to all requests. |
+| `auth_path` | `str` | Base path for the auto-registered login route (default `/auth`). |
+| `session_manager` | `SessionManager \| None` | Custom session manager override. |
+| `rate_limiter` | `RateLimiter \| dict \| None` | Rate-limit config applied to `/auth/login`. |
+| `login_validator` | `Callable[[str, str], dict \| None]` | Credential validator for `/auth/login`. |
+| `use_test_isolation` | `bool` | Per-thread metadata + unique table names (test helper). |
 
 ### Methods
 
 #### `register(mapping: dict[str, type]) → None`
 
-Register endpoint classes and create their database tables.
+Register endpoint classes — maps each onto a SQLAlchemy table and adds
+collection + detail routes. Tables are created by `build_app()` / `run()`.
 
 ```python
 app.register({
@@ -42,6 +55,10 @@ app.register({
     "/posts": PostEndpoint,
 })
 ```
+
+Also auto-registers `POST /auth/login` (and `POST /auth/token`) if at least
+one endpoint configures `Authentication(backend=JWTAuthentication)` or
+`Authentication(backend=BasicAuthentication)`.
 
 Raises `ConfigurationError` if a value is not a `RestEndpoint` subclass.
 

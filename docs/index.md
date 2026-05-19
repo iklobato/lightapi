@@ -113,6 +113,7 @@ See the [Quickstart Guide](getting-started/quickstart.md) for full `curl` exampl
 ### Core Concepts
 - [RestEndpoint & Field](api-reference/rest.md)
 - [Authentication & Permissions](advanced/authentication.md)
+- [Rate Limiting](advanced/rate-limiting.md)
 - [Filtering & Ordering](advanced/filtering.md)
 - [Pagination](advanced/pagination.md)
 - [Middleware](advanced/middleware.md)
