@@ -81,7 +81,7 @@ uv add "lightapi[async]"
 docker run --rm -p 8000:8000 \
     -v "$(pwd)/lightapi.yaml:/app/lightapi.yaml:ro" \
     -e DATABASE_URL=sqlite:////app/data.db \
-    iklobato/lightapi:latest
+    iklob1/lightapi:latest
 ```
 
 See [Docker deployment](docs/deployment/docker.md) for the full guide.
