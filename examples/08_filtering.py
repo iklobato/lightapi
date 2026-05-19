@@ -6,8 +6,8 @@ Demonstrates:
 - OrderingFilter: Sort results (?ordering=price or ?ordering=-price)
 - Combining filters
 
-Prerequisites:
-    PostgreSQL must be running with default credentials.
+Notes:
+    Uses SQLite by default (swap DATABASE_URL for PostgreSQL).
 
 Run with:
     python examples/08_filtering.py
@@ -30,12 +30,13 @@ Then try:
 """
 
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
 from lightapi import Filtering, HttpMethod, LightApi, RestEndpoint
 from lightapi.fields import Field
 from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
 
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
+DATABASE_URL = "sqlite:///:memory:"
 
 
 class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
@@ -49,14 +50,18 @@ class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
     class Meta:
         filtering = Filtering(
             backends=[FieldFilter, SearchFilter, OrderingFilter],
-            fields=["genre", "published"],  # ?genre=fiction
+            fields=["genre"],  # ?genre=fiction
             search=["title", "author"],  # ?search=term
             ordering=["title", "price"],  # ?ordering=price or -price
         )
 
 
 if __name__ == "__main__":
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     app = LightApi(engine=engine)
     app.register({"/books": BookEndpoint})
     app.run(host="0.0.0.0", port=8000, debug=True)

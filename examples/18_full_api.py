@@ -3,18 +3,19 @@
 Demonstrates:
 - All LightAPI features combined:
   - Multiple endpoints with different permissions
-  - JWT + Basic auth
+  - JWT auth (Bearer)
   - Pagination (page_number and cursor)
   - Filtering (FieldFilter, SearchFilter, OrderingFilter)
-  - Caching
+  - Caching (skipped when Redis is unavailable)
   - Middleware
-  - Custom queryset
+  - Per-verb serializer (read vs write)
 
-Prerequisites:
-    PostgreSQL and Redis must be running.
+Notes:
+    Uses SQLite by default (swap DATABASE_URL for PostgreSQL).
+    JWT secret defaults to "secret" — override via LIGHTAPI_JWT_SECRET.
 
 Run with:
-    LIGHTAPI_JWT_SECRET=secret python examples/18_full_api.py
+    python examples/18_full_api.py
 
 This is similar to the existing v2_full_demo.py but organized as a numbered example.
 """
@@ -24,8 +25,9 @@ import time
 from typing import Optional
 
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import Response
 
 from lightapi import (
     AllowAny,
@@ -45,7 +47,7 @@ from lightapi import (
 from lightapi.fields import Field
 from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
 
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
+DATABASE_URL = "sqlite:///:memory:"
 os.environ.setdefault("LIGHTAPI_JWT_SECRET", "secret")
 
 
@@ -58,25 +60,15 @@ def login_validator(username: str, password: str):
 
 
 class AuditMiddleware(Middleware):
-    """Middleware that adds X-Response-Time header."""
+    """Middleware that adds X-Response-Time header to every response."""
 
     def process(self, request: Request, response: Response | None) -> Response | None:
         if response is None:
             request.state._start = time.monotonic()
             return None
         elapsed = time.monotonic() - getattr(request.state, "_start", time.monotonic())
-        try:
-            body = JSONResponse(
-                json=__import__("json").loads(response.body),
-                status_code=response.status_code,
-            )
-        except Exception:
-            return response
-        return JSONResponse(
-            body,
-            status_code=response.status_code,
-            headers={"X-Response-Time": f"{elapsed:.4f}s"},
-        )
+        response.headers["X-Response-Time"] = f"{elapsed:.4f}s"
+        return response
 
 
 class BookEndpoint(
@@ -158,7 +150,11 @@ class PublicEndpoint(RestEndpoint, HttpMethod.GET):
 
 
 if __name__ == "__main__":
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     app = LightApi(
         engine=engine,
         login_validator=login_validator,

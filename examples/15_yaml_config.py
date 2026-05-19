@@ -6,8 +6,9 @@ Demonstrates:
 - Authentication config in YAML
 - Defaults applied to all endpoints
 
-Prerequisites:
-    PostgreSQL must be running.
+Notes:
+    Uses SQLite by default — swap the `database.url` in the YAML
+    below for a postgres URL to switch.
 
 Run with:
     python examples/15_yaml_config.py
@@ -29,7 +30,7 @@ def main():
 
     yaml_content = """
 database:
-  url: "postgresql://postgres:postgres@localhost:5432/postgres"
+  url: "sqlite:///example_15_yaml.db"
 
 defaults:
   authentication:
@@ -50,7 +51,7 @@ endpoints:
   - route: /authors
     fields:
       name: { type: str, min_length: 1 }
-      bio: { type: str }
+      bio: { type: str, optional: true }
     meta:
       methods: [GET, POST]
 """

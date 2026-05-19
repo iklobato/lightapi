@@ -5,8 +5,8 @@ Demonstrates:
 - Protection against brute-force attacks
 - Configurable rate limits
 
-Prerequisites:
-    PostgreSQL must be running.
+Notes:
+    Uses SQLite by default (swap DATABASE_URL for PostgreSQL).
 
 Run with:
     python examples/16_rate_limit.py
@@ -26,6 +26,7 @@ Then try:
 import os
 
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
 from lightapi import (
     Authentication,
@@ -35,7 +36,7 @@ from lightapi import (
     RestEndpoint,
 )
 
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
+DATABASE_URL = "sqlite:///:memory:"
 os.environ.setdefault("LIGHTAPI_JWT_SECRET", "secret")
 
 
@@ -53,7 +54,11 @@ class DummyEndpoint(RestEndpoint, HttpMethod.GET):
 
 
 if __name__ == "__main__":
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
 
     # Rate limiter is automatically applied to /auth/login endpoint
     # Default: 10 requests per minute, 100 per hour, 1000 per day

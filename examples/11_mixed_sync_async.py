@@ -6,8 +6,9 @@ Demonstrates:
 - def queryset (sync) endpoint
 - Same app serving both sync and async endpoints
 
-Prerequisites:
-    PostgreSQL with asyncpg driver.
+Notes:
+    Uses SQLite+aiosqlite by default. Swap DATABASE_URL for
+    `postgresql+asyncpg://...` to run against PostgreSQL.
 
 Run with:
     python examples/11_mixed_sync_async.py
@@ -22,11 +23,12 @@ Then try:
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from lightapi import HttpMethod, LightApi, RestEndpoint
 from lightapi.fields import Field
 
-DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
+DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
 class AsyncBookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
@@ -52,7 +54,11 @@ class SyncBookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
 
 
 if __name__ == "__main__":
-    engine = create_async_engine(DATABASE_URL)
+    engine = create_async_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     app = LightApi(engine=engine, mode="async")
     app.register(
         {

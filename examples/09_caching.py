@@ -6,9 +6,10 @@ Demonstrates:
 - Cache invalidation on POST/PUT/DELETE
 - Cache vary_on for query parameter-based caching
 
-Prerequisites:
-    PostgreSQL and Redis must be running with default credentials.
-    Redis: localhost:6379
+Notes:
+    Uses SQLite by default (swap DATABASE_URL for PostgreSQL).
+    Redis is optional — without it, caching is silently skipped.
+    Default Redis URL: localhost:6379
 
 Run with:
     python examples/09_caching.py
@@ -27,11 +28,12 @@ Then try:
 """
 
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
 from lightapi import Cache, HttpMethod, LightApi, RestEndpoint
 from lightapi.fields import Field
 
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
+DATABASE_URL = "sqlite:///:memory:"
 
 
 class BookEndpoint(
@@ -61,7 +63,11 @@ class BookEndpoint(
 
 
 if __name__ == "__main__":
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     app = LightApi(engine=engine)
     app.register({"/books": BookEndpoint})
     app.run(host="0.0.0.0", port=8000, debug=True)
