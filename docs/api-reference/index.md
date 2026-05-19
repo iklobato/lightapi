@@ -13,6 +13,7 @@ Detailed reference for every public module in LightAPI v2.
 | [Caching](cache.md) | `Cache`, `RedisCache`, `BaseCache` |
 | [Filtering](filters.md) | `Filtering`, `FieldFilter`, `SearchFilter`, `OrderingFilter` |
 | [Pagination](pagination.md) | `Pagination`, `PageNumberPaginator`, `CursorPaginator` |
+| [Rate Limiting](../advanced/rate-limiting.md) | `RateLimiter` for the auto-registered login route |
 | [Models](models.md) | Field type map, auto-injected columns, `Meta` options |
 | [Validation](validation.md) | Pydantic v2 constraints, schemas, `Serializer` |
 | [Exceptions](exceptions.md) | `ConfigurationError`, `SerializationError` |

@@ -21,7 +21,6 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
-    Table,
     delete,
     update,
 )
@@ -40,10 +39,9 @@ from starlette.responses import JSONResponse, Response
 
 from lightapi.constants import (
     AUTO_FIELDS,
-    HTTPStatus,
     RESPONSE_KEY_DETAIL,
     RESPONSE_KEY_RESULTS,
-    PAGE_PARAM,
+    HTTPStatus,
 )
 from lightapi.exceptions import ConfigurationError
 from lightapi.schema import (
@@ -271,8 +269,6 @@ class RestEndpointMeta(type):
             cls._test_isolation_table_name = table_name  # type: ignore[attr-defined]
 
 
-from lightapi.table_mapping import map_imperatively as _map_imperatively
-from lightapi.table_mapping import map_reflected as _map_reflected
 
 
 class RestEndpoint(metaclass=RestEndpointMeta):

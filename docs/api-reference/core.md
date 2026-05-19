@@ -19,8 +19,14 @@ The main application class.
 LightApi(
     engine=None,
     database_url: str | None = None,
+    mode: str | None = None,
     cors_origins: list[str] | None = None,
     middlewares: list[type] | None = None,
+    auth_path: str = "/auth",
+    session_manager: SessionManager | None = None,
+    rate_limiter: "RateLimiter | dict[str, int] | None" = None,
+    login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
+    use_test_isolation: bool = False,
 )
 ```
 
@@ -28,8 +34,14 @@ LightApi(
 |-----------|------|-------------|
 | `engine` | `Engine \| AsyncEngine` | SQLAlchemy engine. If omitted, `database_url` or env vars are used. |
 | `database_url` | `str \| None` | Creates a sync engine when no `engine` is provided. Falls back to `LIGHTAPI_DATABASE_URL` env var. Raises `ConfigurationError` if none are provided. |
+| `mode` | `str \| None` | `"sync"` or `"async"`. Auto-detected from the engine type and from `async def` overrides if omitted. |
 | `cors_origins` | `list[str] \| None` | CORS allowed origins. |
 | `middlewares` | `list[type] \| None` | `Middleware` subclasses applied globally to all requests. |
+| `auth_path` | `str` | Base path for the auto-registered login route. Defaults to `/auth` → `/auth/login` and `/auth/token`. |
+| `session_manager` | `SessionManager \| None` | Override the default session manager (advanced; mostly used for test isolation). |
+| `rate_limiter` | `RateLimiter \| dict \| None` | Rate-limit config applied to `/auth/login`. Pass a `RateLimiter` instance or a `{"requests_per_minute": N, ...}` dict. |
+| `login_validator` | `Callable[[str, str], dict \| None]` | Credential validator used by `/auth/login`. Receives `(username, password)`, returns the JWT payload dict on success or `None` to reject. |
+| `use_test_isolation` | `bool` | When `True`, mounts each registered endpoint onto a unique table name and a per-thread metadata/registry — used by the test suite. |
 
 ### `register(mapping)`
 
@@ -42,8 +54,9 @@ app.register({
 
 Accepts a `dict[str, type]` mapping URL prefixes to `RestEndpoint` subclasses.
 
-- Creates missing database tables.
 - Registers collection (`/users`) and detail (`/users/{id}`) Starlette routes.
+- Maps each `RestEndpoint` class onto a SQLAlchemy table (table created later by `build_app()` / `run()`).
+- Auto-registers `/auth/login` and `/auth/token` if any endpoint declares `Authentication(backend=JWTAuthentication)` or `Authentication(backend=BasicAuthentication)`.
 
 ### `build_app() → Starlette`
 
@@ -70,6 +83,24 @@ app = LightApi.from_config("lightapi.yaml")
 Bootstraps a `LightApi` instance from a YAML file. The YAML document is parsed
 and validated by Pydantic v2 — any schema error raises `ConfigurationError` with
 a precise message before the server starts.
+
+### `from_dict(config: dict) → LightApi`
+
+```python
+app = LightApi.from_dict({
+    "database_url": "sqlite:///db.sqlite3",
+    "endpoints": {
+        "/books": {
+            "fields": {"title": str, "author": str},
+            "auth": "jwt",
+        },
+        "/authors": {"fields": {"name": str}},
+    },
+    "cors": ["https://myapp.com"],
+})
+```
+
+Programmatic alternative to YAML for simple configurations.
 
 ```yaml
 database:

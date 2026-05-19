@@ -54,6 +54,13 @@ class TestAnnotationTypeMap:
         class OptionalEndpoint(RestEndpoint):
             name: Optional[str] = LField()
 
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        app = LightApi(engine=engine)
+        app.register({"/optional": OptionalEndpoint})
         assert OptionalEndpoint.__table__.c["name"].nullable is True
 
     def test_decimal_maps_to_numeric(self):
@@ -63,6 +70,13 @@ class TestAnnotationTypeMap:
         class DecimalEndpoint(RestEndpoint):
             price: Decimal = LField(decimal_places=2)
 
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        app = LightApi(engine=engine)
+        app.register({"/decimal": DecimalEndpoint})
         col = DecimalEndpoint.__table__.c["price"]
         assert isinstance(col.type, Numeric)
         assert col.type.scale == 2
@@ -73,6 +87,13 @@ class TestAnnotationTypeMap:
         class UuidEndpoint(RestEndpoint):
             ref: UUID = LField()
 
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        app = LightApi(engine=engine)
+        app.register({"/uuid": UuidEndpoint})
         col_type = type(UuidEndpoint.__table__.c["ref"].type)
         assert col_type.__name__ in ("Uuid", "UUID")
 

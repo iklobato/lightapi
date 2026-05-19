@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable, Type
 
 from starlette.requests import Request
 from starlette.responses import Response

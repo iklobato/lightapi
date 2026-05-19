@@ -1,11 +1,12 @@
 """LightAPI Example 17 - Relationships & Joins.
 
 Demonstrates:
-- Foreign key fields
-- Including related data via join
+- Foreign key fields via Field(foreign_key=...)
+- Two related endpoints (Author parent, Book child via author_id)
 
-Prerequisites:
-    PostgreSQL must be running.
+Notes:
+    Uses SQLite by default (swap DATABASE_URL for PostgreSQL).
+    Author rows must be created before Book rows that reference them.
 
 Run with:
     python examples/17_relationships.py
@@ -17,34 +18,41 @@ Then try:
 """
 
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
 from lightapi import HttpMethod, LightApi, RestEndpoint, Serializer
 from lightapi.fields import Field
 
-
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
-
-
-class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
-    """Endpoint with simple fields."""
-
-    title: str = Field(min_length=1)
-    author: str = Field(default="")
-
-    class Meta:
-        serializer = Serializer(
-            read=["id", "title", "author"],
-        )
+DATABASE_URL = "sqlite:///:memory:"
 
 
 class AuthorEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
-    """Simple author endpoint."""
+    """Author endpoint (parent table)."""
 
     name: str = Field(min_length=1)
 
+    class Meta:
+        table = "authors"
+
+
+class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
+    """Book endpoint with a foreign key to authors."""
+
+    title: str = Field(min_length=1)
+    author_id: int = Field(foreign_key="authors.id")
+
+    class Meta:
+        serializer = Serializer(
+            read=["id", "title", "author_id"],
+        )
+
 
 if __name__ == "__main__":
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     app = LightApi(engine=engine)
-    app.register({"/books": BookEndpoint, "/authors": AuthorEndpoint})
+    app.register({"/authors": AuthorEndpoint, "/books": BookEndpoint})
     app.run(host="0.0.0.0", port=8000, debug=True)

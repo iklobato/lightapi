@@ -7,9 +7,9 @@ Demonstrates:
 - async def post for async operations
 - Full async CRUD operations
 
-Prerequisites:
-    PostgreSQL must be running with asyncpg driver.
-    Install: pip install asyncpg
+Notes:
+    Uses SQLite+aiosqlite by default. Swap DATABASE_URL for
+    `postgresql+asyncpg://...` to run against PostgreSQL.
 
 Run with:
     python examples/10_async.py
@@ -23,12 +23,12 @@ Then try:
 """
 
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from lightapi import HttpMethod, LightApi, RestEndpoint
 from lightapi.fields import Field
 
-
-DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
+DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
 class BookEndpoint(
@@ -53,7 +53,11 @@ class BookEndpoint(
 
 
 if __name__ == "__main__":
-    engine = create_async_engine(DATABASE_URL)
+    engine = create_async_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     app = LightApi(engine=engine, mode="async")
     app.register({"/books": BookEndpoint})
     app.run(host="0.0.0.0", port=8000, debug=True)

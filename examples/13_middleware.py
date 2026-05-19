@@ -6,8 +6,8 @@ Demonstrates:
 - Post-response hook (process response after endpoint)
 - Adding headers to responses
 
-Prerequisites:
-    PostgreSQL must be running.
+Notes:
+    Uses SQLite by default (swap DATABASE_URL for PostgreSQL).
 
 Run with:
     python examples/13_middleware.py
@@ -21,11 +21,12 @@ import time
 import uuid
 
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
+from starlette.requests import Request
+from starlette.responses import Response
 
 from lightapi import HttpMethod, LightApi, Middleware, RestEndpoint
 from lightapi.fields import Field
-from starlette.requests import Request
-from starlette.responses import Response
 
 
 class RequestIdMiddleware(Middleware):
@@ -61,7 +62,7 @@ class ResponseTimeMiddleware(Middleware):
         return response
 
 
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
+DATABASE_URL = "sqlite:///:memory:"
 
 
 class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
@@ -72,7 +73,11 @@ class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
 
 
 if __name__ == "__main__":
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     app = LightApi(
         engine=engine,
         middlewares=[RequestIdMiddleware, ResponseTimeMiddleware],

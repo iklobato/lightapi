@@ -1,6 +1,7 @@
 """Tests for example 03_auth_jwt.py - JWT Authentication flows."""
 
 import os
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
@@ -9,14 +10,14 @@ from starlette.testclient import TestClient
 os.environ.setdefault("LIGHTAPI_JWT_SECRET", "test-secret-key")
 
 from lightapi import (
-    LightApi,
-    RestEndpoint,
+    Authentication,
     Field,
     HttpMethod,
-    Serializer,
-    Authentication,
-    JWTAuthentication,
     IsAuthenticated,
+    JWTAuthentication,
+    LightApi,
+    RestEndpoint,
+    Serializer,
 )
 
 

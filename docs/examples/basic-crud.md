@@ -24,6 +24,9 @@ class ItemEndpoint(RestEndpoint):
     description: Optional[str] = None
     price:       float          = Field(ge=0)
     in_stock:    bool           = Field(default=True)
+
+    class Meta:
+        table = "items"   # without this, the table would be `itemendpoints`
 ```
 
 LightAPI auto-generates:

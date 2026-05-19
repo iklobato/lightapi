@@ -5,8 +5,8 @@ Demonstrates:
 - Protected endpoints requiring valid Basic credentials
 - Login via /auth/login with JSON body
 
-Prerequisites:
-    PostgreSQL must be running with default credentials.
+Notes:
+    Uses SQLite by default (swap DATABASE_URL for PostgreSQL).
 
 Run with:
     python examples/04_auth_basic.py
@@ -25,8 +25,8 @@ Then try:
     curl http://localhost:8000/books
 """
 
-import os
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
 from lightapi import (
     Authentication,
@@ -37,8 +37,7 @@ from lightapi import (
 )
 from lightapi.fields import Field
 
-
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
+DATABASE_URL = "sqlite:///:memory:"
 
 
 def login_validator(username: str, password: str):
@@ -61,7 +60,11 @@ class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
 
 
 if __name__ == "__main__":
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     app = LightApi(
         engine=engine,
         login_validator=login_validator,

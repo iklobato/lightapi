@@ -70,11 +70,6 @@ class TestCustomQueryset:
             title: str = LField(min_length=1)
             published: bool = LField()
 
-        # Set queryset after class creation (static class attr)
-        StaticArticleEndpoint.queryset = select(
-            StaticArticleEndpoint._model_class
-        ).where(StaticArticleEndpoint._model_class.published.is_(True))
-
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -82,6 +77,12 @@ class TestCustomQueryset:
         )
         app = LightApi(engine=engine)
         app.register({"/static_articles": StaticArticleEndpoint})
+
+        # Set queryset after registration (static class attr); _model_class is now set
+        StaticArticleEndpoint.queryset = select(
+            StaticArticleEndpoint._model_class
+        ).where(StaticArticleEndpoint._model_class.published.is_(True))
+
         c = TestClient(app.build_app())
         c.post("/static_articles", json={"title": "Draft", "published": False})
         c.post("/static_articles", json={"title": "Live", "published": True})

@@ -17,10 +17,18 @@ from lightapi import LightApi, Middleware
 
 engine = create_engine("sqlite:///app.db")
 
+
+def my_login_validator(username: str, password: str):
+    if username == "admin" and password == "secret":
+        return {"sub": "1", "username": "admin", "is_admin": True}
+    return None
+
+
 app = LightApi(
-    engine=engine,                        # SQLAlchemy Engine (sync or async)
-    cors_origins=["https://myapp.com"],   # CORS allowed origins
-    middlewares=[MyMiddleware],            # List of Middleware subclasses
+    engine=engine,                          # SQLAlchemy Engine (sync or async)
+    cors_origins=["https://myapp.com"],     # CORS allowed origins
+    middlewares=[MyMiddleware],             # List of Middleware subclasses
+    login_validator=my_login_validator,     # Used by auto-registered /auth/login
 )
 ```
 
@@ -28,8 +36,14 @@ app = LightApi(
 |-----------|------|---------|-------------|
 | `engine` | `Engine \| AsyncEngine` | — | SQLAlchemy engine. If omitted, uses `database_url` or env vars. |
 | `database_url` | `str \| None` | — | Creates a sync engine from this URL if `engine` is not given. Falls back to `LIGHTAPI_DATABASE_URL` env var. Raises `ConfigurationError` if none are provided. |
+| `mode` | `str \| None` | auto | `"sync"` or `"async"`. Auto-detected from the engine type and from `async def` overrides if omitted. |
 | `cors_origins` | `list[str]` | `[]` | Domains allowed for cross-origin requests. |
 | `middlewares` | `list[type]` | `[]` | `Middleware` subclasses applied to every request. |
+| `auth_path` | `str` | `"/auth"` | Base path for the auto-registered login route. |
+| `session_manager` | `SessionManager \| None` | — | Override the default session manager (advanced). |
+| `rate_limiter` | `RateLimiter \| dict \| None` | — | Rate-limit config applied to `/auth/login`. |
+| `login_validator` | `Callable[[str, str], dict \| None]` | — | Credential validator used by `/auth/login`. Returns the JWT payload on success or `None`. |
+| `use_test_isolation` | `bool` | `False` | Mount endpoints onto unique table names and per-thread metadata for tests. |
 
 ### Registering endpoints
 
@@ -47,7 +61,15 @@ app.register({
 })
 ```
 
-`register()` accepts a `dict[str, type]` mapping URL prefixes to `RestEndpoint` subclasses. It creates the database tables and registers both collection (`/users`) and detail (`/users/{id}`) routes automatically.
+`register()` accepts a `dict[str, type]` mapping URL prefixes to `RestEndpoint`
+subclasses. It maps each class onto a SQLAlchemy table and registers both
+collection (`/users`) and detail (`/users/{id}`) routes. Tables are created
+when you call `build_app()` or `run()`.
+
+When at least one endpoint declares `Authentication(backend=JWTAuthentication)`
+or `Authentication(backend=BasicAuthentication)`, `register()` also wires up
+`POST /auth/login` (and `POST /auth/token`) using the `login_validator` you
+passed to `LightApi(...)`.
 
 ### Running the server
 

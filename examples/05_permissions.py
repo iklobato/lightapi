@@ -6,11 +6,12 @@ Demonstrates:
 - IsAdminUser: Requires is_admin=True in JWT payload
 - Three endpoints with different permission levels
 
-Prerequisites:
-    PostgreSQL must be running with default credentials.
+Notes:
+    Uses SQLite by default (swap DATABASE_URL for PostgreSQL).
+    JWT secret defaults to "secret" — override via LIGHTAPI_JWT_SECRET.
 
 Run with:
-    LIGHTAPI_JWT_SECRET=secret python examples/05_permissions.py
+    python examples/05_permissions.py
 
 Then try:
     # Public endpoint - no auth needed
@@ -25,7 +26,9 @@ Then try:
 """
 
 import os
+
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
 from lightapi import (
     AllowAny,
@@ -37,10 +40,8 @@ from lightapi import (
     LightApi,
     RestEndpoint,
 )
-from lightapi.fields import Field
 
-
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
+DATABASE_URL = "sqlite:///:memory:"
 os.environ.setdefault("LIGHTAPI_JWT_SECRET", "secret")
 
 
@@ -86,7 +87,11 @@ class AdminEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.DELETE):
 
 
 if __name__ == "__main__":
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     app = LightApi(engine=engine, login_validator=login_validator)
     app.register(
         {

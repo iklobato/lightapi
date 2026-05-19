@@ -8,9 +8,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
-from starlette.background import BackgroundTasks
-from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 logger = logging.getLogger(__name__)

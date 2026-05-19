@@ -52,9 +52,13 @@ app = LightApi(engine=engine)
 
 ## Table creation
 
-When you call `app.register(mapping)`, LightAPI creates any missing tables automatically using the SQLAlchemy `MetaData`. For async engines, table creation runs inside Starlette's `on_startup` lifecycle hook, so the event loop is already running when it executes.
+`app.register(mapping)` maps each `RestEndpoint` class onto SQLAlchemy
+metadata. The actual `CREATE TABLE` runs when you call `app.run()` or
+`app.build_app()`. For async engines, table creation is deferred to
+Starlette's `on_startup` lifecycle hook so it executes inside the same
+event loop that will serve requests.
 
-LightApi creates tables automatically when you call `run()` or `build_app()` — you never need to create them manually.
+You never need to call `metadata.create_all` yourself.
 
 ## Connecting to an existing database (reflection)
 
@@ -181,7 +185,7 @@ from lightapi import RestEndpoint, Field
 class CommentEndpoint(RestEndpoint):
     body: str
     post_id: int = Field(foreign_key="posts.id")
-    author_id: Optional[int] = Field(None, foreign_key="users.id")
+    author_id: Optional[int] = Field(default=None, foreign_key="users.id")
 ```
 
 LightAPI creates the foreign key constraint in the database. For fetching related records, write a custom `queryset()` method using SQLAlchemy joins.

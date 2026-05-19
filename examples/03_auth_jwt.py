@@ -6,12 +6,12 @@ Demonstrates:
 - Token generation via /auth/login endpoint
 - JWT payload with custom claims
 
-Prerequisites:
-    PostgreSQL must be running with default credentials.
-    JWT secret must be set via LIGHTAPI_JWT_SECRET env var or config.
+Notes:
+    Uses SQLite by default (swap DATABASE_URL for PostgreSQL).
+    JWT secret may be overridden via LIGHTAPI_JWT_SECRET env var.
 
 Run with:
-    LIGHTAPI_JWT_SECRET=my-secret python examples/03_auth_jwt.py
+    python examples/03_auth_jwt.py
 
 Then try:
     # Login to get token (returns JWT)
@@ -27,7 +27,9 @@ Then try:
 """
 
 import os
+
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
 from lightapi import (
     Authentication,
@@ -38,8 +40,7 @@ from lightapi import (
 )
 from lightapi.fields import Field
 
-
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
+DATABASE_URL = "sqlite:///:memory:"
 
 # Set JWT secret
 os.environ.setdefault("LIGHTAPI_JWT_SECRET", "my-secret")
@@ -68,7 +69,11 @@ class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
 
 
 if __name__ == "__main__":
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     app = LightApi(
         engine=engine,
         login_validator=login_validator,

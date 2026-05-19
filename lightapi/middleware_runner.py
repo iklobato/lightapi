@@ -1,7 +1,6 @@
 """Middleware runner for pre/post middleware execution."""
 
 import asyncio
-from typing import Any
 
 from starlette.requests import Request
 from starlette.responses import Response
@@ -25,7 +24,7 @@ async def run_pre_middlewares(
 async def run_post_middlewares(
     middlewares: list[type], request: Request, response: Response
 ) -> Response:
-    """Run post-response middleware in reverse order; supports sync and async process()."""
+    """Run post-response middleware in reverse order; sync/async process()."""
     for mw_cls in reversed(middlewares):
         mw = mw_cls()
         if asyncio.iscoroutinefunction(mw.process):

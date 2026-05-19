@@ -5,8 +5,9 @@ Demonstrates:
 - Async background functions
 - Response returned immediately while task runs in background
 
-Prerequisites:
-    PostgreSQL with asyncpg driver.
+Notes:
+    Uses SQLite+aiosqlite by default. Swap DATABASE_URL for
+    `postgresql+asyncpg://...` to run against PostgreSQL.
 
 Run with:
     python examples/14_background.py
@@ -21,16 +22,17 @@ Then try:
 """
 
 import logging
+
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from lightapi import HttpMethod, LightApi, RestEndpoint
 from lightapi.fields import Field
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
+DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
 async def audit_log(action: str, item_id: int) -> None:
@@ -45,7 +47,6 @@ class ItemEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
 
     async def post(self, request):
         """Create item and trigger background audit."""
-        from starlette.responses import JSONResponse
         import json
 
         data = json.loads((await request.body()).decode())
@@ -58,7 +59,11 @@ class ItemEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
 
 
 if __name__ == "__main__":
-    engine = create_async_engine(DATABASE_URL)
+    engine = create_async_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     app = LightApi(engine=engine, mode="async")
     app.register({"/items": ItemEndpoint})
     app.run(host="0.0.0.0", port=8000, debug=True)

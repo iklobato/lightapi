@@ -5,8 +5,8 @@ Demonstrates:
 - ?cursor=N query parameter
 - Efficient for large datasets (doesn't count total)
 
-Prerequisites:
-    PostgreSQL must be running with default credentials.
+Notes:
+    Uses SQLite by default (swap DATABASE_URL for PostgreSQL).
 
 Run with:
     python examples/07_pagination_cursor.py
@@ -28,12 +28,12 @@ Then try:
 """
 
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
 from lightapi import HttpMethod, LightApi, Pagination, RestEndpoint
 from lightapi.fields import Field
 
-
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
+DATABASE_URL = "sqlite:///:memory:"
 
 
 class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
@@ -47,7 +47,11 @@ class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
 
 
 if __name__ == "__main__":
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     app = LightApi(engine=engine)
     app.register({"/books": BookEndpoint})
     app.run(host="0.0.0.0", port=8000, debug=True)
