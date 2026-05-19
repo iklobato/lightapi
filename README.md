@@ -75,6 +75,17 @@ uv add "lightapi[async]"
 
 **Optional Redis caching**: `redis` is included as a core dependency but Redis caching only activates when `Meta.cache = Cache(ttl=N)` is set on an endpoint. A `RuntimeWarning` is emitted at startup if Redis is unreachable.
 
+**Docker (no install required)**: run the API straight from the published image — just mount your config:
+
+```bash
+docker run --rm -p 8000:8000 \
+    -v "$(pwd)/lightapi.yaml:/app/lightapi.yaml:ro" \
+    -e DATABASE_URL=sqlite:////app/data.db \
+    iklobato/lightapi:latest
+```
+
+See [Docker deployment](docs/deployment/docker.md) for the full guide.
+
 ---
 
 ## Quick Start
