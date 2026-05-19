@@ -1,13 +1,13 @@
 """Handler factory for creating Starlette route handlers."""
 
+import asyncio
 from typing import Any
 
-import asyncio
 from starlette.background import BackgroundTasks
 from starlette.requests import Request
 from starlette.responses import Response
 
-from lightapi.constants import HTTPStatus, RESPONSE_KEY_DETAIL
+from lightapi.constants import RESPONSE_KEY_DETAIL, HTTPStatus
 from lightapi.rest import RestEndpoint
 
 

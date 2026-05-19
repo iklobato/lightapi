@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any, Callable
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.authentication.base import BaseAuthentication
 from lightapi._login import _parse_basic_header
+from lightapi.authentication.base import BaseAuthentication
 
 if TYPE_CHECKING:
     from lightapi.rate_limiter import RateLimiter

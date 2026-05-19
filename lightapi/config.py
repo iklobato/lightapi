@@ -4,16 +4,15 @@ import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from lightapi.exceptions import ConfigurationError
 from lightapi.constants import (
+    DEFAULT_CACHE_TTL,
     DEFAULT_JWT_ALGORITHM,
     DEFAULT_JWT_EXPIRATION,
     DEFAULT_PAGE_SIZE,
-    DEFAULT_CACHE_TTL,
     VALID_JWT_ALGORITHMS,
     VALID_PAGINATION_STYLES,
-    RESERVED_JWT_CLAIMS,
 )
+from lightapi.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from lightapi.rate_limiter import RateLimiter

@@ -21,6 +21,7 @@ Then try:
 """
 
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
 from lightapi import HttpMethod, LightApi, RestEndpoint
 from lightapi.fields import Field
@@ -41,7 +42,12 @@ class BookEndpoint(
 
 
 if __name__ == "__main__":
-    engine = create_engine("sqlite:///:memory:")
+    # StaticPool + check_same_thread=False make :memory: usable across requests.
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     app = LightApi(engine=engine)
     app.register({"/books": BookEndpoint})
     app.run(host="0.0.0.0", port=8000, debug=True)

@@ -18,7 +18,6 @@ from lightapi import (
     RestEndpoint,
 )
 from lightapi._login import LoginRequest
-from lightapi.exceptions import ConfigurationError
 from lightapi.fields import Field as LField
 from lightapi.rate_limiter import RateLimiter
 

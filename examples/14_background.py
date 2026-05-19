@@ -21,11 +21,11 @@ Then try:
 """
 
 import logging
+
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from lightapi import HttpMethod, LightApi, RestEndpoint
 from lightapi.fields import Field
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -45,7 +45,6 @@ class ItemEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
 
     async def post(self, request):
         """Create item and trigger background audit."""
-        from starlette.responses import JSONResponse
         import json
 
         data = json.loads((await request.body()).decode())

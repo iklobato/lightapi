@@ -112,7 +112,7 @@ class CacheService:
             import json
 
             try:
-                data = json.loads(cached)
+                json.loads(cached)
                 return Response(content=cached, media_type="application/json")
             except json.JSONDecodeError:
                 pass

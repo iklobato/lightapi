@@ -5,7 +5,7 @@ Provides strategy pattern for different authentication backends.
 
 from typing import Protocol
 
-from lightapi.auth import JWTAuthentication, BasicAuthentication, BaseAuthentication
+from lightapi.auth import BaseAuthentication, BasicAuthentication, JWTAuthentication
 
 
 class AuthStrategy(Protocol):

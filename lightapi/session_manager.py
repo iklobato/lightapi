@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import contextlib
 import threading
-from typing import Any, Callable, Protocol, runtime_checkable, Union
+from typing import Any, Protocol, Union, runtime_checkable
 
 from sqlalchemy import MetaData
 from sqlalchemy.orm import Session, registry
-
 
 # Thread-local storage for test isolation
 _thread_local = threading.local()
@@ -180,7 +179,7 @@ class SessionManager:
         if not self._is_async:
             raise TypeError("Cannot create async session from sync engine")
 
-        from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine
+        from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
         if not isinstance(self._engine, AsyncEngine):
             raise TypeError(f"Expected AsyncEngine, got {type(self._engine)}")

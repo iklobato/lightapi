@@ -3,15 +3,15 @@
 import datetime
 from typing import Any
 
-from sqlalchemy import delete, select as sa_select, update
+from sqlalchemy import delete, update
+from sqlalchemy import select as sa_select
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from lightapi.constants import HTTPStatus, RESPONSE_KEY_DETAIL
+from lightapi.constants import RESPONSE_KEY_DETAIL, HTTPStatus
 from lightapi.pagination import CursorPaginator, PageNumberPaginator
 from lightapi.queryset import FilterRunner, QuerysetResolver, RowSerializer
 from lightapi.session import get_async_session
-
 
 _AUTO_FIELDS = frozenset({"id", "created_at", "updated_at", "version"})
 
@@ -136,9 +136,11 @@ class AsyncCRUD:
         self, endpoint: Any, data: dict[str, Any], pk: int, partial: bool
     ) -> Response:
         """Internal async update logic for PUT/PATCH."""
-        from pydantic import ValidationError
         from typing import Optional as _Opt
-        from pydantic import ConfigDict as _CD, create_model as _cm
+
+        from pydantic import ConfigDict as _CD
+        from pydantic import ValidationError
+        from pydantic import create_model as _cm
 
         client_version = data.get("version")
         if client_version is None:

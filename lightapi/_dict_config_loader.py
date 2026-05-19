@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from lightapi.exceptions import ConfigurationError
-
 
 def load_from_dict(
     app_cls: type,
@@ -39,7 +37,7 @@ def load_from_dict(
             },
         }
     """
-    from lightapi import RestEndpoint, Field
+    from lightapi import RestEndpoint
     from lightapi.auth import AllowAny, JWTAuthentication
     from lightapi.config import Authentication, Pagination
 

@@ -27,7 +27,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from lightapi import HttpMethod, LightApi, RestEndpoint
 from lightapi.fields import Field
 
-
 DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
 
 

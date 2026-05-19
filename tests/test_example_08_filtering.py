@@ -5,8 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
-from lightapi import LightApi, RestEndpoint, Field, HttpMethod, Filtering, Serializer
-from lightapi.filters import FieldFilter, SearchFilter, OrderingFilter
+from lightapi import Field, Filtering, HttpMethod, LightApi, RestEndpoint, Serializer
 
 
 class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):

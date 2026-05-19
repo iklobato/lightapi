@@ -82,7 +82,6 @@ class ReflectedTableBuilder:
                 "Ensure LightApi.register() was called with a properly configured app."
             )
 
-        registry = session_manager.registry
         metadata = session_manager.metadata
         engine = session_manager.engine
         table_name = TableNameResolver.resolve(meta_obj, name, session_manager)
@@ -104,8 +103,9 @@ class ReflectedTableBuilder:
         return table
 
     def _reflect_sync(self, engine: Any, metadata: MetaData, table_name: str) -> Table:
-        from lightapi.exceptions import ConfigurationError
         from sqlalchemy import inspect as sa_inspect_engine
+
+        from lightapi.exceptions import ConfigurationError
 
         inspector = sa_inspect_engine(engine)
         table_names = inspector.get_table_names()

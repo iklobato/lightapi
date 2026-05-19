@@ -1,7 +1,7 @@
 """Cache helper functions for GET caching and cache invalidation."""
 
 import json
-from typing import Any, Callable
+from typing import Callable
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response

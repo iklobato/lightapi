@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from collections.abc import Callable
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -13,10 +12,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from lightapi.constants import (
-    HTTPStatus,
     RESPONSE_KEY_DETAIL,
     RESPONSE_KEY_TOKEN,
     RESPONSE_KEY_USER,
+    HTTPStatus,
 )
 
 # JWTAuthentication imported locally where needed to avoid circular import

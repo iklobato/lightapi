@@ -25,6 +25,7 @@ Then try:
 """
 
 import os
+
 from sqlalchemy import create_engine
 
 from lightapi import (
@@ -37,8 +38,6 @@ from lightapi import (
     LightApi,
     RestEndpoint,
 )
-from lightapi.fields import Field
-
 
 DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
 os.environ.setdefault("LIGHTAPI_JWT_SECRET", "secret")

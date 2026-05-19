@@ -31,10 +31,9 @@ Then try:
 
 from sqlalchemy import create_engine
 
-from lightapi import HttpMethod, LightApi, Filtering, RestEndpoint
+from lightapi import Filtering, HttpMethod, LightApi, RestEndpoint
 from lightapi.fields import Field
 from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
-
 
 DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
 

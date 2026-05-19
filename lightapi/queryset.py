@@ -3,7 +3,6 @@
 from typing import Any
 
 from sqlalchemy import select as sa_select
-
 from starlette.requests import Request
 
 

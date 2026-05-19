@@ -24,16 +24,16 @@ Then try:
 """
 
 import os
+
 from sqlalchemy import create_engine
 
 from lightapi import (
     Authentication,
+    HttpMethod,
     JWTAuthentication,
     LightApi,
     RestEndpoint,
-    HttpMethod,
 )
-
 
 DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
 os.environ.setdefault("LIGHTAPI_JWT_SECRET", "secret")

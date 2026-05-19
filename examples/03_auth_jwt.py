@@ -27,6 +27,7 @@ Then try:
 """
 
 import os
+
 from sqlalchemy import create_engine
 
 from lightapi import (
@@ -37,7 +38,6 @@ from lightapi import (
     RestEndpoint,
 )
 from lightapi.fields import Field
-
 
 DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
 

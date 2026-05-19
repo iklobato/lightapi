@@ -8,8 +8,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 if TYPE_CHECKING:
-    from lightapi.authentication.basic import BasicAuthentication
-    from lightapi.authentication.jwt import JWTAuthentication
+    pass
 
 
 class BaseAuthentication:

@@ -1,6 +1,5 @@
 """Authentication and authorization checker."""
 
-from typing import Any
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -11,7 +10,6 @@ from lightapi.constants import HTTPStatus
 
 def check_auth(cls: type, request: Request) -> Response | None:
     """Run authentication + permission checks; return 401/403 response or None."""
-    from lightapi.authentication import BasicAuthentication, JWTAuthentication
 
     auth_cfg = cls._meta.get("authentication")
     if auth_cfg is None:

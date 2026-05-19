@@ -6,9 +6,9 @@ Provides class-based HTTP method handling using dispatch pattern.
 from typing import Any, Protocol
 
 from starlette.requests import Request
-from starlette.responses import Response, JSONResponse
+from starlette.responses import JSONResponse, Response
 
-from lightapi.constants import HTTPStatus, RESPONSE_KEY_ALLOWED_METHODS
+from lightapi.constants import RESPONSE_KEY_ALLOWED_METHODS, HTTPStatus
 
 
 class HttpMethodHandler(Protocol):
@@ -76,6 +76,7 @@ class PostSyncHandler(HttpMethodHandler):
 
     async def handle(self, endpoint: Any, request: Request) -> Response:
         import asyncio
+
         from lightapi.lightapi import _read_body
 
         data = asyncio.run(_read_body(request))

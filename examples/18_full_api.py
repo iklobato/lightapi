@@ -24,6 +24,8 @@ import time
 from typing import Optional
 
 from sqlalchemy import create_engine
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 
 from lightapi import (
     AllowAny,
@@ -42,9 +44,6 @@ from lightapi import (
 )
 from lightapi.fields import Field
 from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
-from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
-
 
 DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
 os.environ.setdefault("LIGHTAPI_JWT_SECRET", "secret")

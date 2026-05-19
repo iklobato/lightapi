@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Protocol
 
 import redis
 
-from lightapi.constants import DEFAULT_REDIS_URL, DEFAULT_CACHE_TTL
+from lightapi.constants import DEFAULT_CACHE_TTL, DEFAULT_REDIS_URL
 
 logger = logging.getLogger(__name__)
 

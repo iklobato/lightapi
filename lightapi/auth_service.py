@@ -5,7 +5,7 @@ Extracts auth logic from LightApi class for better SRP.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse

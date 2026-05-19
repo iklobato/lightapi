@@ -27,7 +27,6 @@ from sqlalchemy import create_engine, select
 from lightapi import HttpMethod, LightApi, RestEndpoint
 from lightapi.fields import Field
 
-
 DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
 
 

@@ -21,11 +21,11 @@ import time
 import uuid
 
 from sqlalchemy import create_engine
+from starlette.requests import Request
+from starlette.responses import Response
 
 from lightapi import HttpMethod, LightApi, Middleware, RestEndpoint
 from lightapi.fields import Field
-from starlette.requests import Request
-from starlette.responses import Response
 
 
 class RequestIdMiddleware(Middleware):

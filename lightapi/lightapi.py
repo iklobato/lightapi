@@ -8,7 +8,7 @@ import json
 import logging
 import os
 import warnings
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable
 
 import uvicorn
 from sqlalchemy import create_engine
@@ -19,15 +19,15 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from lightapi.session_manager import SessionManager
 from lightapi.authentication import AllowAny, BasicAuthentication, JWTAuthentication
 from lightapi.cache import get_cached, invalidate_cache_prefix, set_cached
 from lightapi.constants import (
-    HTTPStatus,
     RESPONSE_KEY_DETAIL,
+    HTTPStatus,
 )
 from lightapi.exceptions import ConfigurationError
 from lightapi.rest import RestEndpoint
+from lightapi.session_manager import SessionManager
 from lightapi.yaml_loader import load_config
 
 if TYPE_CHECKING:
@@ -177,8 +177,8 @@ class LightApi:
 
             # Always map when test isolation is enabled or when not already mapped
             if not getattr(cls, "_reflect_deferred", False):
-                from lightapi.table_mapping import map_imperatively
                 from lightapi.session_manager import get_unique_table_name
+                from lightapi.table_mapping import map_imperatively
 
                 # Use test isolation table name if available
                 meta_obj = getattr(cls, "Meta", None)
@@ -236,7 +236,7 @@ class LightApi:
                     )
             # Perform deferred reflection now that an engine is available
             if getattr(cls, "_reflect_deferred", False):
-                from lightapi.rest import _map_reflected
+                from lightapi.table_mapping import map_reflected as _map_reflected
 
                 meta_obj = getattr(cls, "Meta", None) or type("Meta", (), {})
                 partial = cls._meta.get("reflect") == "partial"
