@@ -1,0 +1,32 @@
+# Minimal LightAPI config — mount this into the container at /app/lightapi.yaml.
+#
+#   docker run --rm -p 8000:8000 \
+#       -v "$(pwd)/lightapi.example.yaml:/app/lightapi.yaml:ro" \
+#       -e DATABASE_URL=sqlite:////app/data.db \
+#       iklobato/lightapi:latest
+#
+# See https://iklobato.github.io/lightapi/getting-started/configuration/ for
+# the full YAML schema (auth, filtering, pagination, per-method permissions,
+# YAML reflection, defaults, middleware, etc.).
+
+database:
+  url: "${DATABASE_URL}"        # ${VAR} env-var substitution
+
+endpoints:
+  - route: /books
+    fields:
+      title:  { type: str, min_length: 1, max_length: 200 }
+      author: { type: str, min_length: 1 }
+      year:   { type: int, optional: true }
+    meta:
+      methods: [GET, POST, PUT, PATCH, DELETE]
+      pagination:
+        style: page_number
+        page_size: 25
+
+  - route: /authors
+    fields:
+      name: { type: str, min_length: 1 }
+      bio:  { type: str, optional: true }
+    meta:
+      methods: [GET, POST]
