@@ -71,12 +71,15 @@ def load_from_dict(
         # Build class attributes
         class_attrs: dict[str, Any] = {}
 
-        # Add fields
+        # Add fields — __annotations__ is required for RestEndpointMeta to
+        # detect field names; values must be Field() instances (or absent).
+        annotations: dict[str, Any] = {}
         for field_name, field_type in fields.items():
             if isinstance(field_type, type):
-                class_attrs[field_name] = field_type()
+                annotations[field_name] = field_type
             else:
-                class_attrs[field_name] = field_type
+                annotations[field_name] = type(field_type)
+        class_attrs["__annotations__"] = annotations
 
         # Build Meta class
         meta_attrs: dict[str, Any] = {}
@@ -109,38 +112,32 @@ def load_from_dict(
             elif isinstance(filters, list):
                 meta_attrs["filtering"] = Filtering(backends=filters)
 
+        Meta = type("Meta", (), meta_attrs)
+        class_attrs["Meta"] = Meta
+
+        # Resolve HttpMethod mixin bases so _allowed_methods is set correctly.
+        # Setting class_attrs["__bases__"] has no effect on type(); the bases
+        # must be passed as the second argument to type().
+        http_bases: list[type] = []
         if methods:
             from lightapi.methods import HttpMethod
 
-            bases = []
+            _method_map = {
+                "GET": HttpMethod.GET,
+                "POST": HttpMethod.POST,
+                "PUT": HttpMethod.PUT,
+                "PATCH": HttpMethod.PATCH,
+                "DELETE": HttpMethod.DELETE,
+            }
             for method in methods:
-                if method.upper() == "GET":
-                    bases.append(HttpMethod.GET)
-                elif method.upper() == "POST":
-                    bases.append(HttpMethod.POST)
-                elif method.upper() == "PUT":
-                    bases.append(HttpMethod.PUT)
-                elif method.upper() == "PATCH":
-                    bases.append(HttpMethod.PATCH)
-                elif method.upper() == "DELETE":
-                    bases.append(HttpMethod.DELETE)
+                mixin = _method_map.get(method.upper())
+                if mixin is not None:
+                    http_bases.append(mixin)
 
-            if bases:
-                Meta = type("Meta", (), meta_attrs)
-                class_attrs["Meta"] = Meta
-
-                class_attrs["__bases__"] = tuple(bases)
-            else:
-                Meta = type("Meta", (), meta_attrs)
-                class_attrs["Meta"] = Meta
-        else:
-            if meta_attrs:
-                Meta = type("Meta", (), meta_attrs)
-                class_attrs["Meta"] = Meta
-
-        # Create endpoint class
+        # Create endpoint class — include HttpMethod mixins in bases so that
+        # RestEndpointMeta._process picks them up via the MRO scan.
         class_name = _route_to_class_name(route)
-        endpoint_cls = type(class_name, (RestEndpoint,), class_attrs)
+        endpoint_cls = type(class_name, (RestEndpoint, *http_bases), class_attrs)
 
         mapping[route] = endpoint_cls
 

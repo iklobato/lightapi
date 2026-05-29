@@ -6,6 +6,16 @@ from sqlalchemy import asc, desc
 from starlette.requests import Request
 
 _RESERVED_PARAMS = frozenset({"page", "page_size", "cursor", "ordering"})
+_LIKE_ESCAPE_CHAR = "\\"
+
+
+def _escape_like(value: str) -> str:
+    """Escape LIKE special characters so user input is treated as a literal string."""
+    return (
+        value.replace(_LIKE_ESCAPE_CHAR, _LIKE_ESCAPE_CHAR * 2)
+        .replace("%", _LIKE_ESCAPE_CHAR + "%")
+        .replace("_", _LIKE_ESCAPE_CHAR + "_")
+    )
 
 
 class BaseFilter:
@@ -81,7 +91,9 @@ class SearchFilter(BaseFilter):
         for field in search_fields:
             col = getattr(cls._model_class, field, None)
             if col is not None:
-                clauses.append(col.ilike(f"%{query}%"))
+                clauses.append(
+                    col.ilike(f"%{_escape_like(query)}%", escape=_LIKE_ESCAPE_CHAR)
+                )
         if clauses:
             queryset = queryset.where(or_(*clauses))
         return queryset
@@ -98,12 +110,16 @@ class OrderingFilter(BaseFilter):
         filtering_cfg = getattr(view, "_meta", {}).get("filtering")
         allowed: list[str] = (filtering_cfg.ordering or []) if filtering_cfg else []
 
+        # No whitelist configured → ordering is disabled entirely.
+        if not allowed:
+            return queryset
+
         cls = type(view)
         for field in ordering_param.split(","):
             field = field.strip()
             direction = desc if field.startswith("-") else asc
             field_name = field.lstrip("-")
-            if allowed and field_name not in allowed:
+            if field_name not in allowed:
                 continue
             col = getattr(cls._model_class, field_name, None)
             if col is not None:

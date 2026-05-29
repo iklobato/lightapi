@@ -91,8 +91,8 @@ async def login_handler(
     """
     Handle POST /auth/login and POST /auth/token.
 
-    Returns 422 for body validation, 401 for malformed Basic or invalid credentials,
-    500 for validator exception, 200 with token+user (JWT) or user only (Basic).
+    Returns 422 for body validation, 401 for malformed Basic, invalid credentials,
+    or any exception raised by the validator; 200 with token+user (JWT) or user (Basic).
     """
     # Apply rate limiting if a rate limiter is provided
     if rate_limiter is not None:
@@ -129,10 +129,10 @@ async def login_handler(
         try:
             payload = auth_backend.validate_credentials(username, password)
         except Exception as e:
-            logger.exception("validate_credentials raised: %s", e)
+            logger.warning("validate_credentials raised: %s", e)
             return JSONResponse(
-                {RESPONSE_KEY_DETAIL: "Internal server error"},
-                status_code=500,
+                {RESPONSE_KEY_DETAIL: "Invalid credentials"},
+                status_code=HTTPStatus.UNAUTHORIZED,
             )
 
     if payload is None:

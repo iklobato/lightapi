@@ -219,6 +219,15 @@ curl -X PATCH http://localhost:8000/products/42 \
 
 Missing `version` returns `422 Unprocessable Entity`.
 
+> **Clearing Optional fields:** Send an explicit `null` value in a PATCH body to clear a nullable (`Optional[...]`) field:
+> ```bash
+> curl -X PATCH http://localhost:8000/products/42 \
+>   -H "Content-Type: application/json" \
+>   -d '{"description": null, "version": 4}'
+> # → 200 {"id": 42, "description": null, ...}
+> ```
+> Non-nullable fields ignore `null` values — they are treated as if the field was not sent.
+
 ### HttpMethod Mixins
 
 Control which HTTP verbs your endpoint exposes by mixing in `HttpMethod.*` classes:
@@ -350,24 +359,29 @@ app.register({"/secrets": ProtectedEndpoint})
 # JWT mode: 200 {"token":"...","user":{...}}; Basic-only: 200 {"user":{...}}
 ```
 
-**Rate limiting:** Add per-endpoint rate limiting via `Authentication` config or global rate limiter:
+Return `None` to reject a login attempt (`401 Unauthorized`). Raising an exception from `login_validator` is treated the same as returning `None` — the login attempt returns `401 Unauthorized`. The exception is logged at `WARNING` level and is not surfaced to the client.
+
+**Rate limiting:** Add a rate limiter on the `/auth/login` endpoint via `LightApi(rate_limiter=...)`:
 
 ```python
 from lightapi import RestEndpoint, Authentication
 from lightapi.authentication import JWTAuthentication
+from lightapi.rate_limiter import RateLimiter
 
-class LimitedEndpoint(RestEndpoint):
-    data: str = Field(min_length=1)
-    class Meta:
-        # Per-endpoint: 5 requests per minute
-        authentication = Authentication(
-            backend=JWTAuthentication,
-            rate_limiter={"requests": 5, "window": 60}
-        )
+# Using a RateLimiter instance
+app = LightApi(
+    engine=engine,
+    rate_limiter=RateLimiter(requests_per_minute=5, requests_per_hour=100, requests_per_day=1000),
+)
 
-# Or global rate limiter (applied to all endpoints)
-app = LightApi(engine=engine, rate_limiter={"requests": 100, "window": 60})
+# Or pass a dict with the same keys
+app = LightApi(
+    engine=engine,
+    rate_limiter={"requests_per_minute": 100, "requests_per_hour": 1000, "requests_per_day": 5000},
+)
 ```
+
+> **Scope:** The rate limiter applies only to the `/auth/login` endpoint, not to application endpoints.
 
 **Built-in permission classes:**
 
@@ -406,11 +420,19 @@ class ArticleEndpoint(RestEndpoint):
 GET /articles?category=news
 
 # Full-text search across title and author
-GET /articles?search=python
+GET /articles?search=python  # case-insensitive LIKE
+```
 
+> **Search is literal:** `%` and `_` in the search term are treated as plain characters, not SQL wildcards. A search for `hello_world` matches only rows containing the literal string `hello_world`, not `helloXworld`.
+
+```bash
 # Ordering (prefix - for descending)
 GET /articles?ordering=-title
+```
 
+> **Whitelist required:** When `ordering` is not set (or empty), the `OrderingFilter` backend ignores all `?ordering=` parameters. Only fields explicitly listed in `ordering` can be sorted.
+
+```bash
 # Combine all
 GET /articles?category=news&search=python&ordering=-title
 ```
@@ -842,19 +864,35 @@ asyncio_mode = auto
 
 ```python
 LightApi(
-    engine=None,           # SQLAlchemy engine (takes priority over database_url)
-    database_url=None,     # Fallback: create_engine(database_url)
-    cors_origins=None,     # List[str] of allowed CORS origins
-    middlewares=None,      # List[type] of Middleware subclasses
+    engine=None,                  # SQLAlchemy engine (takes priority over database_url)
+    database_url: str | None = None,          # Fallback: create_engine(database_url)
+    mode: str | None = None,                  # "sync" or "async" — auto-detected if omitted
+    cors_origins: list[str] | None = None,    # Allowed CORS origins
+    middlewares: list[type] | None = None,    # Middleware subclasses to mount
+    auth_path: str = "/auth",                 # Prefix for auth endpoints (default "/auth")
+    session_manager: SessionManager | None = None,  # Custom session/transaction manager
+    rate_limiter: "RateLimiter | dict[str, int] | None" = None,  # Login rate limiter
+    login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
+    use_test_isolation: bool = False,         # Enable per-test DB isolation
 )
 ```
 
-| Method | Description |
+| Method / Parameter | Description |
 |---|---|
 | `register(mapping)` | `{"/path": EndpointClass, ...}` — register endpoints and build routes |
 | `build_app()` | Create tables and return the Starlette ASGI app (for testing) |
 | `run(host, port, debug, reload)` | Create tables, check caches, start uvicorn |
 | `LightApi.from_config(path)` | Class method — construct from a YAML file |
+| `engine` | SQLAlchemy engine (sync or async). Takes priority over `database_url`. |
+| `database_url` | DSN string — a sync engine is created automatically. |
+| `mode` | `"sync"` or `"async"`. Auto-detected from the engine type when omitted. |
+| `cors_origins` | List of allowed CORS origins passed to `CORSMiddleware`. |
+| `middlewares` | Additional Starlette middleware classes to mount. |
+| `auth_path` | URL prefix for the auto-generated auth routes (default `"/auth"`). |
+| `session_manager` | Supply a custom `SessionManager` for transaction handling. |
+| `rate_limiter` | `RateLimiter` instance **or** dict — limits `/auth/login` requests only. |
+| `login_validator` | Callable `(username, password) → dict \| None` — validates login credentials. |
+| `use_test_isolation` | Wrap each request in a savepoint for isolated unit tests. |
 
 ### `RestEndpoint`
 

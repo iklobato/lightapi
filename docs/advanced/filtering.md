@@ -76,6 +76,8 @@ GET /articles?search=async
 # WHERE title ILIKE '%async%' OR body ILIKE '%async%'
 ```
 
+**Search input is treated as a literal string.** The characters `%` and `_` (which are SQL LIKE wildcards) are automatically escaped before the pattern is applied. This means `?search=hello_world` matches only rows containing the exact substring `hello_world`, not rows where any single character appears in place of the underscore. A search for `100%` matches only the literal string `100%`, not "100 percent" of all rows.
+
 ### `OrderingFilter`
 
 Orders results by `?ordering=field` (ascending) or `?ordering=-field` (descending). Multiple fields can be comma-separated.
@@ -84,7 +86,7 @@ Orders results by `?ordering=field` (ascending) or `?ordering=-field` (descendin
 GET /articles?ordering=-created_at,title
 ```
 
-Only fields listed in `ordering` are allowed; unknown fields are silently skipped.
+Only fields listed in `ordering` are allowed; unknown fields are silently skipped. **If `ordering` is not configured (the list is empty or omitted), the `OrderingFilter` backend ignores all `?ordering=` parameters entirely** — no ordering is applied. This prevents clients from ordering by arbitrary columns when no whitelist has been declared.
 
 ## Combining Backends
 
