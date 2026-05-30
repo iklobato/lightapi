@@ -235,6 +235,23 @@ class MethodAuthConfig(BaseModel):
     authentication: AuthConfig | None = None
 
 
+class CacheConfig(BaseModel):
+    """Cache block inside meta: cache: { ttl: 60 }"""
+
+    ttl: int = 60
+
+
+class SerializerConfig(BaseModel):
+    """Serializer block inside meta.
+
+    Use ``fields`` for a unified list, or ``read``/``write`` for per-verb lists.
+    """
+
+    fields: list[str] | None = None
+    read: list[str] | None = None
+    write: list[str] | None = None
+
+
 class MetaConfig(BaseModel):
     """meta: block inside a declarative endpoint entry."""
 
@@ -243,6 +260,8 @@ class MetaConfig(BaseModel):
     authentication: AuthConfig | None = None
     filtering: FilteringConfig | None = None
     pagination: PaginationConfig | None = None
+    cache: CacheConfig | None = None
+    serializer: SerializerConfig | None = None
     table: str | None = None  # custom table name (required when reflect: true)
 
 
@@ -292,6 +311,7 @@ class LightAPIConfig(BaseModel):
     endpoints: list[EndpointConfig] = []
     middleware: list[str] = []
     auth: AuthLoginConfig | None = None
+    mode: str | None = None  # "sync" | "async" — auto-detected when omitted
 
     @property
     def effective_database_url(self) -> str | None:
@@ -507,6 +527,26 @@ def _build_meta_class(
     if pagination is not None:
         attrs["pagination"] = pagination
 
+    # Cache
+    if meta.cache is not None:
+        from lightapi.config import Cache
+
+        attrs["cache"] = Cache(ttl=meta.cache.ttl)
+
+    # Serializer
+    if meta.serializer is not None:
+        from lightapi.config import Serializer
+
+        ser_cfg = meta.serializer
+        attrs["serializer"] = Serializer(
+            fields=ser_cfg.fields,
+            read=ser_cfg.read,
+            write=ser_cfg.write,
+        )
+
+    if meta.table:
+        attrs["table"] = meta.table
+
     return type("Meta", (), attrs)
 
 
@@ -635,6 +675,9 @@ def load_config(app_cls: type, config_path: str, **overrides: Any) -> Any:
         "cors_origins": cfg.cors_origins or None,
         "middlewares": middlewares or None,
     }
+
+    if cfg.mode is not None:
+        constructor_kwargs["mode"] = cfg.mode
 
     # Auth/login config from YAML auth: block
     if cfg.auth:
