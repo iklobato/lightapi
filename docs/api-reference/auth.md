@@ -85,6 +85,10 @@ def login_validator(username: str, password: str):
 app = LightApi(engine=engine, login_validator=login_validator)
 ```
 
+Returns `None` to reject a login attempt.
+
+Raising an exception from `login_validator` is treated identically to returning `None` — the client receives `401 Unauthorized`. The exception is logged at `WARNING` level and is never surfaced in the response body.
+
 The returned dict becomes the JWT payload. For JWT apps the response is
 `{"token": "<jwt>", "user": {...}}`. The login route is rate-limited — see
 [Rate Limiting](../advanced/rate-limiting.md). Override the base path via
@@ -99,6 +103,20 @@ from lightapi import AllowAny
 ```
 
 No authentication check. All requests are allowed. This is the default when `permission=None`.
+
+> **Important:** Setting `permission=AllowAny` (either directly or via a per-method dict) completely bypasses the authentication backend — no token is required even if `backend=JWTAuthentication` is set. This lets you make individual endpoints or individual verbs publicly readable while keeping writes protected.
+>
+> ```python
+> class ArticleEndpoint(RestEndpoint):
+>     title: str
+>     class Meta:
+>         authentication = Authentication(
+>             backend=JWTAuthentication,
+>             permission={"GET": AllowAny, "POST": IsAuthenticated},
+>         )
+> # GET /articles — no token needed
+> # POST /articles — valid JWT required
+> ```
 
 ### `IsAuthenticated`
 

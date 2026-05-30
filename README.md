@@ -583,6 +583,8 @@ database:
 cors_origins:
   - "https://myapp.com"
 
+mode: sync    # or "async" for an async engine — auto-detected when omitted
+
 # Global defaults applied to every endpoint unless overridden
 defaults:
   authentication:
@@ -616,6 +618,20 @@ endpoints:
       # Override the global default for this endpoint only
       authentication:
         permission: AllowAny
+
+  - route: /products
+    fields:
+      name:  { type: str, min_length: 1 }
+      price: { type: float, ge: 0 }
+    meta:
+      methods: [GET, POST, PUT, PATCH, DELETE]
+      authentication:
+        permission: AllowAny
+      cache:
+        ttl: 60        # cache GET responses for 60 s; invalidated on writes
+      serializer:
+        read:  [id, name, version]          # GET hides price
+        write: [id, name, price, version]   # POST/PUT shows price
 ```
 
 ```python
@@ -640,6 +656,10 @@ app.run()
 | `endpoints[].meta.authentication` | object | Overrides `defaults.authentication` for this endpoint. |
 | `endpoints[].meta.filtering` | object | `fields`, `search`, `ordering` lists. |
 | `endpoints[].meta.pagination` | object | `style` + `page_size` for this endpoint. |
+| `mode` | `"sync"` or `"async"` | Engine mode. Auto-detected when omitted. |
+| `endpoints[].meta.cache` | object | `{ ttl: N }` — cache GET responses for N seconds (requires Redis). |
+| `endpoints[].meta.serializer` | object | `{ fields: [...] }` or `{ read: [...], write: [...] }` — field projection. |
+| `endpoints[].meta.table` | string | Custom table name (required when using `reflect: true`). |
 | `endpoints[].reflect` | bool | Reflect an existing table — no fields needed. |
 
 Validation is performed by Pydantic v2 at load time. Any schema error raises a
@@ -946,6 +966,16 @@ class MyEndpoint(RestEndpoint):
         reflect = False | True | "partial"
         table = "custom_table_name"     # overrides derived name
 ```
+
+| Attribute | Type | Description |
+|---|---|---|
+| `authentication` | `Authentication` | Backend and permission class for this endpoint. |
+| `filtering` | `Filtering` | Filter backends, fields, search, and ordering lists. |
+| `pagination` | `Pagination` | Pagination style and page size. |
+| `serializer` | `Serializer` | Field projection for reads and/or writes. |
+| `cache` | `Cache` | `Cache(ttl=N)` — cache GET responses for N seconds (requires Redis). |
+| `reflect` | `bool \| "partial"` | Reflect an existing table (`True`) or extend it (`"partial"`). |
+| `table` | `str` | Override the inferred table name (default: `f"{ClassName.lower()}s"`). |
 
 ### Error responses
 

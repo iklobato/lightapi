@@ -26,6 +26,29 @@ Install Redis and start it locally:
 redis-server
 ```
 
+## YAML configuration
+
+Set `meta.cache` in a `lightapi.yaml` file to enable caching without writing Python:
+
+```yaml
+endpoints:
+  - route: /products
+    fields:
+      name:  { type: str }
+      price: { type: float, ge: 0 }
+    meta:
+      methods: [GET, POST, PUT, PATCH, DELETE]
+      cache:
+        ttl: 300   # cache GET responses for 5 minutes; writes auto-invalidate
+```
+
+```python
+from lightapi import LightApi
+
+app = LightApi.from_config("lightapi.yaml")
+app.run()
+```
+
 ## `Cache` constructor
 
 ```python
@@ -76,10 +99,16 @@ class ArticleEndpoint(RestEndpoint):
 
 ## Cache invalidation
 
-The cache is **read-only by the framework** — write operations (`POST`, `PUT`, `PATCH`, `DELETE`) do not automatically invalidate cached entries. For production workloads, either:
+Write operations (`POST`, `PUT`, `PATCH`, `DELETE`) automatically invalidate all cached entries for that endpoint's key prefix. No manual invalidation is needed for the common case.
 
-- Set a short `ttl` appropriate for your stale-tolerance
-- Invalidate manually via Redis `DEL` or key patterns
+```bash
+GET /posts?published=true   # cache miss → stored for 120 s (X-Cache: MISS)
+GET /posts?published=true   # cache hit  → returned instantly (X-Cache: HIT)
+POST /posts                 # write → all /posts cache keys invalidated
+GET /posts?published=true   # cache miss again → re-fetched from DB
+```
+
+If you need finer-grained invalidation (e.g. invalidate only on specific fields changing), implement a custom `post()`/`put()` override that calls `invalidate_cache_prefix(...)` directly.
 
 ## Example with filtering and pagination
 
@@ -109,6 +138,8 @@ GET /posts?published=true&page=1   # cache hit → instant return
 GET /posts?published=true&page=2   # different key → cache miss
 ```
 
+> **Tip:** Include all query parameters that affect the response in `vary_on`. If `vary_on` is omitted, the full query string is part of the cache key — each unique URL is cached separately.
+
 ## Custom cache backend
 
 Implement `BaseCache` to use a different store:
@@ -129,6 +160,16 @@ class InMemoryCache(BaseCache):
 ```
 
 Pass it to `Cache` via the `backend` parameter (if your version supports it), or use it directly inside a custom `get()` override.
+
+## Redis connection
+
+Set the Redis URL via environment variable:
+
+```bash
+export LIGHTAPI_REDIS_URL="redis://localhost:6379/0"
+```
+
+The default is `redis://localhost:6379/0`. A `RuntimeWarning` is emitted at startup if Redis is unreachable; caching is silently skipped for the lifetime of the process.
 
 ## Production notes
 

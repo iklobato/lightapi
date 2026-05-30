@@ -172,3 +172,54 @@ The following query parameter names are reserved and will not be treated as fiel
 - `cursor` — cursor pagination
 - `search` — `SearchFilter`
 - `ordering` — `OrderingFilter`
+
+## YAML configuration
+
+All filtering options available in Python are also available in YAML. Backends are auto-selected when you provide `fields`, `search`, or `ordering` — or specify them explicitly with `backends`:
+
+```yaml
+endpoints:
+  - route: /articles
+    fields:
+      title:    { type: str }
+      category: { type: str }
+      price:    { type: float, ge: 0, default: 0 }
+    meta:
+      methods: [GET, POST]
+      filtering:
+        # Auto-selects FieldFilter (for fields), SearchFilter (for search),
+        # OrderingFilter (for ordering) — no backends: key needed
+        fields:   [category]          # ?category=tech  (exact match)
+        search:   [title]             # ?search=python  (LIKE, literals only)
+        ordering: [price, title]      # ?ordering=price or ?ordering=-price
+```
+
+To use a custom backend or control the order explicitly:
+
+```yaml
+filtering:
+  backends: [FieldFilter, SearchFilter, OrderingFilter]
+  fields:   [category]
+  search:   [title]
+  ordering: [price]
+```
+
+### Behavior reference
+
+| Query parameter | Backend | Behavior |
+|----------------|---------|----------|
+| `?category=tech` | `FieldFilter` | Exact match on whitelisted fields. Type-coerced automatically. |
+| `?search=hello` | `SearchFilter` | Case-insensitive LIKE. `%` and `_` are treated as **literals**, not wildcards. |
+| `?ordering=price` | `OrderingFilter` | Ascending. `-price` = descending. Multiple fields comma-separated. |
+| `?ordering=any` | `OrderingFilter` | Silently ignored if `any` is not in the `ordering` whitelist. |
+| `?ordering=*` | `OrderingFilter` | **Disabled entirely** when `ordering:` list is empty or omitted. |
+
+### Filtering + pagination
+
+When both are active, `count` in the response reflects the **filtered** total, not the full table size:
+
+```bash
+# Table has 100 rows; 23 are category=tech
+GET /articles?category=tech&page=2
+# → {"count": 23, "pages": 3, "results": [...]}
+```

@@ -148,6 +148,98 @@ app = LightApi.from_config("lightapi.yaml")
 app.run()
 ```
 
+### Full-featured YAML example
+
+```yaml
+# lightapi.yaml — all features in one file
+mode: sync    # or "async" for AsyncEngine
+
+database:
+  url: "${DATABASE_URL}"
+
+cors_origins:
+  - "https://myapp.com"
+
+auth:
+  auth_path: /v1/auth
+  login_validator: myapp.validators.login   # dotted path to sync callable
+
+defaults:
+  authentication:
+    backend: JWTAuthentication
+    permission: IsAuthenticated
+    jwt_expiration: 3600
+  pagination:
+    style: page_number
+    page_size: 20
+
+middleware:
+  - myapp.middleware.RequestIdMiddleware
+
+endpoints:
+  # ── Public read, authenticated write ──────────────────────────────────────
+  - route: /articles
+    fields:
+      title:    { type: str, min_length: 1, max_length: 200 }
+      category: { type: str, min_length: 1 }
+      price:    { type: float, ge: 0, default: 0 }
+      featured: { type: bool, default: false }
+      note:     { type: str, optional: true }
+    meta:
+      methods:
+        GET:
+          authentication: { permission: AllowAny }
+        POST:
+          authentication: { permission: IsAuthenticated }
+        PUT:
+          authentication: { permission: IsAuthenticated }
+        PATCH:
+          authentication: { permission: IsAuthenticated }
+        DELETE:
+          authentication: { permission: IsAdminUser }
+      authentication:
+        backend: JWTAuthentication
+      filtering:
+        fields:   [category, featured]
+        search:   [title]
+        ordering: [price, title]
+      pagination:
+        style: page_number
+        page_size: 10
+      cache:
+        ttl: 60      # GET responses cached 60 s; invalidated on writes
+      serializer:
+        read:  [id, title, category, price, featured, version]
+        write: [id, title, category, price, featured, note, version]
+
+  # ── Fully protected with cursor pagination ────────────────────────────────
+  - route: /orders
+    fields:
+      reference: { type: str, min_length: 1 }
+      total:     { type: float, ge: 0 }
+    meta:
+      methods: [GET, POST]
+      pagination:
+        style: cursor
+        page_size: 50
+
+  # ── Reflected legacy table ────────────────────────────────────────────────
+  - route: /legacy
+    reflect: true
+    meta:
+      table: legacy_orders
+      methods: [GET]
+      authentication:
+        permission: AllowAny
+```
+
+```python
+from lightapi import LightApi
+
+app = LightApi.from_config("lightapi.yaml")
+app.run()
+```
+
 ### YAML schema reference
 
 | Field | Type | Description |
@@ -165,6 +257,13 @@ app.run()
 | `endpoints[].meta.authentication` | object | Overrides `defaults.authentication` for this endpoint. |
 | `endpoints[].meta.filtering` | object | `fields`, `search`, `ordering` lists. Backends are auto-selected. |
 | `endpoints[].meta.pagination` | object | `style` + `page_size` for this endpoint. |
+| `mode` | string | `"sync"` or `"async"`. Auto-detected when omitted. |
+| `endpoints[].meta.cache` | object | `{ ttl: N }` — cache GET responses for N seconds. Requires Redis; silently skipped if unreachable. Writes (POST/PUT/PATCH/DELETE) invalidate the cache. |
+| `endpoints[].meta.serializer` | object | `{ fields: [...] }` for unified projection, or `{ read: [...], write: [...] }` for per-verb projection. |
+| `endpoints[].meta.table` | string | Custom table name. Required when `reflect: true` to specify which existing table to map. |
+| `endpoints[].meta.filtering.backends` | list | Explicit list of backend class names (`FieldFilter`, `SearchFilter`, `OrderingFilter`). Auto-selected from non-empty `fields`/`search`/`ordering` when omitted. |
+| `auth.auth_path` | string | Path prefix for the auto-registered login routes (default `/auth` → `/auth/login`). |
+| `auth.login_validator` | string | Dotted import path to a sync `(username, password) → dict \| None` function. Exceptions are treated as `None` (→ 401). |
 | `endpoints[].reflect` | bool | Reflect an existing table instead of creating one. |
 
 #### Field definition keys
@@ -181,6 +280,20 @@ Each key under `endpoints[].fields` maps a column name to:
 | `pattern` | string | Regex pattern for strings. |
 | `index` | bool | Create a database index. |
 | `unique` | bool | Add a UNIQUE constraint. |
+| `foreign_key` | string | `"table.col"` — adds a SQLAlchemy `ForeignKey` constraint. |
+| `decimal_places` | int | Precision for `Decimal` columns. |
+
+### Cache invalidation
+
+When `meta.cache` is set, successful `GET` (list and detail) responses are stored in Redis. Any **write** request (`POST`, `PUT`, `PATCH`, `DELETE`) on the same endpoint automatically invalidates the cached entries for that endpoint's key prefix — no manual invalidation required.
+
+```yaml
+meta:
+  cache:
+    ttl: 300   # GET cached for 5 minutes; auto-invalidated on writes
+```
+
+If Redis is unreachable at startup, a `RuntimeWarning` is emitted and caching is silently skipped for the lifetime of the process.
 
 ### Environment variable substitution
 
@@ -254,10 +367,19 @@ Register middleware globally at startup:
 ```python
 from lightapi import LightApi, Middleware
 from starlette.requests import Request
+from starlette.responses import Response
 
 class RequestLogMiddleware(Middleware):
-    def process(self, request: Request) -> None:
-        print(f"{request.method} {request.url.path}")
+    def process(
+        self, request: Request, response: Response | None
+    ) -> Response | None:
+        if response is None:
+            # pre-request phase
+            print(f"→ {request.method} {request.url.path}")
+        else:
+            # post-response phase
+            print(f"← {response.status_code} {request.url.path}")
+        return response
 
 app = LightApi(engine=engine, middlewares=[RequestLogMiddleware])
 ```
