@@ -24,7 +24,11 @@ class FieldInfoStripper:
 
         for col in columns:
             existing = cls.__dict__.get(col.name)
-            if isinstance(existing, FieldInfo):
+            # Remove FieldInfo objects AND bare Ellipsis sentinels. Both block
+            # SQLAlchemy's instrumentation from replacing the class attribute
+            # with an InstrumentedAttribute, which silently drops the column
+            # from the mapper.
+            if isinstance(existing, FieldInfo) or existing is ...:
                 try:
                     delattr(cls, col.name)
                 except AttributeError:

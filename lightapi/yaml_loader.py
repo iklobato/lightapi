@@ -51,11 +51,7 @@ def _build_name_registry() -> dict[str, type]:
         JWTAuthentication,
     )
     from lightapi.core import AuthenticationMiddleware, CORSMiddleware, Middleware
-    from lightapi.filters import (
-        FieldFilter,
-        OrderingFilter,
-        SearchFilter,
-    )
+    from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
     from lightapi.methods import HttpMethod
 
     return {
@@ -247,6 +243,7 @@ class MetaConfig(BaseModel):
     authentication: AuthConfig | None = None
     filtering: FilteringConfig | None = None
     pagination: PaginationConfig | None = None
+    table: str | None = None  # custom table name (required when reflect: true)
 
 
 class FieldSpec(BaseModel):
@@ -418,6 +415,8 @@ def _build_meta_class(
 
     if reflect:
         attrs["reflect"] = True
+        if meta.table:
+            attrs["table"] = meta.table
         return type("Meta", (), attrs)
 
     # Authentication — handle per-method dict (methods as dict form)
@@ -512,15 +511,23 @@ def _build_meta_class(
 
 
 def _resolve_methods_bases(meta: MetaConfig) -> tuple[type, ...]:
-    """Return HttpMethod mixin bases from a methods list (ignored for dict form)."""
+    """Return HttpMethod mixin bases for both list and dict forms of ``methods``."""
     from lightapi.rest import RestEndpoint
 
-    if not isinstance(meta.methods, list) or not meta.methods:
+    if isinstance(meta.methods, dict):
+        # Dict form: {GET: {auth: ...}, POST: {auth: ...}} — keys are the allowed verbs.
+        method_list = list(meta.methods.keys())
+    elif isinstance(meta.methods, list):
+        method_list = meta.methods
+    else:
+        return (RestEndpoint,)
+
+    if not method_list:
         return (RestEndpoint,)
 
     registry = _build_name_registry()
     bases: list[type] = [RestEndpoint]
-    for m in meta.methods:
+    for m in method_list:
         mixin = registry.get(m)
         if mixin is None:
             raise ConfigurationError(f"Unknown HTTP method '{m}' in methods list.")
@@ -564,7 +571,16 @@ def _build_endpoint_class(entry: EndpointConfig, defaults: DefaultsConfig) -> ty
             "exclude",
         }
         pydantic_kwargs = {k: v for k, v in extra.items() if k in constraint_keys}
-        default = pydantic_kwargs.pop("default", ... if not spec.optional else None)
+        # Extract 'default' from the raw extra dict, not from pydantic_kwargs.
+        # 'default' is not in constraint_keys, so filtering would silently drop it.
+        _UNSET = object()
+        raw_default = extra.get("default", _UNSET)
+        if raw_default is not _UNSET:
+            default = raw_default
+        elif spec.optional:
+            default = None
+        else:
+            default = ...  # sentinel: no default provided
 
         annotations[field_name] = py_type
         if pydantic_kwargs or default is not ...:
