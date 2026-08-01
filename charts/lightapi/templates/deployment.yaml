@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lightapi.fullname" . }}
+  labels:
+    {{- include "lightapi.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "lightapi.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ .Values.config | toYaml | sha256sum }}
+      labels:
+        {{- include "lightapi.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "lightapi.fullname" . }}
+      containers:
+        - name: lightapi
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+          env:
+            - name: LIGHTAPI_CONFIG
+              value: /etc/lightapi/lightapi.yaml
+            - name: LIGHTAPI_HOST
+              value: "0.0.0.0"
+            - name: LIGHTAPI_PORT
+              value: {{ .Values.service.targetPort | quote }}
+            - name: {{ .Values.database.urlKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "lightapi.databaseSecretName" . }}
+                  key: {{ .Values.database.urlKey }}
+            {{- if or .Values.jwt.secret .Values.jwt.existingSecret }}
+            - name: {{ .Values.jwt.secretKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "lightapi.jwtSecretName" . }}
+                  key: {{ .Values.jwt.secretKey }}
+            {{- end }}
+            {{- if .Values.redis.url }}
+            - name: LIGHTAPI_REDIS_URL
+              value: {{ .Values.redis.url | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/lightapi
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "lightapi.fullname" . }}-config

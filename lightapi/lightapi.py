@@ -21,11 +21,9 @@ from starlette.routing import Route
 
 from lightapi.authentication import AllowAny, BasicAuthentication, JWTAuthentication
 from lightapi.cache import get_cached, invalidate_cache_prefix, set_cached
-from lightapi.constants import (
-    RESPONSE_KEY_DETAIL,
-    HTTPStatus,
-)
+from lightapi.constants import RESPONSE_KEY_DETAIL, HTTPStatus
 from lightapi.exceptions import ConfigurationError
+from lightapi.health import HEALTH_PATH, HealthCheckEndpoint
 from lightapi.rest import RestEndpoint
 from lightapi.session_manager import SessionManager
 from lightapi.yaml_loader import load_config
@@ -577,7 +575,7 @@ class LightApi:
         self._check_cache_connections()
 
         on_startup = [self._create_tables] if self._mode == "async" else []
-        app = Starlette(debug=debug, routes=self._routes, on_startup=on_startup)
+        app = Starlette(debug=debug, routes=self._asgi_routes(), on_startup=on_startup)
 
         if self._cors_origins:
             app.add_middleware(
@@ -606,7 +604,14 @@ class LightApi:
         self._create_tables()
         self._check_cache_connections()
         on_startup = [self._create_tables] if self._mode == "async" else []
-        return Starlette(routes=self._routes, on_startup=on_startup)
+        return Starlette(routes=self._asgi_routes(), on_startup=on_startup)
+
+    def _asgi_routes(self) -> list[Route]:
+        """Registered endpoint routes plus the always-on ``/healthz`` probe."""
+        return [
+            *self._routes,
+            Route(HEALTH_PATH, HealthCheckEndpoint),
+        ]
 
     # ─────────────────────────────────────────────────────────────────────────
     # YAML factory

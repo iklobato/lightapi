@@ -1,0 +1,12 @@
+apiVersion: v2
+name: lightapi
+description: Deploy a declarative CRUD REST API (LightAPI) over an existing database with only a values.yaml — no CRUD code.
+type: application
+version: 0.1.0
+appVersion: "0.1.21"
+home: https://github.com/iklobato/lightapi
+sources:
+  - https://github.com/iklobato/lightapi
+maintainers:
+  - name: iklobato
+    email: iklobato1@gmail.com

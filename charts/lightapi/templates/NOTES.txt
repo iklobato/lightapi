@@ -1,0 +1,13 @@
+LightAPI released as {{ include "lightapi.fullname" . }}.
+
+Reach the API locally:
+  kubectl port-forward svc/{{ include "lightapi.fullname" . }} 8000:{{ .Values.service.port }}
+  curl http://127.0.0.1:8000/healthz
+
+Endpoints are defined under .Values.config.endpoints. Add a table = add an entry
+there and run `helm upgrade`. No CRUD code required.
+{{- if not .Values.database.existingSecret }}
+
+NOTE: the database URL came from .Values.database.url (a chart-managed Secret).
+For production, create your own Secret and set database.existingSecret instead.
+{{- end }}
