@@ -969,6 +969,9 @@ client = TestClient(app_instance.build_app())
 | `LIGHTAPI_DATABASE_URL` | — | Database connection URL when no `engine` or `database_url` is passed. One of `engine`, `database_url`, or `LIGHTAPI_DATABASE_URL` is required. |
 | `LIGHTAPI_JWT_SECRET` | — | Required for `JWTAuthentication` |
 | `LIGHTAPI_REDIS_URL` | `redis://localhost:6379/0` | Redis URL for response caching |
+| `LIGHTAPI_CONFIG` | — | Path to the declarative YAML config. Read by the `lightapi serve` command and the container image. |
+| `LIGHTAPI_HOST` | `0.0.0.0` | Bind host for `lightapi serve`. |
+| `LIGHTAPI_PORT` | `8000` | Bind port for `lightapi serve`. |
 
 ### Docker
 
@@ -999,6 +1002,58 @@ services:
   redis:
     image: redis:7-alpine
 ```
+
+### `lightapi serve` command
+
+Installing LightAPI adds a `lightapi` console command. `lightapi serve` boots a
+server from the environment: it reads `LIGHTAPI_CONFIG` (the declarative YAML),
+`LIGHTAPI_HOST`, and `LIGHTAPI_PORT`, so a container needs no custom entry
+script. `python -m lightapi` does the same.
+
+```bash
+export LIGHTAPI_CONFIG=./lightapi.yaml
+export DATABASE_URL=postgresql://postgres:pass@localhost:5432/app
+lightapi serve
+```
+
+### Health check
+
+Every app registers `GET /healthz`, which returns `200 {"status": "ok"}`. It is
+process-level (it does not check the database) and is meant for liveness and
+readiness probes.
+
+### Kubernetes (Helm)
+
+The `charts/lightapi` chart deploys a declarative CRUD API over an existing
+database with only a `values.yaml` (no CRUD code and no per-project image
+build). The chart passes your declarative config to `LightApi.from_config` and
+runs it; adding a table means adding an entry under `config.endpoints` and
+running `helm upgrade`.
+
+```bash
+helm install shop charts/lightapi -f my-values.yaml
+```
+
+```yaml
+# my-values.yaml: the entire developer-facing surface
+database:
+  url: "postgresql://postgres:pass@my-postgres:5432/app"   # or database.existingSecret
+config:
+  database:
+    url: "${DATABASE_URL}"          # resolved from the Secret at runtime
+  endpoints:
+    - route: /products
+      fields:
+        name:  { type: str, max_length: 200 }
+        price: { type: float }
+      meta:
+        methods: [GET, POST, PUT, DELETE]
+        authentication: { permission: AllowAny }
+```
+
+See [docs/deployment/helm.md](docs/deployment/helm.md) and
+[charts/lightapi/README.md](charts/lightapi/README.md) for the full values
+reference and a minikube walkthrough.
 
 ---
 

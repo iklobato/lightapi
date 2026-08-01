@@ -3,4 +3,5 @@ title: Deployment
 nav:
   - Production Deployment: production.md
   - Docker Deployment: docker.md
+  - Kubernetes (Helm): helm.md
   - Security Considerations: security.md
