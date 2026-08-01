@@ -1,0 +1,90 @@
+# Default values for the lightapi chart.
+# A team ships a CRUD API by editing only `database` and `config` below.
+
+replicaCount: 2
+
+image:
+  # Published multi-arch image (built by .github/workflows/docker-publish.yml).
+  repository: iklob1/lightapi
+  # Defaults to the chart appVersion when empty. The /healthz probes require a
+  # lightapi version that ships the health route (this chart's release onward).
+  tag: ""
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Connection to a database that ALREADY EXISTS. The chart never manages the DB.
+database:
+  # Dev convenience: the chart creates a Secret from this URL.
+  url: ""
+  # Prod: name of a Secret you already created that holds the URL under `urlKey`.
+  existingSecret: ""
+  # The config below references ${DATABASE_URL}; keep this key in sync if changed.
+  urlKey: DATABASE_URL
+
+# Only needed if an endpoint uses JWTAuthentication.
+jwt:
+  secret: ""
+  existingSecret: ""
+  secretKey: LIGHTAPI_JWT_SECRET
+
+# Only needed if an endpoint sets Meta.cache.
+redis:
+  url: ""
+
+# The declarative LightAPI config, copied verbatim into a ConfigMap and passed
+# to LightApi.from_config(). This is the entire developer-facing surface — the
+# framework turns it into the SQLAlchemy tables, schemas, and CRUD routes.
+config:
+  database:
+    url: "${DATABASE_URL}"
+  defaults:
+    pagination:
+      style: page_number
+      page_size: 20
+  endpoints:
+    - route: /products
+      fields:
+        name:
+          type: str
+          max_length: 200
+        price:
+          type: float
+        in_stock:
+          type: bool
+          default: true
+      meta:
+        methods: [GET, POST, PUT, DELETE]
+        authentication:
+          permission: AllowAny
+        filtering:
+          fields: [in_stock]
+          ordering: [price]
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+    # - host: api.example.com
+    #   paths:
+    #     - path: /
+    #       pathType: Prefix
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+# Left empty on purpose: real requests/limits must be derived from measured
+# load, not guessed. Set them per deployment.
+resources: {}
+
+extraEnv: []

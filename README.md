@@ -75,6 +75,17 @@ uv add "lightapi[async]"
 
 **Optional Redis caching**: `redis` is included as a core dependency but Redis caching only activates when `Meta.cache = Cache(ttl=N)` is set on an endpoint. A `RuntimeWarning` is emitted at startup if Redis is unreachable.
 
+**Docker (no install required)**: run the API straight from the published image — just mount your config:
+
+```bash
+docker run --rm -p 8000:8000 \
+    -v "$(pwd)/lightapi.yaml:/app/lightapi.yaml:ro" \
+    -e DATABASE_URL=sqlite:////app/data.db \
+    iklob1/lightapi:latest
+```
+
+See [Docker deployment](docs/deployment/docker.md) for the full guide.
+
 ---
 
 ## Quick Start
@@ -208,6 +219,15 @@ curl -X PATCH http://localhost:8000/products/42 \
 
 Missing `version` returns `422 Unprocessable Entity`.
 
+> **Clearing Optional fields:** Send an explicit `null` value in a PATCH body to clear a nullable (`Optional[...]`) field:
+> ```bash
+> curl -X PATCH http://localhost:8000/products/42 \
+>   -H "Content-Type: application/json" \
+>   -d '{"description": null, "version": 4}'
+> # → 200 {"id": 42, "description": null, ...}
+> ```
+> Non-nullable fields ignore `null` values — they are treated as if the field was not sent.
+
 ### HttpMethod Mixins
 
 Control which HTTP verbs your endpoint exposes by mixing in `HttpMethod.*` classes:
@@ -339,24 +359,29 @@ app.register({"/secrets": ProtectedEndpoint})
 # JWT mode: 200 {"token":"...","user":{...}}; Basic-only: 200 {"user":{...}}
 ```
 
-**Rate limiting:** Add per-endpoint rate limiting via `Authentication` config or global rate limiter:
+Return `None` to reject a login attempt (`401 Unauthorized`). Raising an exception from `login_validator` is treated the same as returning `None` — the login attempt returns `401 Unauthorized`. The exception is logged at `WARNING` level and is not surfaced to the client.
+
+**Rate limiting:** Add a rate limiter on the `/auth/login` endpoint via `LightApi(rate_limiter=...)`:
 
 ```python
 from lightapi import RestEndpoint, Authentication
 from lightapi.authentication import JWTAuthentication
+from lightapi.rate_limiter import RateLimiter
 
-class LimitedEndpoint(RestEndpoint):
-    data: str = Field(min_length=1)
-    class Meta:
-        # Per-endpoint: 5 requests per minute
-        authentication = Authentication(
-            backend=JWTAuthentication,
-            rate_limiter={"requests": 5, "window": 60}
-        )
+# Using a RateLimiter instance
+app = LightApi(
+    engine=engine,
+    rate_limiter=RateLimiter(requests_per_minute=5, requests_per_hour=100, requests_per_day=1000),
+)
 
-# Or global rate limiter (applied to all endpoints)
-app = LightApi(engine=engine, rate_limiter={"requests": 100, "window": 60})
+# Or pass a dict with the same keys
+app = LightApi(
+    engine=engine,
+    rate_limiter={"requests_per_minute": 100, "requests_per_hour": 1000, "requests_per_day": 5000},
+)
 ```
+
+> **Scope:** The rate limiter applies only to the `/auth/login` endpoint, not to application endpoints.
 
 **Built-in permission classes:**
 
@@ -395,11 +420,19 @@ class ArticleEndpoint(RestEndpoint):
 GET /articles?category=news
 
 # Full-text search across title and author
-GET /articles?search=python
+GET /articles?search=python  # case-insensitive LIKE
+```
 
+> **Search is literal:** `%` and `_` in the search term are treated as plain characters, not SQL wildcards. A search for `hello_world` matches only rows containing the literal string `hello_world`, not `helloXworld`.
+
+```bash
 # Ordering (prefix - for descending)
 GET /articles?ordering=-title
+```
 
+> **Whitelist required:** When `ordering` is not set (or empty), the `OrderingFilter` backend ignores all `?ordering=` parameters. Only fields explicitly listed in `ordering` can be sorted.
+
+```bash
 # Combine all
 GET /articles?category=news&search=python&ordering=-title
 ```
@@ -550,6 +583,8 @@ database:
 cors_origins:
   - "https://myapp.com"
 
+mode: sync    # or "async" for an async engine — auto-detected when omitted
+
 # Global defaults applied to every endpoint unless overridden
 defaults:
   authentication:
@@ -583,6 +618,20 @@ endpoints:
       # Override the global default for this endpoint only
       authentication:
         permission: AllowAny
+
+  - route: /products
+    fields:
+      name:  { type: str, min_length: 1 }
+      price: { type: float, ge: 0 }
+    meta:
+      methods: [GET, POST, PUT, PATCH, DELETE]
+      authentication:
+        permission: AllowAny
+      cache:
+        ttl: 60        # cache GET responses for 60 s; invalidated on writes
+      serializer:
+        read:  [id, name, version]          # GET hides price
+        write: [id, name, price, version]   # POST/PUT shows price
 ```
 
 ```python
@@ -607,6 +656,10 @@ app.run()
 | `endpoints[].meta.authentication` | object | Overrides `defaults.authentication` for this endpoint. |
 | `endpoints[].meta.filtering` | object | `fields`, `search`, `ordering` lists. |
 | `endpoints[].meta.pagination` | object | `style` + `page_size` for this endpoint. |
+| `mode` | `"sync"` or `"async"` | Engine mode. Auto-detected when omitted. |
+| `endpoints[].meta.cache` | object | `{ ttl: N }` — cache GET responses for N seconds (requires Redis). |
+| `endpoints[].meta.serializer` | object | `{ fields: [...] }` or `{ read: [...], write: [...] }` — field projection. |
+| `endpoints[].meta.table` | string | Custom table name (required when using `reflect: true`). |
 | `endpoints[].reflect` | bool | Reflect an existing table — no fields needed. |
 
 Validation is performed by Pydantic v2 at load time. Any schema error raises a
@@ -831,19 +884,35 @@ asyncio_mode = auto
 
 ```python
 LightApi(
-    engine=None,           # SQLAlchemy engine (takes priority over database_url)
-    database_url=None,     # Fallback: create_engine(database_url)
-    cors_origins=None,     # List[str] of allowed CORS origins
-    middlewares=None,      # List[type] of Middleware subclasses
+    engine=None,                  # SQLAlchemy engine (takes priority over database_url)
+    database_url: str | None = None,          # Fallback: create_engine(database_url)
+    mode: str | None = None,                  # "sync" or "async" — auto-detected if omitted
+    cors_origins: list[str] | None = None,    # Allowed CORS origins
+    middlewares: list[type] | None = None,    # Middleware subclasses to mount
+    auth_path: str = "/auth",                 # Prefix for auth endpoints (default "/auth")
+    session_manager: SessionManager | None = None,  # Custom session/transaction manager
+    rate_limiter: "RateLimiter | dict[str, int] | None" = None,  # Login rate limiter
+    login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
+    use_test_isolation: bool = False,         # Enable per-test DB isolation
 )
 ```
 
-| Method | Description |
+| Method / Parameter | Description |
 |---|---|
 | `register(mapping)` | `{"/path": EndpointClass, ...}` — register endpoints and build routes |
 | `build_app()` | Create tables and return the Starlette ASGI app (for testing) |
 | `run(host, port, debug, reload)` | Create tables, check caches, start uvicorn |
 | `LightApi.from_config(path)` | Class method — construct from a YAML file |
+| `engine` | SQLAlchemy engine (sync or async). Takes priority over `database_url`. |
+| `database_url` | DSN string — a sync engine is created automatically. |
+| `mode` | `"sync"` or `"async"`. Auto-detected from the engine type when omitted. |
+| `cors_origins` | List of allowed CORS origins passed to `CORSMiddleware`. |
+| `middlewares` | Additional Starlette middleware classes to mount. |
+| `auth_path` | URL prefix for the auto-generated auth routes (default `"/auth"`). |
+| `session_manager` | Supply a custom `SessionManager` for transaction handling. |
+| `rate_limiter` | `RateLimiter` instance **or** dict — limits `/auth/login` requests only. |
+| `login_validator` | Callable `(username, password) → dict \| None` — validates login credentials. |
+| `use_test_isolation` | Wrap each request in a savepoint for isolated unit tests. |
 
 ### `RestEndpoint`
 
@@ -897,6 +966,16 @@ class MyEndpoint(RestEndpoint):
         reflect = False | True | "partial"
         table = "custom_table_name"     # overrides derived name
 ```
+
+| Attribute | Type | Description |
+|---|---|---|
+| `authentication` | `Authentication` | Backend and permission class for this endpoint. |
+| `filtering` | `Filtering` | Filter backends, fields, search, and ordering lists. |
+| `pagination` | `Pagination` | Pagination style and page size. |
+| `serializer` | `Serializer` | Field projection for reads and/or writes. |
+| `cache` | `Cache` | `Cache(ttl=N)` — cache GET responses for N seconds (requires Redis). |
+| `reflect` | `bool \| "partial"` | Reflect an existing table (`True`) or extend it (`"partial"`). |
+| `table` | `str` | Override the inferred table name (default: `f"{ClassName.lower()}s"`). |
 
 ### Error responses
 
@@ -969,6 +1048,9 @@ client = TestClient(app_instance.build_app())
 | `LIGHTAPI_DATABASE_URL` | — | Database connection URL when no `engine` or `database_url` is passed. One of `engine`, `database_url`, or `LIGHTAPI_DATABASE_URL` is required. |
 | `LIGHTAPI_JWT_SECRET` | — | Required for `JWTAuthentication` |
 | `LIGHTAPI_REDIS_URL` | `redis://localhost:6379/0` | Redis URL for response caching |
+| `LIGHTAPI_CONFIG` | — | Path to the declarative YAML config. Read by the `lightapi serve` command and the container image. |
+| `LIGHTAPI_HOST` | `0.0.0.0` | Bind host for `lightapi serve`. |
+| `LIGHTAPI_PORT` | `8000` | Bind port for `lightapi serve`. |
 
 ### Docker
 
@@ -999,6 +1081,58 @@ services:
   redis:
     image: redis:7-alpine
 ```
+
+### `lightapi serve` command
+
+Installing LightAPI adds a `lightapi` console command. `lightapi serve` boots a
+server from the environment: it reads `LIGHTAPI_CONFIG` (the declarative YAML),
+`LIGHTAPI_HOST`, and `LIGHTAPI_PORT`, so a container needs no custom entry
+script. `python -m lightapi` does the same.
+
+```bash
+export LIGHTAPI_CONFIG=./lightapi.yaml
+export DATABASE_URL=postgresql://postgres:pass@localhost:5432/app
+lightapi serve
+```
+
+### Health check
+
+Every app registers `GET /healthz`, which returns `200 {"status": "ok"}`. It is
+process-level (it does not check the database) and is meant for liveness and
+readiness probes.
+
+### Kubernetes (Helm)
+
+The `charts/lightapi` chart deploys a declarative CRUD API over an existing
+database with only a `values.yaml` (no CRUD code and no per-project image
+build). The chart passes your declarative config to `LightApi.from_config` and
+runs it; adding a table means adding an entry under `config.endpoints` and
+running `helm upgrade`.
+
+```bash
+helm install shop charts/lightapi -f my-values.yaml
+```
+
+```yaml
+# my-values.yaml: the entire developer-facing surface
+database:
+  url: "postgresql://postgres:pass@my-postgres:5432/app"   # or database.existingSecret
+config:
+  database:
+    url: "${DATABASE_URL}"          # resolved from the Secret at runtime
+  endpoints:
+    - route: /products
+      fields:
+        name:  { type: str, max_length: 200 }
+        price: { type: float }
+      meta:
+        methods: [GET, POST, PUT, DELETE]
+        authentication: { permission: AllowAny }
+```
+
+See [docs/deployment/helm.md](docs/deployment/helm.md) and
+[charts/lightapi/README.md](charts/lightapi/README.md) for the full values
+reference and a minikube walkthrough.
 
 ---
 

@@ -51,11 +51,7 @@ def _build_name_registry() -> dict[str, type]:
         JWTAuthentication,
     )
     from lightapi.core import AuthenticationMiddleware, CORSMiddleware, Middleware
-    from lightapi.filters import (
-        FieldFilter,
-        OrderingFilter,
-        SearchFilter,
-    )
+    from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
     from lightapi.methods import HttpMethod
 
     return {
@@ -239,6 +235,23 @@ class MethodAuthConfig(BaseModel):
     authentication: AuthConfig | None = None
 
 
+class CacheConfig(BaseModel):
+    """Cache block inside meta: cache: { ttl: 60 }"""
+
+    ttl: int = 60
+
+
+class SerializerConfig(BaseModel):
+    """Serializer block inside meta.
+
+    Use ``fields`` for a unified list, or ``read``/``write`` for per-verb lists.
+    """
+
+    fields: list[str] | None = None
+    read: list[str] | None = None
+    write: list[str] | None = None
+
+
 class MetaConfig(BaseModel):
     """meta: block inside a declarative endpoint entry."""
 
@@ -247,6 +260,9 @@ class MetaConfig(BaseModel):
     authentication: AuthConfig | None = None
     filtering: FilteringConfig | None = None
     pagination: PaginationConfig | None = None
+    cache: CacheConfig | None = None
+    serializer: SerializerConfig | None = None
+    table: str | None = None  # custom table name (required when reflect: true)
 
 
 class FieldSpec(BaseModel):
@@ -295,6 +311,7 @@ class LightAPIConfig(BaseModel):
     endpoints: list[EndpointConfig] = []
     middleware: list[str] = []
     auth: AuthLoginConfig | None = None
+    mode: str | None = None  # "sync" | "async" — auto-detected when omitted
 
     @property
     def effective_database_url(self) -> str | None:
@@ -418,6 +435,8 @@ def _build_meta_class(
 
     if reflect:
         attrs["reflect"] = True
+        if meta.table:
+            attrs["table"] = meta.table
         return type("Meta", (), attrs)
 
     # Authentication — handle per-method dict (methods as dict form)
@@ -508,19 +527,47 @@ def _build_meta_class(
     if pagination is not None:
         attrs["pagination"] = pagination
 
+    # Cache
+    if meta.cache is not None:
+        from lightapi.config import Cache
+
+        attrs["cache"] = Cache(ttl=meta.cache.ttl)
+
+    # Serializer
+    if meta.serializer is not None:
+        from lightapi.config import Serializer
+
+        ser_cfg = meta.serializer
+        attrs["serializer"] = Serializer(
+            fields=ser_cfg.fields,
+            read=ser_cfg.read,
+            write=ser_cfg.write,
+        )
+
+    if meta.table:
+        attrs["table"] = meta.table
+
     return type("Meta", (), attrs)
 
 
 def _resolve_methods_bases(meta: MetaConfig) -> tuple[type, ...]:
-    """Return HttpMethod mixin bases from a methods list (ignored for dict form)."""
+    """Return HttpMethod mixin bases for both list and dict forms of ``methods``."""
     from lightapi.rest import RestEndpoint
 
-    if not isinstance(meta.methods, list) or not meta.methods:
+    if isinstance(meta.methods, dict):
+        # Dict form: {GET: {auth: ...}, POST: {auth: ...}} — keys are the allowed verbs.
+        method_list = list(meta.methods.keys())
+    elif isinstance(meta.methods, list):
+        method_list = meta.methods
+    else:
+        return (RestEndpoint,)
+
+    if not method_list:
         return (RestEndpoint,)
 
     registry = _build_name_registry()
     bases: list[type] = [RestEndpoint]
-    for m in meta.methods:
+    for m in method_list:
         mixin = registry.get(m)
         if mixin is None:
             raise ConfigurationError(f"Unknown HTTP method '{m}' in methods list.")
@@ -564,15 +611,26 @@ def _build_endpoint_class(entry: EndpointConfig, defaults: DefaultsConfig) -> ty
             "exclude",
         }
         pydantic_kwargs = {k: v for k, v in extra.items() if k in constraint_keys}
-        default = pydantic_kwargs.pop("default", ... if not spec.optional else None)
+        # Extract 'default' from the raw extra dict, not from pydantic_kwargs.
+        # 'default' is not in constraint_keys, so filtering would silently drop it.
+        _UNSET = object()
+        raw_default = extra.get("default", _UNSET)
+        if raw_default is not _UNSET:
+            default = raw_default
+        elif spec.optional:
+            default = None
+        else:
+            default = ...  # sentinel: no default provided
 
         annotations[field_name] = py_type
         if pydantic_kwargs or default is not ...:
             if default is not ...:
                 pydantic_kwargs["default"] = default
             class_attrs[field_name] = Field(**pydantic_kwargs)
-        else:
-            class_attrs[field_name] = ...
+        # A constraint-less, default-less field is annotation-only. Do NOT set a
+        # class attribute: an Ellipsis placeholder would survive FieldInfoStripper
+        # (which only removes FieldInfo) and stop SQLAlchemy from mapping the
+        # column, so the value would silently never be inserted.
 
     # Build Meta inner class
     Meta = _build_meta_class(entry.meta, defaults, reflect=entry.reflect)
@@ -619,6 +677,9 @@ def load_config(app_cls: type, config_path: str, **overrides: Any) -> Any:
         "cors_origins": cfg.cors_origins or None,
         "middlewares": middlewares or None,
     }
+
+    if cfg.mode is not None:
+        constructor_kwargs["mode"] = cfg.mode
 
     # Auth/login config from YAML auth: block
     if cfg.auth:

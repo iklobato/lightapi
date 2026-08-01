@@ -66,6 +66,8 @@ GET /articles?search=async+python
 # WHERE title ILIKE '%async python%' OR body ILIKE '%async python%'
 ```
 
+**Search input is treated as a literal string.** The characters `%` and `_` (SQL LIKE wildcards) are automatically escaped, so `?search=hello_world` matches only the exact substring `hello_world` — not any single character in place of the underscore. Bare `%` or `_` characters in search terms do not become wildcards.
+
 **Class:** `lightapi.filters.SearchFilter`
 
 ### `OrderingFilter`
@@ -76,7 +78,7 @@ Applies `ORDER BY col ASC` or `ORDER BY col DESC` (prefix `-`) via `?ordering=`.
 GET /articles?ordering=-created_at,title
 ```
 
-Multiple fields can be comma-separated. Only fields listed in `ordering` are allowed; unknown fields are silently ignored.
+Multiple fields can be comma-separated. Only fields explicitly listed in `ordering` are allowed; unknown field names are silently ignored. **When `ordering` is not configured (empty or omitted), the backend ignores all `?ordering=` parameters** — no ordering is applied. This prevents clients from sorting by arbitrary columns when no whitelist has been declared.
 
 **Class:** `lightapi.filters.OrderingFilter`
 

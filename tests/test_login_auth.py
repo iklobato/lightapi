@@ -385,8 +385,8 @@ class TestTokenUsability:
 
 
 class TestValidatorException:
-    def test_login_validator_exception_returns_500(self):
-        """Validator raising propagates to 500 (Starlette default handler)."""
+    def test_login_validator_exception_returns_401(self):
+        """Validator raising any exception returns 401, not 500."""
 
         def failing_validator(username: str, password: str):
             raise RuntimeError("DB unavailable")
@@ -404,7 +404,8 @@ class TestValidatorException:
             "/auth/login",
             json={"username": "alice", "password": "secret"},
         )
-        assert resp.status_code == 500
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "Invalid credentials"
 
 
 class TestLoginRequestModel:

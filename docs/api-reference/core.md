@@ -40,7 +40,7 @@ LightApi(
 | `auth_path` | `str` | Base path for the auto-registered login route. Defaults to `/auth` → `/auth/login` and `/auth/token`. |
 | `session_manager` | `SessionManager \| None` | Override the default session manager (advanced; mostly used for test isolation). |
 | `rate_limiter` | `RateLimiter \| dict \| None` | Rate-limit config applied to `/auth/login`. Pass a `RateLimiter` instance or a `{"requests_per_minute": N, ...}` dict. |
-| `login_validator` | `Callable[[str, str], dict \| None]` | Credential validator used by `/auth/login`. Receives `(username, password)`, returns the JWT payload dict on success or `None` to reject. |
+| `login_validator` | `Callable[[str, str], dict \| None]` | Callable `(username, password) → dict \| None`. Returns a payload dict on success, or `None` to reject. Raising an exception is treated the same as returning `None` — the client receives 401 and the exception is logged at WARNING level. |
 | `use_test_isolation` | `bool` | When `True`, mounts each registered endpoint onto a unique table name and a per-thread metadata/registry — used by the test suite. |
 
 ### `register(mapping)`
@@ -99,6 +99,8 @@ app = LightApi.from_dict({
     "cors": ["https://myapp.com"],
 })
 ```
+
+The `methods` key in each endpoint config accepts a list of HTTP verbs (`["GET", "POST"]`, etc.) and is enforced — unlisted methods return `405 Method Not Allowed`.
 
 Programmatic alternative to YAML for simple configurations.
 
