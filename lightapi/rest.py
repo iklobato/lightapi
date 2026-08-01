@@ -24,9 +24,7 @@ from sqlalchemy import (
     delete,
     update,
 )
-from sqlalchemy import (
-    select as sa_select,
-)
+from sqlalchemy import select as sa_select
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 try:
@@ -228,9 +226,9 @@ class RestEndpointMeta(type):
         serialiser_normalised = normalise_serializer(raw_serializer)
 
         cls._meta = {  # type: ignore[attr-defined]
-            "authentication": getattr(meta_obj, "authentication", None)
-            if meta_obj
-            else None,
+            "authentication": (
+                getattr(meta_obj, "authentication", None) if meta_obj else None
+            ),
             "filtering": getattr(meta_obj, "filtering", None) if meta_obj else None,
             "pagination": getattr(meta_obj, "pagination", None) if meta_obj else None,
             "serializer_normalised": serialiser_normalised,
@@ -267,8 +265,6 @@ class RestEndpointMeta(type):
 
             # Store table name for potential test isolation during registration
             cls._test_isolation_table_name = table_name  # type: ignore[attr-defined]
-
-
 
 
 class RestEndpoint(metaclass=RestEndpointMeta):
@@ -482,10 +478,19 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                     **patch_fields,
                 )
                 validated = PatchSchema.model_validate(data)
+                # Determine which columns are nullable so explicit null values
+                # can clear Optional fields (non-nullable fields still skip None).
+                from sqlalchemy import inspect as _sa_inspect
+
+                nullable_cols: set[str] = {
+                    attr.key
+                    for attr in _sa_inspect(cls._model_class).mapper.column_attrs
+                    if any(c.nullable for c in attr.columns)
+                }
                 update_data = {
                     k: v
                     for k, v in validated.model_dump(exclude_unset=True).items()
-                    if k not in _AUTO_FIELDS and v is not None
+                    if k not in _AUTO_FIELDS and (v is not None or k in nullable_cols)
                 }
             else:
                 validated = cls.__schema_create__.model_validate(data)
@@ -724,10 +729,17 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                     **patch_fields,
                 )
                 validated = PatchSchema.model_validate(data)
+                from sqlalchemy import inspect as _sa_inspect
+
+                nullable_cols: set[str] = {
+                    attr.key
+                    for attr in _sa_inspect(cls._model_class).mapper.column_attrs
+                    if any(c.nullable for c in attr.columns)
+                }
                 update_data = {
                     k: v
                     for k, v in validated.model_dump(exclude_unset=True).items()
-                    if k not in _AUTO_FIELDS and v is not None
+                    if k not in _AUTO_FIELDS and (v is not None or k in nullable_cols)
                 }
             else:
                 validated = cls.__schema_create__.model_validate(data)

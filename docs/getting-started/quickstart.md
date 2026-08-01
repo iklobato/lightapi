@@ -88,6 +88,9 @@ fields and `Meta` options entirely in YAML — no Python classes needed:
 # lightapi.yaml
 database:
   url: "${DATABASE_URL}"    # ${VAR} env-var substitution
+
+mode: sync    # or "async" for an AsyncEngine
+
 cors_origins:
   - "http://localhost:3000"
 
@@ -107,6 +110,8 @@ endpoints:
       filtering:
         fields:   [author]
         ordering: [year, title]
+      cache:
+        ttl: 60   # cache GET responses; invalidated on writes
 ```
 
 ```python
@@ -115,6 +120,8 @@ from lightapi import LightApi
 app = LightApi.from_config("lightapi.yaml")
 app.run()
 ```
+
+> **New YAML features:** `mode` selects sync/async engine; `meta.cache` enables Redis caching; `meta.serializer` controls which fields appear in responses. See the [Configuration Guide](configuration.md) for the complete schema.
 
 See the [Configuration Guide](configuration.md) for the full YAML schema reference.
 

@@ -76,6 +76,8 @@ GET /articles?search=async
 # WHERE title ILIKE '%async%' OR body ILIKE '%async%'
 ```
 
+**Search input is treated as a literal string.** The characters `%` and `_` (which are SQL LIKE wildcards) are automatically escaped before the pattern is applied. This means `?search=hello_world` matches only rows containing the exact substring `hello_world`, not rows where any single character appears in place of the underscore. A search for `100%` matches only the literal string `100%`, not "100 percent" of all rows.
+
 ### `OrderingFilter`
 
 Orders results by `?ordering=field` (ascending) or `?ordering=-field` (descending). Multiple fields can be comma-separated.
@@ -84,7 +86,7 @@ Orders results by `?ordering=field` (ascending) or `?ordering=-field` (descendin
 GET /articles?ordering=-created_at,title
 ```
 
-Only fields listed in `ordering` are allowed; unknown fields are silently skipped.
+Only fields listed in `ordering` are allowed; unknown fields are silently skipped. **If `ordering` is not configured (the list is empty or omitted), the `OrderingFilter` backend ignores all `?ordering=` parameters entirely** — no ordering is applied. This prevents clients from ordering by arbitrary columns when no whitelist has been declared.
 
 ## Combining Backends
 
@@ -170,3 +172,54 @@ The following query parameter names are reserved and will not be treated as fiel
 - `cursor` — cursor pagination
 - `search` — `SearchFilter`
 - `ordering` — `OrderingFilter`
+
+## YAML configuration
+
+All filtering options available in Python are also available in YAML. Backends are auto-selected when you provide `fields`, `search`, or `ordering` — or specify them explicitly with `backends`:
+
+```yaml
+endpoints:
+  - route: /articles
+    fields:
+      title:    { type: str }
+      category: { type: str }
+      price:    { type: float, ge: 0, default: 0 }
+    meta:
+      methods: [GET, POST]
+      filtering:
+        # Auto-selects FieldFilter (for fields), SearchFilter (for search),
+        # OrderingFilter (for ordering) — no backends: key needed
+        fields:   [category]          # ?category=tech  (exact match)
+        search:   [title]             # ?search=python  (LIKE, literals only)
+        ordering: [price, title]      # ?ordering=price or ?ordering=-price
+```
+
+To use a custom backend or control the order explicitly:
+
+```yaml
+filtering:
+  backends: [FieldFilter, SearchFilter, OrderingFilter]
+  fields:   [category]
+  search:   [title]
+  ordering: [price]
+```
+
+### Behavior reference
+
+| Query parameter | Backend | Behavior |
+|----------------|---------|----------|
+| `?category=tech` | `FieldFilter` | Exact match on whitelisted fields. Type-coerced automatically. |
+| `?search=hello` | `SearchFilter` | Case-insensitive LIKE. `%` and `_` are treated as **literals**, not wildcards. |
+| `?ordering=price` | `OrderingFilter` | Ascending. `-price` = descending. Multiple fields comma-separated. |
+| `?ordering=any` | `OrderingFilter` | Silently ignored if `any` is not in the `ordering` whitelist. |
+| `?ordering=*` | `OrderingFilter` | **Disabled entirely** when `ordering:` list is empty or omitted. |
+
+### Filtering + pagination
+
+When both are active, `count` in the response reflects the **filtered** total, not the full table size:
+
+```bash
+# Table has 100 rows; 23 are category=tech
+GET /articles?category=tech&page=2
+# → {"count": 23, "pages": 3, "results": [...]}
+```

@@ -20,16 +20,15 @@ is exactly the declarative `lightapi.yaml` the framework parses.
 
 ## The container image
 
-The chart runs a generic image whose entry point is `lightapi serve`. That
-command reads `LIGHTAPI_CONFIG`, `LIGHTAPI_HOST`, and `LIGHTAPI_PORT` from the
-environment. Build and publish it once:
+The chart defaults to the published multi-arch image `iklob1/lightapi` (built by
+`.github/workflows/docker-publish.yml`). Its entry point reads `LIGHTAPI_CONFIG`,
+`LIGHTAPI_HOST`, and `LIGHTAPI_PORT` from the environment, so the chart only sets
+env vars and mounts the config. Override with `image.repository` / `image.tag`,
+or build your own from the [Docker](docker.md) guide.
 
-```bash
-docker build -t youracct/lightapi:0.1.21 .
-docker push youracct/lightapi:0.1.21
-```
-
-Point the chart at it with `image.repository` and `image.tag`.
+The `/healthz` liveness and readiness probes require a lightapi version that
+ships the health route (this chart's release onward). Point `image.tag` at a
+version that includes it.
 
 ## Install
 

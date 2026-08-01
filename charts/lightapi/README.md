@@ -19,7 +19,7 @@ helm install shop charts/lightapi -f my-values.yaml
 | Key | Default | Description |
 |-----|---------|-------------|
 | `replicaCount` | `2` | Replicas (ignored when `autoscaling.enabled`). |
-| `image.repository` | `iklobato/lightapi` | Image repository. |
+| `image.repository` | `iklob1/lightapi` | Published multi-arch image. |
 | `image.tag` | `""` | Image tag; defaults to the chart `appVersion`. |
 | `image.pullPolicy` | `IfNotPresent` | Image pull policy. |
 | `nameOverride` / `fullnameOverride` | `""` | Override generated names. |

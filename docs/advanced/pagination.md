@@ -152,3 +152,63 @@ If `Meta.pagination` is not set, the `GET` list endpoint returns all matching ro
 ```
 
 This is fine for small datasets. For large tables, always add pagination.
+
+## YAML configuration
+
+Configure pagination directly in `lightapi.yaml`:
+
+```yaml
+# Default pagination applied to all endpoints
+defaults:
+  pagination:
+    style: page_number
+    page_size: 20
+
+endpoints:
+  - route: /posts
+    fields:
+      title: { type: str }
+    meta:
+      methods: [GET, POST]
+      # Inherits defaults — no pagination block needed
+
+  - route: /events
+    fields:
+      name: { type: str }
+    meta:
+      methods: [GET, POST]
+      pagination:
+        style: cursor      # overrides the default for this endpoint
+        page_size: 50
+```
+
+### Behavior notes
+
+- A `page` beyond the last page returns `{"count": N, "pages": M, "results": []}` — never an error.
+- A malformed or expired cursor silently falls back to the first page — never a 500.
+- Cursor pagination encodes the last-seen row ID; it does **not** guarantee stable ordering across concurrent inserts. Pair it with `ordering` from `FilteringConfig` if stable order matters.
+- The `count` and `pages` keys in page-number responses reflect the **filtered** total when `filtering` is also configured.
+
+## Pagination + filtering interaction
+
+```python
+from lightapi import RestEndpoint, Pagination, Filtering, FieldFilter, OrderingFilter
+
+class ProductEndpoint(RestEndpoint):
+    name: str
+    in_stock: bool
+    price: float
+
+    class Meta:
+        pagination = Pagination(style="page_number", page_size=10)
+        filtering = Filtering(
+            backends=[FieldFilter, OrderingFilter],
+            fields=["in_stock"],
+            ordering=["price"],
+        )
+```
+
+```bash
+GET /products?in_stock=true&ordering=price&page=2
+# count = number of in_stock=true rows (not all products)
+```

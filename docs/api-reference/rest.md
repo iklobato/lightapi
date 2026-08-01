@@ -100,6 +100,19 @@ Override these methods to customise sync behaviour. Used when a sync engine is p
 | `update` | `(self, data, pk, partial)` | Optimistic-lock `UPDATE` |
 | `destroy` | `(self, request, pk)` | `DELETE WHERE id=pk` |
 
+### PATCH and Optional fields
+
+When `partial=True` (a `PATCH` request), only fields present in the request body are updated. Sending an explicit `null` value for a nullable (`Optional[...]`) field clears it to `NULL` in the database:
+
+```python
+# subtitle is Optional[str] — sending null clears the column
+PATCH /products/42
+{"subtitle": null, "version": 3}
+# → 200 {"id": 42, "subtitle": null, ...}
+```
+
+Sending `null` for a non-nullable (required) field is silently ignored — the field retains its current database value.
+
 ---
 
 ## Async CRUD Helpers

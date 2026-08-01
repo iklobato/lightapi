@@ -1,6 +1,5 @@
 """Authentication and authorization checker."""
 
-
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
@@ -27,6 +26,13 @@ def check_auth(cls: type, request: Request) -> Response | None:
         perm_cls = permission_cls
     else:
         perm_cls = AllowAny
+
+    # Explicitly setting AllowAny (non-dict) means the endpoint is fully public —
+    # skip the backend authentication check entirely.
+    # Note: permission_cls=None defaults to AllowAny but still requires auth
+    # if a backend is set; only an explicit AllowAny bypasses the backend.
+    if not is_per_method and permission_cls is AllowAny:
+        return None
 
     requires_auth = backend is not None and (
         not is_per_method or perm_cls is not AllowAny

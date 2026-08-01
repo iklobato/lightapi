@@ -90,6 +90,8 @@ def login_validator(username: str, password: str):
 app = LightApi(engine=engine, login_validator=login_validator)
 ```
 
+Raising an exception from `login_validator` is treated identically to returning `None` — the client receives `401 Unauthorized`. The exception is logged at `WARNING` level and is never surfaced to the API consumer.
+
 The dict returned by the validator is the JWT payload. On JWT-protected apps,
 `POST /auth/login` returns `{"token": "<jwt>", "user": {...}}`; the client
 then sends `Authorization: Bearer <jwt>` on subsequent requests.

@@ -4,8 +4,10 @@
 replicaCount: 2
 
 image:
-  repository: iklobato/lightapi
-  # Defaults to the chart appVersion when empty.
+  # Published multi-arch image (built by .github/workflows/docker-publish.yml).
+  repository: iklob1/lightapi
+  # Defaults to the chart appVersion when empty. The /healthz probes require a
+  # lightapi version that ships the health route (this chart's release onward).
   tag: ""
   pullPolicy: IfNotPresent
 
