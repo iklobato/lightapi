@@ -627,8 +627,10 @@ def _build_endpoint_class(entry: EndpointConfig, defaults: DefaultsConfig) -> ty
             if default is not ...:
                 pydantic_kwargs["default"] = default
             class_attrs[field_name] = Field(**pydantic_kwargs)
-        else:
-            class_attrs[field_name] = ...
+        # A constraint-less, default-less field is annotation-only. Do NOT set a
+        # class attribute: an Ellipsis placeholder would survive FieldInfoStripper
+        # (which only removes FieldInfo) and stop SQLAlchemy from mapping the
+        # column, so the value would silently never be inserted.
 
     # Build Meta inner class
     Meta = _build_meta_class(entry.meta, defaults, reflect=entry.reflect)
