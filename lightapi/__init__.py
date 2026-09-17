@@ -21,7 +21,12 @@ from lightapi.core import (
 )
 from lightapi.exceptions import ConfigurationError, SerializationError
 from lightapi.fields import Field
-from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
+from lightapi.filters import (
+    FieldFilter,
+    OrderingFilter,
+    RangeFilter,
+    SearchFilter,
+)
 from lightapi.lightapi import LightApi
 from lightapi.methods import HttpMethod
 from lightapi.rate_limiter import RateLimiter
@@ -55,6 +60,7 @@ __all__ = [
     "FieldFilter",
     "SearchFilter",
     "OrderingFilter",
+    "RangeFilter",
     # Schema
     "SchemaFactory",
     # Middleware (backward-compat)

@@ -4,6 +4,7 @@ Demonstrates:
 - FieldFilter: Filter by exact field values (?genre=fiction)
 - SearchFilter: Full-text search (?search=term)
 - OrderingFilter: Sort results (?ordering=price or ?ordering=-price)
+- RangeFilter: Inclusive bounds (?price_min=10&price_max=50)
 - Combining filters
 
 Notes:
@@ -25,8 +26,14 @@ Then try:
     # Order by price descending
     curl "http://localhost:8000/books?ordering=-price"
 
+    # Price range (both bounds inclusive, either one optional)
+    curl "http://localhost:8000/books?price_min=10&price_max=50"
+
+    # Books added since a given moment (auto-injected created_at column)
+    curl "http://localhost:8000/books?created_at_min=2026-01-01T00:00:00"
+
     # Combine filters
-    curl "http://localhost:8000/books?genre=Fiction&search=code&ordering=-price"
+    curl "http://localhost:8000/books?genre=Fiction&search=code&price_max=50&ordering=-price"
 """
 
 from sqlalchemy import create_engine
@@ -34,7 +41,7 @@ from sqlalchemy.pool import StaticPool
 
 from lightapi import Filtering, HttpMethod, LightApi, RestEndpoint
 from lightapi.fields import Field
-from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
+from lightapi.filters import FieldFilter, OrderingFilter, RangeFilter, SearchFilter
 
 DATABASE_URL = "sqlite:///:memory:"
 
@@ -49,10 +56,11 @@ class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
 
     class Meta:
         filtering = Filtering(
-            backends=[FieldFilter, SearchFilter, OrderingFilter],
+            backends=[FieldFilter, SearchFilter, OrderingFilter, RangeFilter],
             fields=["genre"],  # ?genre=fiction
             search=["title", "author"],  # ?search=term
             ordering=["title", "price"],  # ?ordering=price or -price
+            ranges=["price", "created_at"],  # ?price_min=10&price_max=50
         )
 
 

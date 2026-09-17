@@ -240,6 +240,27 @@ class TestDeclarativeFormat:
         assert FieldFilter in backends
         assert OrderingFilter in backends
 
+    def test_filtering_ranges_auto_selects_range_filter(self):
+        content = """            database:
+              url: "sqlite:///:memory:"
+            endpoints:
+              - route: /priced
+                fields:
+                  title: { type: str }
+                  price: { type: float }
+                meta:
+                  methods: [GET]
+                  filtering:
+                    ranges: [price]
+            """
+        app = _from_str(content)
+        cls = self._route_cls(app, "/priced")
+        from lightapi.filters import RangeFilter
+
+        meta = cls.Meta
+        assert RangeFilter in meta.filtering.backends
+        assert meta.filtering.ranges == ["price"]
+
     def test_pagination_config_from_defaults(self):
         content = """\
             database:

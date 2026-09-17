@@ -51,7 +51,12 @@ def _build_name_registry() -> dict[str, type]:
         JWTAuthentication,
     )
     from lightapi.core import AuthenticationMiddleware, CORSMiddleware, Middleware
-    from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
+    from lightapi.filters import (
+        FieldFilter,
+        OrderingFilter,
+        RangeFilter,
+        SearchFilter,
+    )
     from lightapi.methods import HttpMethod
 
     return {
@@ -66,6 +71,7 @@ def _build_name_registry() -> dict[str, type]:
         "FieldFilter": FieldFilter,
         "SearchFilter": SearchFilter,
         "OrderingFilter": OrderingFilter,
+        "RangeFilter": RangeFilter,
         # Middleware
         "Middleware": Middleware,
         "CORSMiddleware": CORSMiddleware,
@@ -213,6 +219,7 @@ class FilteringConfig(BaseModel):
     fields: list[str] = []
     search: list[str] = []
     ordering: list[str] = []
+    ranges: list[str] = []
 
 
 class PaginationConfig(BaseModel):
@@ -392,7 +399,12 @@ def _make_filtering(filtering_cfg: FilteringConfig | None) -> Any:
     if filtering_cfg is None:
         return None
     from lightapi.config import Filtering
-    from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
+    from lightapi.filters import (
+        FieldFilter,
+        OrderingFilter,
+        RangeFilter,
+        SearchFilter,
+    )
 
     # Auto-select backends based on which lists are populated
     backends: list[type] = list(
@@ -407,12 +419,15 @@ def _make_filtering(filtering_cfg: FilteringConfig | None) -> Any:
             backends.append(SearchFilter)
         if filtering_cfg.ordering:
             backends.append(OrderingFilter)
+        if filtering_cfg.ranges:
+            backends.append(RangeFilter)
 
     return Filtering(
         backends=backends or None,
         fields=filtering_cfg.fields or None,
         search=filtering_cfg.search or None,
         ordering=filtering_cfg.ordering or None,
+        ranges=filtering_cfg.ranges or None,
     )
 
 

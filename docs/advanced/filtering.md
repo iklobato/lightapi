@@ -5,14 +5,14 @@ description: Add query parameter filtering to list endpoints
 
 # Filtering
 
-LightAPI provides three built-in filter backends that work via URL query parameters. Filtering is configured via `Meta.filtering` on each `RestEndpoint`.
+LightAPI provides four built-in filter backends that work via URL query parameters. Filtering is configured via `Meta.filtering` on each `RestEndpoint`.
 
 ## Quick Start
 
 ```python
 from lightapi import (
     RestEndpoint, Field, Filtering,
-    FieldFilter, SearchFilter, OrderingFilter,
+    FieldFilter, SearchFilter, OrderingFilter, RangeFilter,
 )
 
 class ArticleEndpoint(RestEndpoint):
@@ -20,13 +20,15 @@ class ArticleEndpoint(RestEndpoint):
     body: str
     published: bool = Field(default=False)
     category: str
+    word_count: int = Field(default=0)
 
     class Meta:
         filtering = Filtering(
-            backends=[FieldFilter, SearchFilter, OrderingFilter],
+            backends=[FieldFilter, SearchFilter, OrderingFilter, RangeFilter],
             fields=["published", "category"],   # exact-match params
             search=["title", "body"],            # ?search= applies iLIKE
             ordering=["title", "created_at"],    # ?ordering= / ?ordering=-field
+            ranges=["word_count", "created_at"], # ?field_min= / ?field_max=
         )
 ```
 
@@ -34,6 +36,7 @@ class ArticleEndpoint(RestEndpoint):
 GET /articles?published=true
 GET /articles?search=django
 GET /articles?ordering=-created_at
+GET /articles?word_count_min=500&word_count_max=2000
 GET /articles?published=true&search=api&ordering=title
 ```
 
@@ -45,6 +48,7 @@ Filtering(
     fields: list[str] | None = None,
     search: list[str] | None = None,
     ordering: list[str] | None = None,
+    ranges: list[str] | None = None,
 )
 ```
 
@@ -54,6 +58,7 @@ Filtering(
 | `fields` | Columns allowed for exact-match filtering (`?field=value`). |
 | `search` | Columns searched with case-insensitive `LIKE` when `?search=` is present. |
 | `ordering` | Columns allowed for ordering via `?ordering=col` or `?ordering=-col`. |
+| `ranges` | Ordered columns allowed for range bounds via `?col_min=` / `?col_max=`. |
 
 ## Filter Backends
 
@@ -87,6 +92,43 @@ GET /articles?ordering=-created_at,title
 ```
 
 Only fields listed in `ordering` are allowed; unknown fields are silently skipped. **If `ordering` is not configured (the list is empty or omitted), the `OrderingFilter` backend ignores all `?ordering=` parameters entirely** — no ordering is applied. This prevents clients from ordering by arbitrary columns when no whitelist has been declared.
+
+### `RangeFilter`
+
+Applies inclusive bounds on the columns listed in `ranges`: `?<field>_min=` becomes
+`WHERE col >= value` and `?<field>_max=` becomes `WHERE col <= value`.
+
+```bash
+GET /articles?word_count_min=500
+GET /articles?word_count_max=2000
+GET /articles?word_count_min=500&word_count_max=2000
+# WHERE word_count >= 500 AND word_count <= 2000
+```
+
+The two bounds are independent — send either one, both, or neither. Values are coerced
+to the column's Python type, so dates and datetimes are accepted in ISO 8601 form:
+
+```bash
+GET /articles?created_at_min=2026-01-01T00:00:00&created_at_max=2026-06-30T23:59:59
+```
+
+Only columns listed in `ranges` are accepted; `?<field>_min=` on any other field is
+silently ignored, as is a bound that cannot be parsed into the column's type
+(`?word_count_min=many`). Auto-injected columns (`id`, `created_at`, `updated_at`,
+`version`) can be listed in `ranges` like any other column.
+
+**Ranges are validated at class definition time.** Listing a field the endpoint does not
+have, or one whose type has no ordering (`str`, `bool`), raises `ConfigurationError`
+immediately rather than failing silently on every request:
+
+```python
+class BadEndpoint(RestEndpoint):
+    title: str
+
+    class Meta:
+        filtering = Filtering(backends=[RangeFilter], ranges=["title"])
+# ConfigurationError: ... 'title', whose type String has no ordering.
+```
 
 ## Combining Backends
 
@@ -175,7 +217,7 @@ The following query parameter names are reserved and will not be treated as fiel
 
 ## YAML configuration
 
-All filtering options available in Python are also available in YAML. Backends are auto-selected when you provide `fields`, `search`, or `ordering` — or specify them explicitly with `backends`:
+All filtering options available in Python are also available in YAML. Backends are auto-selected when you provide `fields`, `search`, `ordering`, or `ranges` — or specify them explicitly with `backends`:
 
 ```yaml
 endpoints:
@@ -192,16 +234,18 @@ endpoints:
         fields:   [category]          # ?category=tech  (exact match)
         search:   [title]             # ?search=python  (LIKE, literals only)
         ordering: [price, title]      # ?ordering=price or ?ordering=-price
+        ranges:   [price]             # ?price_min=10&price_max=50
 ```
 
 To use a custom backend or control the order explicitly:
 
 ```yaml
 filtering:
-  backends: [FieldFilter, SearchFilter, OrderingFilter]
+  backends: [FieldFilter, SearchFilter, OrderingFilter, RangeFilter]
   fields:   [category]
   search:   [title]
   ordering: [price]
+  ranges:   [price]
 ```
 
 ### Behavior reference
@@ -213,6 +257,9 @@ filtering:
 | `?ordering=price` | `OrderingFilter` | Ascending. `-price` = descending. Multiple fields comma-separated. |
 | `?ordering=any` | `OrderingFilter` | Silently ignored if `any` is not in the `ordering` whitelist. |
 | `?ordering=*` | `OrderingFilter` | **Disabled entirely** when `ordering:` list is empty or omitted. |
+| `?price_min=10` | `RangeFilter` | Inclusive lower bound (`>=`) on whitelisted ordered columns. |
+| `?price_max=50` | `RangeFilter` | Inclusive upper bound (`<=`). Independent of `_min`. |
+| `?price_min=cheap` | `RangeFilter` | Silently ignored when the bound cannot be coerced to the column type. |
 
 ### Filtering + pagination
 
