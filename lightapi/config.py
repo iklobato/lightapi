@@ -91,6 +91,7 @@ class Filtering:
     fields: tuple[str, ...] = field(default_factory=tuple)
     search: tuple[str, ...] = field(default_factory=tuple)
     ordering: tuple[str, ...] = field(default_factory=tuple)
+    ranges: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

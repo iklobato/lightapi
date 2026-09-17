@@ -397,19 +397,21 @@ Declare filter backends and allowed fields in `Meta.filtering`:
 
 ```python
 from lightapi import RestEndpoint, Filtering, Field
-from lightapi.filters import FieldFilter, SearchFilter, OrderingFilter
+from lightapi.filters import FieldFilter, SearchFilter, OrderingFilter, RangeFilter
 
 class ArticleEndpoint(RestEndpoint):
     title: str = Field(min_length=1)
     category: str = Field(min_length=1)
     author: str = Field(min_length=1)
+    word_count: int = Field(ge=0)
 
     class Meta:
         filtering = Filtering(
-            backends=[FieldFilter, SearchFilter, OrderingFilter],
+            backends=[FieldFilter, SearchFilter, OrderingFilter, RangeFilter],
             fields=["category"],           # ?category=news  (exact match)
             search=["title", "author"],    # ?search=python  (case-insensitive LIKE)
             ordering=["title", "author"],  # ?ordering=title or ?ordering=-title
+            ranges=["word_count", "created_at"],  # ?word_count_min= / ?word_count_max=
         )
 ```
 
@@ -433,8 +435,18 @@ GET /articles?ordering=-title
 > **Whitelist required:** When `ordering` is not set (or empty), the `OrderingFilter` backend ignores all `?ordering=` parameters. Only fields explicitly listed in `ordering` can be sorted.
 
 ```bash
+# Range bounds on numeric, date, and datetime fields (both ends inclusive)
+GET /articles?word_count_min=500
+GET /articles?word_count_max=2000
+GET /articles?word_count_min=500&word_count_max=2000
+GET /articles?created_at_min=2026-01-01T00:00:00
+```
+
+> **Bounds are inclusive and independent:** `?<field>_min=` applies `>=`, `?<field>_max=` applies `<=`, and either may be sent on its own. Only fields listed in `ranges` are accepted; a bound that cannot be parsed into the column's type is ignored, exactly like an unknown `?ordering=` field. Listing a field in `ranges` that the endpoint does not have — or one whose type has no ordering, such as `str` or `bool` — raises `ConfigurationError` when the class is defined.
+
+```bash
 # Combine all
-GET /articles?category=news&search=python&ordering=-title
+GET /articles?category=news&search=python&ordering=-title&word_count_min=500
 ```
 
 ### Pagination
@@ -959,7 +971,9 @@ Override these methods to customise behaviour. Both `def` (sync) and `async def`
 class MyEndpoint(RestEndpoint):
     class Meta:
         authentication = Authentication(backend=..., permission=...)
-        filtering = Filtering(backends=[...], fields=[...], search=[...], ordering=[...])
+        filtering = Filtering(
+            backends=[...], fields=[...], search=[...], ordering=[...], ranges=[...]
+        )
         pagination = Pagination(style="page_number"|"cursor", page_size=20)
         serializer = Serializer(fields=[...]) | Serializer(read=[...], write=[...])
         cache = Cache(ttl=60)
@@ -970,7 +984,7 @@ class MyEndpoint(RestEndpoint):
 | Attribute | Type | Description |
 |---|---|---|
 | `authentication` | `Authentication` | Backend and permission class for this endpoint. |
-| `filtering` | `Filtering` | Filter backends, fields, search, and ordering lists. |
+| `filtering` | `Filtering` | Filter backends, fields, search, ordering, and ranges lists. |
 | `pagination` | `Pagination` | Pagination style and page size. |
 | `serializer` | `Serializer` | Field projection for reads and/or writes. |
 | `cache` | `Cache` | `Cache(ttl=N)` — cache GET responses for N seconds (requires Redis). |

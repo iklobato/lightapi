@@ -238,6 +238,14 @@ class RestEndpointMeta(type):
         }
         cls._fields_info = fields_info  # type: ignore[attr-defined]
 
+        # Guard: Meta.filtering.ranges must name ordered columns of this
+        # endpoint. Reflected endpoints have no declared columns to check.
+        filtering_obj = cls._meta["filtering"]
+        if filtering_obj is not None and not reflect:
+            from lightapi.filters import validate_range_fields
+
+            validate_range_fields(name, filtering_obj, columns + auto_cols)
+
         # ── Step 6: MRO scan for HttpMethod markers ───────────────────────────
 
         allowed: set[str] = set()
