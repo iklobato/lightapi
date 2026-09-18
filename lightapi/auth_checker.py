@@ -1,4 +1,8 @@
-"""Authentication and authorization checker."""
+"""Authentication and permission check for one endpoint."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -6,69 +10,42 @@ from starlette.responses import JSONResponse, Response
 from lightapi.authentication import AllowAny
 from lightapi.constants import HTTPStatus
 
+if TYPE_CHECKING:
+    from lightapi.authentication.base import LoginValidator
+    from lightapi.config import Authentication
 
-def check_auth(cls: type, request: Request) -> Response | None:
-    """Run authentication + permission checks; return 401/403 response or None."""
 
-    auth_cfg = cls._meta.get("authentication")
-    if auth_cfg is None:
-        return None
+class EndpointGuard:
+    """Decides whether a request may reach an endpoint."""
 
-    backend = auth_cfg.backend
-    permission_cls = auth_cfg.permission
-    is_per_method = isinstance(permission_cls, dict)
+    def __init__(
+        self,
+        authentication: Authentication | None,
+        login_validator: LoginValidator | None = None,
+    ) -> None:
+        self._authentication = authentication
+        self._login_validator = login_validator
 
-    if is_per_method:
-        perm_cls = permission_cls.get(request.method)
-        if perm_cls is None:
-            perm_cls = AllowAny
-    elif permission_cls is not None:
-        perm_cls = permission_cls
-    else:
-        perm_cls = AllowAny
+    def check(self, request: Request) -> Response | None:
+        """The 401 or 403 response that stops the request, or None to let it in."""
+        authentication = self._authentication
+        if authentication is None:
+            return None
 
-    # Explicitly setting AllowAny (non-dict) means the endpoint is fully public —
-    # skip the backend authentication check entirely.
-    # Note: permission_cls=None defaults to AllowAny but still requires auth
-    # if a backend is set; only an explicit AllowAny bypasses the backend.
-    if not is_per_method and permission_cls is AllowAny:
-        return None
+        if authentication.requires_login(request.method):
+            backend = authentication.build_backend(self._login_validator)
+            if not backend.authenticate(request):
+                return JSONResponse(
+                    {"detail": "Authentication required"},
+                    status_code=HTTPStatus.UNAUTHORIZED,
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
-    requires_auth = backend is not None and (
-        not is_per_method or perm_cls is not AllowAny
-    )
-
-    if requires_auth:
-        login_validator = getattr(auth_cfg, "_login_validator", None)
-
-        if backend.__name__ == "JWTAuthentication":
-            authenticator = backend(
-                expiration=getattr(auth_cfg, "jwt_expiration", None),
-                algorithm=getattr(auth_cfg, "jwt_algorithm", None),
-                rate_limiter=getattr(auth_cfg, "rate_limiter", None),
-            )
-        elif backend.__name__ == "BasicAuthentication":
-            authenticator = backend(
-                rate_limiter=getattr(auth_cfg, "rate_limiter", None),
-                login_validator=login_validator,
-            )
-        else:
-            authenticator = backend()
-
-        authenticated = authenticator.authenticate(request)
-
-        if not authenticated:
-            return JSONResponse(
-                {"detail": "Authentication required"},
-                status_code=HTTPStatus.UNAUTHORIZED,
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-    if perm_cls is not AllowAny:
-        if not perm_cls().has_permission(request):
+        permission = authentication.permission_for(request.method)
+        if permission is not AllowAny and not permission().has_permission(request):
             return JSONResponse(
                 {"detail": "Insufficient permissions"},
                 status_code=HTTPStatus.FORBIDDEN,
             )
 
-    return None
+        return None

@@ -6,13 +6,13 @@ import asyncio
 import inspect
 import json
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from starlette.background import BackgroundTasks
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from lightapi.auth_checker import check_auth
+from lightapi.auth_checker import EndpointGuard
 from lightapi.cache_helper import (
     invalidate_cache_after_write,
     maybe_cached,
@@ -22,6 +22,18 @@ from lightapi.constants import RESPONSE_KEY_DETAIL, HTTPStatus
 from lightapi.middleware_runner import run_post_middlewares, run_pre_middlewares
 from lightapi.rest import RestEndpoint
 from lightapi.session import run_blocking
+
+if TYPE_CHECKING:
+    from lightapi.authentication.base import LoginValidator
+
+
+@dataclass(frozen=True)
+class AppContext:
+    """What every handler of one LightApi app shares."""
+
+    middlewares: list[type]
+    is_async: bool
+    login_validator: LoginValidator | None = None
 
 
 @dataclass(frozen=True)
@@ -78,25 +90,27 @@ class EndpointHandler:
         self,
         endpoint_cls: type[RestEndpoint],
         verbs: dict[str, _Verb],
-        middlewares: list[type],
-        is_async: bool,
+        app: AppContext,
     ) -> None:
         self._endpoint_cls = endpoint_cls
         self._verbs = verbs
-        self._middlewares = middlewares
-        self._is_async = is_async
+        self._middlewares = app.middlewares
+        self._is_async = app.is_async
+        self._guard = EndpointGuard(
+            endpoint_cls._meta.get("authentication"), app.login_validator
+        )
 
     @classmethod
     def for_collection(
-        cls, endpoint_cls: type[RestEndpoint], middlewares: list[type], is_async: bool
+        cls, endpoint_cls: type[RestEndpoint], app: AppContext
     ) -> EndpointHandler:
-        return cls(endpoint_cls, _COLLECTION_VERBS, middlewares, is_async)
+        return cls(endpoint_cls, _COLLECTION_VERBS, app)
 
     @classmethod
     def for_detail(
-        cls, endpoint_cls: type[RestEndpoint], middlewares: list[type], is_async: bool
+        cls, endpoint_cls: type[RestEndpoint], app: AppContext
     ) -> EndpointHandler:
-        return cls(endpoint_cls, _DETAIL_VERBS, middlewares, is_async)
+        return cls(endpoint_cls, _DETAIL_VERBS, app)
 
     @property
     def methods(self) -> list[str]:
@@ -112,7 +126,7 @@ class EndpointHandler:
         if pre_result is not None:
             return pre_result
 
-        auth_result = check_auth(self._endpoint_cls, request)
+        auth_result = self._guard.check(request)
         if auth_result is not None:
             return auth_result
 

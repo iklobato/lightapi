@@ -7,28 +7,36 @@ import importlib
 import logging
 import os
 import warnings
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
 import uvicorn
 from sqlalchemy import create_engine
 from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
 from starlette.routing import Route
 
-from lightapi.authentication import BasicAuthentication, JWTAuthentication
-from lightapi.endpoint_handler import EndpointHandler
+from lightapi._login import LoginEndpoint
+from lightapi.authentication import (
+    BaseAuthentication,
+    BasicAuthentication,
+    JWTAuthentication,
+)
+from lightapi.endpoint_handler import AppContext, EndpointHandler
 from lightapi.exceptions import ConfigurationError
 from lightapi.health import HEALTH_PATH, HealthCheckEndpoint
+from lightapi.rate_limiter import RateLimiter
 from lightapi.rest import RestEndpoint
 from lightapi.session_manager import SessionManager
 from lightapi.yaml_loader import load_config
 
-if TYPE_CHECKING:
-    from lightapi.rate_limiter import RateLimiter
-
 logger = logging.getLogger(__name__)
+
+# Limits of the login routes when the app sets none.
+_LOGIN_RATE_LIMITS = {
+    "requests_per_minute": 1000,
+    "requests_per_hour": 10000,
+    "requests_per_day": 100000,
+}
 
 
 class LightApi:
@@ -93,15 +101,14 @@ class LightApi:
         # Rate limiter setup
         self._rate_limiter_global: RateLimiter | None = None
         if rate_limiter is not None:
-            from lightapi.rate_limiter import RateLimiter as RL
-
-            if isinstance(rate_limiter, RL):
+            if isinstance(rate_limiter, RateLimiter):
                 self._rate_limiter_global = rate_limiter
             elif isinstance(rate_limiter, dict):
-                self._rate_limiter_global = RL(
-                    requests_per_minute=rate_limiter.get("requests_per_minute", 1000),
-                    requests_per_hour=rate_limiter.get("requests_per_hour", 10000),
-                    requests_per_day=rate_limiter.get("requests_per_day", 100000),
+                self._rate_limiter_global = RateLimiter(
+                    **{
+                        limit: rate_limiter.get(limit, default)
+                        for limit, default in _LOGIN_RATE_LIMITS.items()
+                    }
                 )
 
         self._routes: list[Route] = []
@@ -256,11 +263,11 @@ class LightApi:
                     cls._schema_deferred = False
                 cls._reflect_deferred = False
 
-            is_async = self._mode == "async"
-            collection = EndpointHandler.for_collection(
-                cls, self._middlewares, is_async
+            app_context = AppContext(
+                self._middlewares, self._mode == "async", self._login_validator
             )
-            detail = EndpointHandler.for_detail(cls, self._middlewares, is_async)
+            collection = EndpointHandler.for_collection(cls, app_context)
+            detail = EndpointHandler.for_detail(cls, app_context)
             self._routes.append(
                 Route(
                     path,
@@ -279,151 +286,40 @@ class LightApi:
             )
             self._endpoint_map[path] = cls
 
-        # Auto-register /auth/login and /auth/token when JWT or Basic auth is used
+        self._register_login_routes()
 
-        auth_backends: set[type] = set()
-        jwt_config_expiration: int | None = None
-        jwt_config_extra_claims: list[str] | None = None
-        jwt_config_algorithm: str | None = None
-        for cls in self._endpoint_map.values():
-            auth_cfg = getattr(cls, "_meta", {}).get("authentication")
-            if auth_cfg and auth_cfg.backend:
-                auth_backends.add(auth_cfg.backend)
-                if (
-                    auth_cfg.backend is JWTAuthentication
-                    and jwt_config_expiration is None
-                ):
-                    jwt_config_expiration = getattr(auth_cfg, "jwt_expiration", None)
-                    jwt_config_extra_claims = getattr(
-                        auth_cfg, "jwt_extra_claims", None
-                    )
-                    jwt_config_algorithm = getattr(auth_cfg, "jwt_algorithm", None)
+    def _register_login_routes(self) -> None:
+        """(Re)build /auth/login and /auth/token when an endpoint uses JWT or Basic."""
+        backend = self._login_backend()
+        if backend is None:
+            return
 
-        # Check if any endpoint has authentication configured
-        auth_backends_list = []
-        for cls in self._endpoint_map.values():
-            auth_cfg = getattr(cls, "_meta", {}).get("authentication")
-            if auth_cfg and auth_cfg.backend:
-                # Store login_validator in auth_cfg for use by _check_auth
-                # Use object.__setattr__ to bypass frozen dataclass restriction
-                object.__setattr__(auth_cfg, "_login_validator", self._login_validator)
+        rate_limiter = self._rate_limiter_global or RateLimiter(**_LOGIN_RATE_LIMITS)
+        login = LoginEndpoint(backend, self._login_validator, rate_limiter)
+        auth_path = self._auth_path.rstrip("/")
+        login_paths = (f"{auth_path}/login", f"{auth_path}/token")
 
-                # Store backend instance with its config
-                backend = auth_cfg.backend
-                # Initialize backend with appropriate parameters based on type
-                if backend.__name__ == "JWTAuthentication":
-                    backend_instance = backend(
-                        expiration=getattr(auth_cfg, "jwt_expiration", None),
-                        algorithm=getattr(auth_cfg, "jwt_algorithm", None),
-                        rate_limiter=getattr(auth_cfg, "rate_limiter", None),
-                    )
-                elif backend.__name__ == "BasicAuthentication":
-                    backend_instance = backend(
-                        rate_limiter=getattr(auth_cfg, "rate_limiter", None),
-                        login_validator=self._login_validator,
-                    )
-                else:
-                    backend_instance = backend()
-                auth_backends_list.append((cls, auth_cfg, backend_instance))
+        self._routes = [
+            route
+            for route in self._routes
+            if not (isinstance(route, Route) and route.path in login_paths)
+        ]
+        for position, path in enumerate(login_paths):
+            self._routes.insert(position, Route(path, login.handle, methods=["POST"]))
 
-        # Auto-register /auth/login and /auth/token when JWT or Basic auth is used
-        has_auth_backends = any(
-            isinstance(auth[2], (JWTAuthentication, BasicAuthentication))
-            for auth in auth_backends_list
-        )
-
-        if has_auth_backends:
-            # Use global rate limiter if set, otherwise create default
-            rate_limiter = self._rate_limiter_global
-            if rate_limiter is None:
-                from lightapi.rate_limiter import RateLimiter
-
-                rate_limiter = RateLimiter(
-                    requests_per_minute=1000,
-                    requests_per_hour=10000,
-                    requests_per_day=100000,
-                )
-
-            has_jwt = any(
-                isinstance(auth[2], JWTAuthentication) for auth in auth_backends_list
-            )
-            auth_path = self._auth_path.rstrip("/")
-
-            login_path = f"{auth_path}/login"
-            token_path = f"{auth_path}/token"
-
-            self._routes = [
-                route
-                for route in self._routes
-                if not (
-                    isinstance(route, Route) and route.path in {login_path, token_path}
-                )
-            ]
-
-            login_endpoint = self._make_login_endpoint(
-                has_jwt=has_jwt,
-                jwt_expiration=jwt_config_expiration,
-                jwt_extra_claims=jwt_config_extra_claims,
-                jwt_algorithm=jwt_config_algorithm,
-                rate_limiter=rate_limiter,
-            )
-            self._routes.insert(
-                0,
-                Route(
-                    login_path,
-                    login_endpoint,
-                    methods=["POST"],
-                ),
-            )
-            self._routes.insert(
-                1,
-                Route(
-                    token_path,
-                    login_endpoint,
-                    methods=["POST"],
-                ),
-            )
-
-    def _make_login_endpoint(
-        self,
-        *,
-        has_jwt: bool,
-        jwt_expiration: int | None,
-        jwt_extra_claims: list[str] | None,
-        jwt_algorithm: str | None,
-        rate_limiter: "RateLimiter",
-    ) -> Any:
-        """Create the login/token handler with captured config."""
-        from lightapi._login import login_handler
-        from lightapi.authentication import JWTAuthentication
-
-        # Create auth backend that wraps login_validator for validate_credentials
-        auth_backend = JWTAuthentication()
-
-        # Override validate_credentials to use login_validator if provided
-        original_validate = auth_backend.validate_credentials
-
-        def wrapped_validate(username: str, password: str) -> dict[str, Any] | None:
-            # Try login_validator first if provided
-            if self._login_validator is not None:
-                return self._login_validator(username, password)
-            # Otherwise try the original method
-            return original_validate(username, password)
-
-        auth_backend.validate_credentials = wrapped_validate
-
-        async def handler(request: Request) -> Response:
-            return await login_handler(
-                request,
-                has_jwt=has_jwt,
-                jwt_expiration=jwt_expiration,
-                jwt_extra_claims=jwt_extra_claims,
-                jwt_algorithm=jwt_algorithm,
-                rate_limiter=rate_limiter,
-                auth_backend=auth_backend,
-            )
-
-        return handler
+    def _login_backend(self) -> BaseAuthentication | None:
+        """The backend that answers the login routes: a JWT one if any, else Basic."""
+        configured = [
+            authentication
+            for cls in self._endpoint_map.values()
+            if (authentication := cls._meta.get("authentication"))
+            and authentication.backend
+        ]
+        for kind in (JWTAuthentication, BasicAuthentication):
+            for authentication in configured:
+                if issubclass(authentication.backend, kind):
+                    return authentication.build_backend(self._login_validator)
+        return None
 
     # ─────────────────────────────────────────────────────────────────────────
     # Run

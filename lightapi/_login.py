@@ -3,22 +3,20 @@
 from __future__ import annotations
 
 import base64
+import inspect
 import json
 import logging
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.constants import (
-    RESPONSE_KEY_DETAIL,
-    RESPONSE_KEY_TOKEN,
-    RESPONSE_KEY_USER,
-    HTTPStatus,
-)
+from lightapi.constants import RESPONSE_KEY_DETAIL, HTTPStatus
 
-# JWTAuthentication imported locally where needed to avoid circular import
+if TYPE_CHECKING:
+    from lightapi.authentication.base import BaseAuthentication, LoginValidator
+    from lightapi.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -78,80 +76,65 @@ async def _read_body(request: Request) -> dict[str, Any]:
         return {}
 
 
-async def login_handler(
-    request: Request,
-    *,
-    has_jwt: bool,
-    jwt_expiration: int | None = None,
-    jwt_extra_claims: list[str] | None = None,
-    jwt_algorithm: str | None = None,
-    rate_limiter: Optional[Any] = None,
-    auth_backend: Optional[Any] = None,
-) -> JSONResponse:
-    """
-    Handle POST /auth/login and POST /auth/token.
+class LoginEndpoint:
+    """POST /auth/login and POST /auth/token.
 
     Returns 422 for body validation, 401 for malformed Basic, invalid credentials,
-    or any exception raised by the validator; 200 with token+user (JWT) or user (Basic).
+    or any exception raised while validating; 200 with whatever the backend puts
+    in a login response (token and user for JWT, user for Basic).
     """
-    # Apply rate limiting if a rate limiter is provided
-    if rate_limiter is not None:
-        is_limited, window = rate_limiter.is_rate_limited(request, endpoint="auth")
+
+    def __init__(
+        self,
+        backend: BaseAuthentication,
+        login_validator: LoginValidator | None,
+        rate_limiter: RateLimiter,
+    ) -> None:
+        self._backend = backend
+        self._login_validator = login_validator
+        self._rate_limiter = rate_limiter
+
+    async def handle(self, request: Request) -> JSONResponse:
+        is_limited, window = self._rate_limiter.is_rate_limited(
+            request, endpoint="auth"
+        )
         if is_limited:
-            return rate_limiter.get_rate_limit_response(request, window)
+            return self._rate_limiter.get_rate_limit_response(request, window)
 
-    if request.method != "POST":
-        return JSONResponse(
-            {RESPONSE_KEY_DETAIL: "method not allowed"},
-            status_code=HTTPStatus.METHOD_NOT_ALLOWED,
-            headers={"Allow": "POST"},
-        )
+        if request.method != "POST":
+            return JSONResponse(
+                {RESPONSE_KEY_DETAIL: "method not allowed"},
+                status_code=HTTPStatus.METHOD_NOT_ALLOWED,
+                headers={"Allow": "POST"},
+            )
 
-    try:
-        creds = await _parse_credentials(request)
-    except ValidationError as exc:
-        return JSONResponse(
-            {RESPONSE_KEY_DETAIL: exc.errors()},
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-        )
-
-    if creds is None:
-        return JSONResponse(
-            {RESPONSE_KEY_DETAIL: "Invalid credentials"},
-            status_code=HTTPStatus.UNAUTHORIZED,
-        )
-
-    username, password = creds
-
-    # Use auth_backend's validate_credentials if provided
-    payload = None
-    if auth_backend is not None:
         try:
-            payload = auth_backend.validate_credentials(username, password)
-        except Exception as e:
-            logger.warning("validate_credentials raised: %s", e)
+            creds = await _parse_credentials(request)
+        except ValidationError as exc:
+            return JSONResponse(
+                {RESPONSE_KEY_DETAIL: exc.errors()},
+                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            )
+
+        user = await self._validated_user(*creds) if creds is not None else None
+        if user is None:
             return JSONResponse(
                 {RESPONSE_KEY_DETAIL: "Invalid credentials"},
                 status_code=HTTPStatus.UNAUTHORIZED,
             )
+        return JSONResponse(self._backend.login_response(user))
 
-    if payload is None:
-        return JSONResponse(
-            {RESPONSE_KEY_DETAIL: "Invalid credentials"},
-            status_code=HTTPStatus.UNAUTHORIZED,
-        )
-
-    if has_jwt:
-        from lightapi.authentication import JWTAuthentication
-
-        jwt_auth = JWTAuthentication(algorithm=jwt_algorithm)
-        if jwt_extra_claims and isinstance(payload, dict):
-            token_payload = {k: payload[k] for k in jwt_extra_claims if k in payload}
-            if not token_payload:
-                token_payload = payload
-        else:
-            token_payload = payload
-        token = jwt_auth.generate_token(token_payload, expiration=jwt_expiration)
-        return JSONResponse({RESPONSE_KEY_TOKEN: token, RESPONSE_KEY_USER: payload})
-
-    return JSONResponse({RESPONSE_KEY_USER: payload})
+    async def _validated_user(
+        self, username: str, password: str
+    ) -> dict[str, Any] | None:
+        """The app's login_validator wins; otherwise the backend's own override."""
+        validate = self._login_validator or self._backend.validate_credentials
+        try:
+            user = validate(username, password)
+            # The README shows `async def validate_credentials` on a subclass.
+            if inspect.isawaitable(user):
+                user = await user
+        except Exception as exc:
+            logger.warning("validate_credentials raised: %s", exc)
+            return None
+        return user

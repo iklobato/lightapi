@@ -26,6 +26,15 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead; only `async def` overrides were served. Both are served now, on sync and
   async engines. A column that happens to be called `post` or `get` is still a
   column, not an override.
+- **`/auth/login` ignored a backend's `validate_credentials`**: the login route
+  always validated through a bare `JWTAuthentication()`, so overriding
+  `validate_credentials()` on a subclass (the README's "custom authentication")
+  never ran and login returned `401`. The route now uses the backend the endpoint
+  configured, sync or `async def`. An app-level `login_validator` still wins.
+- **Auth settings were dropped for backend subclasses**: `jwt_expiration`,
+  `jwt_algorithm` and `jwt_extra_claims` only reached a backend whose class was named
+  exactly `JWTAuthentication`. Subclasses get them too, unless they define their own
+  `__init__`.
 
 ## [Unreleased] — 0.1.24
 
