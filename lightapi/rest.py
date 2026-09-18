@@ -6,6 +6,7 @@ import asyncio
 import datetime
 from collections.abc import Callable
 from decimal import Decimal
+from functools import partial
 from typing import TYPE_CHECKING, Any, get_args, get_origin
 from uuid import UUID
 
@@ -33,10 +34,10 @@ from starlette.responses import JSONResponse, Response
 from lightapi.constants import (
     AUTO_FIELDS,
     RESPONSE_KEY_DETAIL,
-    RESPONSE_KEY_RESULTS,
     HTTPStatus,
 )
 from lightapi.exceptions import ConfigurationError
+from lightapi.pagination import NoPagination
 from lightapi.schema import (
     SchemaFactory,
     _apply_fields,
@@ -343,33 +344,11 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     # ── CRUD core: one implementation, always given an open sync Session ─────
 
     def _list(self, session: Session, request: Request, qs: Any) -> Response:
-        pagination_cfg = self._meta.get("pagination")
+        pagination = self._meta.get("pagination")
+        paginator = pagination.build_paginator() if pagination else NoPagination()
         qs = self._run_filter_backends(request, qs)
-
-        if pagination_cfg:
-            from lightapi.pagination import CursorPaginator, PageNumberPaginator
-
-            if pagination_cfg.style == "cursor":
-                pager = CursorPaginator()
-                rows, next_cursor = pager.paginate(
-                    request, qs, session, pagination_cfg.page_size
-                )
-                results = [self._serialize_row(r, "GET") for r in rows]
-                return JSONResponse(pager.wrap(results, next_cursor, None))
-            else:
-                pager = PageNumberPaginator()
-                page = int(request.query_params.get("page", 1))
-                rows, total = pager.paginate(
-                    request, qs, session, pagination_cfg.page_size
-                )
-                results = [self._serialize_row(r, "GET") for r in rows]
-                return JSONResponse(
-                    pager.wrap(request, results, total, page, pagination_cfg.page_size)
-                )
-
-        instances = session.execute(qs).scalars().all()
-        results = [self._serialize_row(inst, "GET") for inst in instances]
-        return JSONResponse({RESPONSE_KEY_RESULTS: results})
+        serialize = partial(self._serialize_row, method="GET")
+        return JSONResponse(paginator.render(request, qs, session, serialize))
 
     def _retrieve(self, session: Session, pk: int) -> Response:
         cls = type(self)

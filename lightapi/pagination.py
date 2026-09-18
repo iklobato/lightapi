@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, Protocol
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,6 +11,7 @@ from starlette.requests import Request
 
 from lightapi.constants import (
     CURSOR_PARAM,
+    DEFAULT_PAGE_SIZE,
     PAGE_PARAM,
     RESPONSE_KEY_COUNT,
     RESPONSE_KEY_NEXT,
@@ -31,8 +32,40 @@ def decode_cursor(cursor: str) -> int:
     return json.loads(base64.urlsafe_b64decode(cursor.encode()))["id"]
 
 
+RowSerializer = Callable[[Any], dict[str, Any]]
+
+
+class Paginator(Protocol):
+    """Turns a query into the body of a list response."""
+
+    def render(
+        self, request: Request, qs: Any, session: Session, serialize: RowSerializer
+    ) -> dict[str, Any]: ...
+
+
+class NoPagination:
+    """Every row in a single response."""
+
+    def render(
+        self, request: Request, qs: Any, session: Session, serialize: RowSerializer
+    ) -> dict[str, Any]:
+        rows = session.execute(qs).scalars().all()
+        return {RESPONSE_KEY_RESULTS: [serialize(row) for row in rows]}
+
+
 class PageNumberPaginator:
     """Page-number based paginator that returns count/next/previous/results."""
+
+    def __init__(self, page_size: int = DEFAULT_PAGE_SIZE) -> None:
+        self.page_size = page_size
+
+    def render(
+        self, request: Request, qs: Any, session: Session, serialize: RowSerializer
+    ) -> dict[str, Any]:
+        rows, total = self.paginate(request, qs, session, self.page_size)
+        page = int(request.query_params.get(PAGE_PARAM, 1))
+        results = [serialize(row) for row in rows]
+        return self.wrap(request, results, total, page, self.page_size)
 
     def paginate(
         self,
@@ -91,6 +124,15 @@ class PageNumberPaginator:
 class CursorPaginator:
     """Keyset cursor-based paginator using base64(json({"id": last_id}))."""
 
+    def __init__(self, page_size: int = DEFAULT_PAGE_SIZE) -> None:
+        self.page_size = page_size
+
+    def render(
+        self, request: Request, qs: Any, session: Session, serialize: RowSerializer
+    ) -> dict[str, Any]:
+        rows, next_cursor = self.paginate(request, qs, session, self.page_size)
+        return self.wrap([serialize(row) for row in rows], next_cursor, None)
+
     def paginate(
         self,
         request: Request,
@@ -147,3 +189,9 @@ class CursorPaginator:
             RESPONSE_KEY_PREVIOUS: prev_cursor,
             RESPONSE_KEY_RESULTS: results,
         }
+
+
+PAGINATORS: dict[str, type[PageNumberPaginator] | type[CursorPaginator]] = {
+    "page_number": PageNumberPaginator,
+    "cursor": CursorPaginator,
+}

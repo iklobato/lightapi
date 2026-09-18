@@ -13,6 +13,7 @@ from lightapi.constants import (
     VALID_PAGINATION_STYLES,
 )
 from lightapi.exceptions import ConfigurationError
+from lightapi.pagination import PAGINATORS, Paginator
 
 if TYPE_CHECKING:
     from lightapi.authentication import BaseAuthentication
@@ -119,6 +120,9 @@ class Pagination:
             )
         if self.page_size < 1:
             raise ConfigurationError("Pagination page_size must be a positive integer.")
+
+    def build_paginator(self) -> Paginator:
+        return PAGINATORS[self.style](self.page_size)
 
 
 @dataclass(frozen=True)
