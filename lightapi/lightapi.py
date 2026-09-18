@@ -6,7 +6,6 @@ import asyncio
 import importlib
 import logging
 import os
-import warnings
 from typing import Any, Callable
 
 import uvicorn
@@ -66,50 +65,13 @@ class LightApi:
         login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
         use_test_isolation: bool = False,
     ) -> None:
-        if engine is None and database_url:
-            engine = create_engine(database_url)
-        elif engine is None:
-            url = os.environ.get("LIGHTAPI_DATABASE_URL")
-            if url is None:
-                raise ConfigurationError(
-                    "No database configured. Provide engine=..., database_url=..., or set "
-                    "LIGHTAPI_DATABASE_URL environment variable."
-                )
-            engine = create_engine(url)
-
-        # Store engine first (we'll detect mode later)
-        self._engine = engine
-
-        # Use explicit mode if provided, otherwise will be auto-detected in register()
-        if mode is not None:
-            if mode not in ("sync", "async"):
-                raise ConfigurationError(
-                    f"mode must be 'sync' or 'async', got '{mode}'"
-                )
-            self._mode = mode
-        else:
-            self._mode = "sync"  # Will be auto-detected in register()
-
-        # Create session manager
+        self._engine = engine if engine is not None else _engine_from_url(database_url)
+        self._mode = _checked_mode(mode)
         self._session_manager = session_manager or SessionManager(
-            engine, use_test_isolation=use_test_isolation
+            self._engine, use_test_isolation=use_test_isolation
         )
-
-        # Store login_validator for backward compatibility
         self._login_validator = login_validator
-
-        # Rate limiter setup
-        self._rate_limiter_global: RateLimiter | None = None
-        if rate_limiter is not None:
-            if isinstance(rate_limiter, RateLimiter):
-                self._rate_limiter_global = rate_limiter
-            elif isinstance(rate_limiter, dict):
-                self._rate_limiter_global = RateLimiter(
-                    **{
-                        limit: rate_limiter.get(limit, default)
-                        for limit, default in _LOGIN_RATE_LIMITS.items()
-                    }
-                )
+        self._rate_limiter_global = _as_rate_limiter(rate_limiter)
 
         self._routes: list[Route] = []
         self._endpoint_map: dict[str, type] = {}
@@ -128,116 +90,60 @@ class LightApi:
             mapping: ``{"/path": EndpointClass}`` dictionary.
                 Each class must be a ``RestEndpoint`` subclass.
         """
-
-        # First pass: detect if any endpoint has async methods to auto-set mode
         for path, cls in mapping.items():
-            if not (isinstance(cls, type) and issubclass(cls, RestEndpoint)):
-                raise ConfigurationError(
-                    f"register() value for '{path}' must be a RestEndpoint subclass, "
-                    f"got {cls!r}."
-                )
+            _require_rest_endpoint(path, cls)
 
-            # Auto-detect mode from async methods
-            if self._mode == "sync":
-                for method_name in (
-                    "queryset",
-                    "get",
-                    "post",
-                    "put",
-                    "patch",
-                    "delete",
-                ):
-                    method = getattr(cls, method_name, None)
-                    # Check if it's a coroutine function (skip non-callable like SQLAlchemy Select)
-                    if (
-                        method is not None
-                        and callable(method)
-                        and asyncio.iscoroutinefunction(method)
-                    ):
-                        self._mode = "async"
-                        break
-
-        # Validate mode if explicitly set
+        # An `async def` verb or queryset on any endpoint switches the app to async.
+        if self._mode == "sync" and any(map(_has_async_handlers, mapping.values())):
+            self._mode = "async"
         if self._mode == "async":
-            try:
-                importlib.import_module("sqlalchemy.ext.asyncio")
-                from sqlalchemy.ext.asyncio import AsyncEngine
+            _require_async_engine(self._engine)
 
-                if not isinstance(self._engine, AsyncEngine):
-                    raise ConfigurationError(
-                        f"mode='async' requires AsyncEngine, got {type(self._engine).__name__}"
-                    )
-            except ImportError:
-                raise ConfigurationError(
-                    "mode='async' requires async dependencies. "
-                    "Install: uv add 'lightapi[async]'"
-                )
-
+        app_context = AppContext(
+            self._middlewares, self._mode == "async", self._login_validator
+        )
         for path, cls in mapping.items():
-            # Inject session manager into endpoint class
-            cls._session_manager = self._session_manager
+            self._register_endpoint(path, cls, app_context)
 
-            cls._table_source.map(cls, self._session_manager)
+    def _register_endpoint(self, path: str, cls: type, app_context: AppContext) -> None:
+        cls._session_manager = self._session_manager
+        cls._table_source.map(cls, self._session_manager)
+        logger.info(f"Registering endpoint {path} -> {cls.__name__}")
+        logger.debug(f"  SQLAlchemy metadata: {cls._meta}")
 
-            # Log registration for transparency
-            logger.info(f"Registering endpoint {path} -> {cls.__name__}")
-            logger.debug(f"  SQLAlchemy metadata: {cls._meta}")
-
-            # Warn if endpoint defines async queryset but engine is sync
-            if self._mode == "sync":
-                qs = cls.__dict__.get("queryset")
-                if qs is None:
-                    qs = getattr(cls, "queryset", None)
-                if qs is not None and asyncio.iscoroutinefunction(qs):
-                    warnings.warn(
-                        f"'{cls.__name__}.queryset' is async but engine is sync; "
-                        "sync path will be used.",
-                        RuntimeWarning,
-                        stacklevel=2,
-                    )
-            app_context = AppContext(
-                self._middlewares, self._mode == "async", self._login_validator
+        collection = EndpointHandler.for_collection(cls, app_context)
+        detail = EndpointHandler.for_detail(cls, app_context)
+        self._routes.append(
+            Route(
+                path,
+                endpoint=collection.handle,
+                methods=collection.methods,
+                name=f"{cls.__name__}_collection",
             )
-            collection = EndpointHandler.for_collection(cls, app_context)
-            detail = EndpointHandler.for_detail(cls, app_context)
-            self._routes.append(
-                Route(
-                    path,
-                    endpoint=collection.handle,
-                    methods=collection.methods,
-                    name=f"{cls.__name__}_collection",
-                )
+        )
+        self._routes.append(
+            Route(
+                path.rstrip("/") + "/{id:int}",
+                endpoint=detail.handle,
+                methods=detail.methods,
+                name=f"{cls.__name__}_detail",
             )
-            self._routes.append(
-                Route(
-                    path.rstrip("/") + "/{id:int}",
-                    endpoint=detail.handle,
-                    methods=detail.methods,
-                    name=f"{cls.__name__}_detail",
-                )
-            )
-            self._endpoint_map[path] = cls
+        )
+        self._endpoint_map[path] = cls
 
-        self._register_login_routes()
-
-    def _register_login_routes(self) -> None:
-        """(Re)build /auth/login and /auth/token when an endpoint uses JWT or Basic."""
+    def _login_routes(self) -> list[Route]:
+        """/auth/login and /auth/token, when an endpoint uses JWT or Basic auth."""
         backend = self._login_backend()
         if backend is None:
-            return
+            return []
 
         rate_limiter = self._rate_limiter_global or RateLimiter(**_LOGIN_RATE_LIMITS)
         login = LoginEndpoint(backend, self._login_validator, rate_limiter)
         auth_path = self._auth_path.rstrip("/")
-        login_paths = (f"{auth_path}/login", f"{auth_path}/token")
-
-        self._routes = [
-            route
-            for route in self._routes
-            if not (isinstance(route, Route) and route.path in login_paths)
+        return [
+            Route(f"{auth_path}/{name}", login.handle, methods=["POST"])
+            for name in ("login", "token")
         ]
-        for position, path in enumerate(login_paths):
-            self._routes.insert(position, Route(path, login.handle, methods=["POST"]))
 
     def _login_backend(self) -> BaseAuthentication | None:
         """The backend that answers the login routes: a JWT one if any, else Basic."""
@@ -267,30 +173,15 @@ class LightApi:
         """Create tables, build the Starlette ASGI app and start uvicorn."""
         if self._mode == "async":
             _validate_async_dependencies(self._engine)
-        self._create_tables()
-        self._check_cache_connections()
-
-        on_startup = [self._create_tables] if self._mode == "async" else []
-        app = Starlette(debug=debug, routes=self._asgi_routes(), on_startup=on_startup)
-
-        if self._cors_origins:
-            app.add_middleware(
-                StarletteCORSMiddleware,
-                allow_origins=self._cors_origins,
-                allow_credentials=True,
-                allow_methods=["*"],
-                allow_headers=["*"],
-            )
-
         uvicorn.run(
-            app,
+            self.build_app(debug=debug),
             host=host,
             port=port,
             log_level="debug" if debug else "info",
             reload=reload,
         )
 
-    def build_app(self) -> Starlette:
+    def build_app(self, *, debug: bool = False) -> Starlette:
         """Build and return the Starlette ASGI app without starting the server.
 
         Useful for testing with ``httpx.AsyncClient`` or ``starlette.testclient.TestClient``.
@@ -300,7 +191,7 @@ class LightApi:
         self._create_tables()
         self._check_cache_connections()
         on_startup = [self._create_tables] if self._mode == "async" else []
-        app = Starlette(routes=self._asgi_routes(), on_startup=on_startup)
+        app = Starlette(debug=debug, routes=self._asgi_routes(), on_startup=on_startup)
         if self._cors_origins:
             app.add_middleware(
                 StarletteCORSMiddleware,
@@ -312,8 +203,9 @@ class LightApi:
         return app
 
     def _asgi_routes(self) -> list[Route]:
-        """Registered endpoint routes plus the always-on ``/healthz`` probe."""
+        """Login routes first, then the endpoints, then the always-on ``/healthz``."""
         return [
+            *self._login_routes(),
             *self._routes,
             Route(HEALTH_PATH, HealthCheckEndpoint),
         ]
@@ -416,6 +308,69 @@ class LightApi:
                         stacklevel=3,
                     )
                 break
+
+
+_ASYNC_HANDLER_NAMES = ("queryset", "get", "post", "put", "patch", "delete")
+
+
+def _engine_from_url(database_url: str | None) -> Any:
+    url = database_url or os.environ.get("LIGHTAPI_DATABASE_URL")
+    if url is None:
+        raise ConfigurationError(
+            "No database configured. Provide engine=..., database_url=..., or set "
+            "LIGHTAPI_DATABASE_URL environment variable."
+        )
+    return create_engine(url)
+
+
+def _checked_mode(mode: str | None) -> str:
+    """'sync' unless told otherwise; register() may still switch it to 'async'."""
+    if mode is None:
+        return "sync"
+    if mode not in ("sync", "async"):
+        raise ConfigurationError(f"mode must be 'sync' or 'async', got '{mode}'")
+    return mode
+
+
+def _as_rate_limiter(value: RateLimiter | dict[str, int] | None) -> RateLimiter | None:
+    if isinstance(value, dict):
+        return RateLimiter(
+            **{
+                limit: value.get(limit, default)
+                for limit, default in _LOGIN_RATE_LIMITS.items()
+            }
+        )
+    return value if isinstance(value, RateLimiter) else None
+
+
+def _require_rest_endpoint(path: str, cls: Any) -> None:
+    if not (isinstance(cls, type) and issubclass(cls, RestEndpoint)):
+        raise ConfigurationError(
+            f"register() value for '{path}' must be a RestEndpoint subclass, "
+            f"got {cls!r}."
+        )
+
+
+def _has_async_handlers(cls: type) -> bool:
+    # A queryset may be a Select, which is not callable, so check before asking.
+    return any(
+        callable(handler) and asyncio.iscoroutinefunction(handler)
+        for handler in (getattr(cls, name, None) for name in _ASYNC_HANDLER_NAMES)
+    )
+
+
+def _require_async_engine(engine: Any) -> None:
+    try:
+        from sqlalchemy.ext.asyncio import AsyncEngine
+    except ImportError:
+        raise ConfigurationError(
+            "mode='async' requires async dependencies. "
+            "Install: uv add 'lightapi[async]'"
+        )
+    if not isinstance(engine, AsyncEngine):
+        raise ConfigurationError(
+            f"mode='async' requires AsyncEngine, got {type(engine).__name__}"
+        )
 
 
 def _validate_async_dependencies(engine: Any) -> None:
