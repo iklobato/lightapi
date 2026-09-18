@@ -12,10 +12,10 @@ When `app.register({"/items": ItemEndpoint})` is called, LightAPI registers two 
 
 | Route | Methods | Handler |
 |-------|---------|---------|
-| `/items` | `GET`, `POST` | `handler_factory.make_collection_handler(cls, ...)` |
-| `/items/{id:int}` | `GET`, `PUT`, `PATCH`, `DELETE` | `handler_factory.make_detail_handler(cls, ...)` |
+| `/items` | `GET`, `POST` | `EndpointHandler.for_collection(cls, ...).handle` |
+| `/items/{id:int}` | `GET`, `PUT`, `PATCH`, `DELETE` | `EndpointHandler.for_detail(cls, ...).handle` |
 
-Both handlers are closures that instantiate the endpoint class per request and dispatch to the appropriate CRUD method.
+Both handlers instantiate the endpoint class per request and dispatch to the appropriate CRUD method.
 
 ## Request Dispatch Flow
 

@@ -18,6 +18,7 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from lightapi.authentication import BasicAuthentication, JWTAuthentication
+from lightapi.endpoint_handler import EndpointHandler
 from lightapi.exceptions import ConfigurationError
 from lightapi.health import HEALTH_PATH, HealthCheckEndpoint
 from lightapi.rest import RestEndpoint
@@ -255,28 +256,27 @@ class LightApi:
                     cls._schema_deferred = False
                 cls._reflect_deferred = False
 
-            allowed = cls._allowed_methods
-            from lightapi.handler_factory import (
-                make_collection_handler,
-                make_detail_handler,
+            is_async = self._mode == "async"
+            collection = EndpointHandler.for_collection(
+                cls, self._middlewares, is_async
             )
-
-            collection_route = Route(
-                path,
-                endpoint=make_collection_handler(
-                    cls, self._middlewares, self._mode == "async"
-                ),
-                methods=[m for m in allowed if m in {"GET", "POST"}],
+            detail = EndpointHandler.for_detail(cls, self._middlewares, is_async)
+            self._routes.append(
+                Route(
+                    path,
+                    endpoint=collection.handle,
+                    methods=collection.methods,
+                    name=f"{cls.__name__}_collection",
+                )
             )
-            detail_route = Route(
-                path.rstrip("/") + "/{id:int}",
-                endpoint=make_detail_handler(
-                    cls, self._middlewares, self._mode == "async"
-                ),
-                methods=[m for m in allowed if m in {"GET", "PUT", "PATCH", "DELETE"}],
+            self._routes.append(
+                Route(
+                    path.rstrip("/") + "/{id:int}",
+                    endpoint=detail.handle,
+                    methods=detail.methods,
+                    name=f"{cls.__name__}_detail",
+                )
             )
-            self._routes.append(collection_route)
-            self._routes.append(detail_route)
             self._endpoint_map[path] = cls
 
         # Auto-register /auth/login and /auth/token when JWT or Basic auth is used

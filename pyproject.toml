@@ -177,9 +177,7 @@ module = [
     "lightapi._login",
     "lightapi.auth_checker",
     "lightapi.cache_helper",
-    "lightapi.handler_factory",
     "lightapi.middleware_runner",
-    "lightapi.response_wrapper",
     "lightapi.session_manager",
     "lightapi.table_mapping",
 ]
