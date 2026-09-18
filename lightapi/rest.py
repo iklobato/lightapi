@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, get_args, get_origin
 from uuid import UUID
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
     from starlette.background import BackgroundTasks
 
 from sqlalchemy import (
@@ -43,6 +44,7 @@ from lightapi.schema import (
     normalise_serializer,
     resolve_fields,
 )
+from lightapi.session import get_async_session, get_sync_session
 
 _AUTO_FIELDS = AUTO_FIELDS
 
@@ -338,70 +340,55 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             result = {k: v for k, v in result.items() if k in fields}
         return result
 
-    def list(self, request: Request) -> Response:
-        """Handle GET /{path} — return collection."""
-        from sqlalchemy.orm import Session
+    # ── CRUD core: one implementation, always given an open sync Session ─────
 
-        engine = self._get_engine()
+    def _list(self, session: Session, request: Request, qs: Any) -> Response:
         pagination_cfg = self._meta.get("pagination")
+        qs = self._run_filter_backends(request, qs)
 
-        with Session(engine) as session:
-            qs = self._get_queryset(request)
-            qs = self._run_filter_backends(request, qs)
+        if pagination_cfg:
+            from lightapi.pagination import CursorPaginator, PageNumberPaginator
 
-            if pagination_cfg:
-                from lightapi.pagination import CursorPaginator, PageNumberPaginator
-
-                if pagination_cfg.style == "cursor":
-                    pager = CursorPaginator()
-                    rows, next_cursor = pager.paginate(
-                        request, qs, session, pagination_cfg.page_size
-                    )
-                    results = [self._serialize_row(r, "GET") for r in rows]
-                    return JSONResponse(pager.wrap(results, next_cursor, None))
-                else:
-                    pager = PageNumberPaginator()
-                    page = int(request.query_params.get("page", 1))
-                    rows, total = pager.paginate(
-                        request, qs, session, pagination_cfg.page_size
-                    )
-                    results = [self._serialize_row(r, "GET") for r in rows]
-                    return JSONResponse(
-                        pager.wrap(
-                            request, results, total, page, pagination_cfg.page_size
-                        )
-                    )
-
-            instances = session.execute(qs).scalars().all()
-            results = [self._serialize_row(inst, "GET") for inst in instances]
-            return JSONResponse({RESPONSE_KEY_RESULTS: results})
-
-    def retrieve(self, request: Request, pk: int) -> Response:
-        """Handle GET /{path}/{id}."""
-        from sqlalchemy.orm import Session
-
-        engine = self._get_engine()
-        cls = type(self)
-        with Session(engine) as session:
-            instance = (
-                session.execute(
-                    sa_select(cls._model_class).where(cls._model_class.id == pk)
+            if pagination_cfg.style == "cursor":
+                pager = CursorPaginator()
+                rows, next_cursor = pager.paginate(
+                    request, qs, session, pagination_cfg.page_size
                 )
-                .scalars()
-                .first()
-            )
-            if instance is None:
+                results = [self._serialize_row(r, "GET") for r in rows]
+                return JSONResponse(pager.wrap(results, next_cursor, None))
+            else:
+                pager = PageNumberPaginator()
+                page = int(request.query_params.get("page", 1))
+                rows, total = pager.paginate(
+                    request, qs, session, pagination_cfg.page_size
+                )
+                results = [self._serialize_row(r, "GET") for r in rows]
                 return JSONResponse(
-                    {RESPONSE_KEY_DETAIL: "not found"}, status_code=HTTPStatus.NOT_FOUND
+                    pager.wrap(request, results, total, page, pagination_cfg.page_size)
                 )
-            return JSONResponse(self._serialize_row(instance, "GET"))
 
-    def create(self, data: dict[str, Any]) -> Response:
-        """Handle POST /{path} — validate input and insert row."""
+        instances = session.execute(qs).scalars().all()
+        results = [self._serialize_row(inst, "GET") for inst in instances]
+        return JSONResponse({RESPONSE_KEY_RESULTS: results})
+
+    def _retrieve(self, session: Session, pk: int) -> Response:
+        cls = type(self)
+        instance = (
+            session.execute(
+                sa_select(cls._model_class).where(cls._model_class.id == pk)
+            )
+            .scalars()
+            .first()
+        )
+        if instance is None:
+            return JSONResponse(
+                {RESPONSE_KEY_DETAIL: "not found"}, status_code=HTTPStatus.NOT_FOUND
+            )
+        return JSONResponse(self._serialize_row(instance, "GET"))
+
+    def _create(self, session: Session, data: dict[str, Any]) -> Response:
         from pydantic import ValidationError
-        from sqlalchemy.orm import Session
 
-        engine = self._get_engine()
         cls = type(self)
         try:
             validated = cls.__schema_create__.model_validate(data)
@@ -411,27 +398,25 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                 status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
             )
 
-        with Session(engine) as session:
-            now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-            instance = cls._model_class(
-                **validated.model_dump(),
-                created_at=now,
-                updated_at=now,
-                version=1,
-            )
-            session.add(instance)
-            session.flush()  # executes INSERT, populates auto-increment id
-            session.refresh(
-                instance
-            )  # re-loads all columns (including DB-generated ones)
-            response_data = self._serialize_row(instance, "POST")
-            session.commit()
-            return JSONResponse(response_data, status_code=HTTPStatus.CREATED)
+        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        instance = cls._model_class(
+            **validated.model_dump(),
+            created_at=now,
+            updated_at=now,
+            version=1,
+        )
+        session.add(instance)
+        session.flush()  # executes INSERT, populates auto-increment id
+        session.refresh(instance)  # re-loads DB-generated columns
+        return JSONResponse(
+            self._serialize_row(instance, "POST"), status_code=HTTPStatus.CREATED
+        )
 
-    def update(self, data: dict[str, Any], pk: int, partial: bool = False) -> Response:
-        """Handle PUT/PATCH /{path}/{id} with optimistic locking."""
+    def _update(
+        self, session: Session, data: dict[str, Any], pk: int, partial: bool
+    ) -> Response:
+        """PUT/PATCH with optimistic locking on the ``version`` column."""
         from pydantic import ValidationError
-        from sqlalchemy.orm import Session
 
         client_version = data.get("version")
         if client_version is None:
@@ -444,7 +429,6 @@ class RestEndpoint(metaclass=RestEndpointMeta):
                 status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
             )
 
-        engine = self._get_engine()
         cls = type(self)
 
         try:
@@ -495,68 +479,85 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
         update_data.pop("version", None)
 
-        with Session(engine) as session:
-            result = session.execute(
-                update(cls._model_class)
-                .where(
-                    cls._model_class.id == pk,
-                    cls._model_class.version == client_version,
-                )
-                .values(
-                    **update_data,
-                    version=client_version + 1,
-                    updated_at=datetime.datetime.now(datetime.timezone.utc).replace(
-                        tzinfo=None
-                    ),
-                )
+        result = session.execute(
+            update(cls._model_class)
+            .where(
+                cls._model_class.id == pk,
+                cls._model_class.version == client_version,
             )
-            if result.rowcount == 0:
-                exists = session.execute(
-                    sa_select(cls._model_class.id).where(cls._model_class.id == pk)
-                ).first()
-                session.rollback()
-                if not exists:
-                    return JSONResponse(
-                        {RESPONSE_KEY_DETAIL: "not found"},
-                        status_code=HTTPStatus.NOT_FOUND,
-                    )
+            .values(
+                **update_data,
+                version=client_version + 1,
+                updated_at=datetime.datetime.now(datetime.timezone.utc).replace(
+                    tzinfo=None
+                ),
+            )
+        )
+        if result.rowcount == 0:
+            exists = session.execute(
+                sa_select(cls._model_class.id).where(cls._model_class.id == pk)
+            ).first()
+            session.rollback()
+            if not exists:
                 return JSONResponse(
-                    {RESPONSE_KEY_DETAIL: "version conflict"},
-                    status_code=HTTPStatus.CONFLICT,
+                    {RESPONSE_KEY_DETAIL: "not found"},
+                    status_code=HTTPStatus.NOT_FOUND,
                 )
-            # Re-fetch so all columns (including updated_at/version) are current
-            instance = (
-                session.execute(
-                    sa_select(cls._model_class).where(cls._model_class.id == pk)
-                )
-                .scalars()
-                .first()
+            return JSONResponse(
+                {RESPONSE_KEY_DETAIL: "version conflict"},
+                status_code=HTTPStatus.CONFLICT,
             )
-            response_data = self._serialize_row(instance, "PUT")
-            session.commit()
-            return JSONResponse(response_data)
+        # Re-fetch so all columns (including updated_at/version) are current
+        instance = (
+            session.execute(
+                sa_select(cls._model_class).where(cls._model_class.id == pk)
+            )
+            .scalars()
+            .first()
+        )
+        return JSONResponse(self._serialize_row(instance, "PUT"))
+
+    def _destroy(self, session: Session, pk: int) -> Response:
+        cls = type(self)
+        stmt = (
+            delete(cls._model_class)
+            .where(cls._model_class.id == pk)
+            .returning(cls._model_class.id)
+        )
+        if session.execute(stmt).first() is None:
+            return JSONResponse(
+                {RESPONSE_KEY_DETAIL: "not found"}, status_code=HTTPStatus.NOT_FOUND
+            )
+        return Response(status_code=HTTPStatus.NO_CONTENT)
+
+    # ── Sync CRUD: the core inside a sync Session ─────────────────────────────
+
+    def list(self, request: Request) -> Response:
+        """Handle GET /{path} — return collection."""
+        with get_sync_session(self._get_engine()) as session:
+            return self._list(session, request, self._get_queryset(request))
+
+    def retrieve(self, request: Request, pk: int) -> Response:
+        """Handle GET /{path}/{id}."""
+        with get_sync_session(self._get_engine()) as session:
+            return self._retrieve(session, pk)
+
+    def create(self, data: dict[str, Any]) -> Response:
+        """Handle POST /{path} — validate input and insert row."""
+        with get_sync_session(self._get_engine()) as session:
+            return self._create(session, data)
+
+    def update(self, data: dict[str, Any], pk: int, partial: bool = False) -> Response:
+        """Handle PUT/PATCH /{path}/{id} with optimistic locking."""
+        with get_sync_session(self._get_engine()) as session:
+            return self._update(session, data, pk, partial)
 
     def destroy(self, request: Request, pk: int) -> Response:
         """Handle DELETE /{path}/{id}."""
-        from sqlalchemy.orm import Session
+        with get_sync_session(self._get_engine()) as session:
+            return self._destroy(session, pk)
 
-        engine = self._get_engine()
-        cls = type(self)
-        with Session(engine) as session:
-            stmt = (
-                delete(cls._model_class)
-                .where(cls._model_class.id == pk)
-                .returning(cls._model_class.id)
-            )
-            result = session.execute(stmt).first()
-            if result is None:
-                return JSONResponse(
-                    {RESPONSE_KEY_DETAIL: "not found"}, status_code=HTTPStatus.NOT_FOUND
-                )
-            session.commit()
-            return Response(status_code=HTTPStatus.NO_CONTENT)
-
-    # ── Async queryset resolver ───────────────────────────────────────────────
+    # ── Async CRUD: the same core, run through AsyncSession.run_sync ──────────
 
     async def _get_queryset_async(self, request: Request) -> Any:
         """Resolve queryset; await if it is a coroutine function."""
@@ -586,222 +587,27 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
         return session_manager.engine
 
-    # ── Async CRUD ────────────────────────────────────────────────────────────
+    async def _in_async_session(self, work: Callable[[Session], Response]) -> Response:
+        async with get_async_session(self._get_async_engine()) as session:
+            return await session.run_sync(work)
 
     async def _list_async(self, request: Request) -> Response:
-        """Async mirror of list(); uses AsyncSession."""
-        from lightapi.session import get_async_session
-
-        engine = self._get_async_engine()
-        pagination_cfg = self._meta.get("pagination")
-
-        async with get_async_session(engine) as session:
-            qs = await self._get_queryset_async(request)
-            qs = self._run_filter_backends(request, qs)
-
-            if pagination_cfg:
-                from lightapi.pagination import CursorPaginator, PageNumberPaginator
-
-                if pagination_cfg.style == "cursor":
-                    pager = CursorPaginator()
-                    rows, next_cursor = await pager.paginate_async(
-                        request, qs, session, pagination_cfg.page_size
-                    )
-                    results = [self._serialize_row(r, "GET") for r in rows]
-                    return JSONResponse(pager.wrap(results, next_cursor, None))
-                else:
-                    pager = PageNumberPaginator()
-                    page = int(request.query_params.get("page", 1))
-                    rows, total = await pager.paginate_async(
-                        request, qs, session, pagination_cfg.page_size
-                    )
-                    results = [self._serialize_row(r, "GET") for r in rows]
-                    return JSONResponse(
-                        pager.wrap(
-                            request, results, total, page, pagination_cfg.page_size
-                        )
-                    )
-
-            instances = (await session.execute(qs)).scalars().all()
-            results = [self._serialize_row(inst, "GET") for inst in instances]
-            return JSONResponse({"results": results})
+        """Async list(); an ``async def queryset`` is awaited first."""
+        qs = await self._get_queryset_async(request)
+        return await self._in_async_session(lambda s: self._list(s, request, qs))
 
     async def _retrieve_async(self, request: Request, pk: int) -> Response:
-        """Async mirror of retrieve(); uses AsyncSession."""
-        from lightapi.session import get_async_session
-
-        engine = self._get_async_engine()
-        cls = type(self)
-        async with get_async_session(engine) as session:
-            instance = (
-                (
-                    await session.execute(
-                        sa_select(cls._model_class).where(cls._model_class.id == pk)
-                    )
-                )
-                .scalars()
-                .first()
-            )
-            if instance is None:
-                return JSONResponse(
-                    {RESPONSE_KEY_DETAIL: "not found"}, status_code=HTTPStatus.NOT_FOUND
-                )
-            return JSONResponse(self._serialize_row(instance, "GET"))
+        return await self._in_async_session(lambda s: self._retrieve(s, pk))
 
     async def _create_async(self, data: dict[str, Any]) -> Response:
-        """Async mirror of create(); ORM-style insert with flush/refresh."""
-        from pydantic import ValidationError
-
-        from lightapi.session import get_async_session
-
-        engine = self._get_async_engine()
-        cls = type(self)
-        try:
-            validated = cls.__schema_create__.model_validate(data)
-        except ValidationError as exc:
-            return JSONResponse(
-                {RESPONSE_KEY_DETAIL: exc.errors()},
-                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            )
-
-        async with get_async_session(engine) as session:
-            now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-            instance = cls._model_class(
-                **validated.model_dump(),
-                created_at=now,
-                updated_at=now,
-                version=1,
-            )
-            session.add(instance)
-            await session.flush()
-            await session.refresh(instance)
-            response_data = self._serialize_row(instance, "POST")
-            return JSONResponse(response_data, status_code=HTTPStatus.CREATED)
+        return await self._in_async_session(lambda s: self._create(s, data))
 
     async def _update_async(
         self, data: dict[str, Any], pk: int, partial: bool = False
     ) -> Response:
-        """Async mirror of update() with optimistic locking."""
-        from pydantic import ValidationError
-
-        from lightapi.session import get_async_session
-
-        client_version = data.get("version")
-        if client_version is None:
-            return JSONResponse(
-                {
-                    RESPONSE_KEY_DETAIL: [
-                        {"loc": ["version"], "msg": "Field required", "type": "missing"}
-                    ]
-                },
-                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            )
-
-        engine = self._get_async_engine()
-        cls = type(self)
-
-        try:
-            if partial:
-                from typing import Optional as _Opt
-
-                from pydantic import ConfigDict as _CD
-                from pydantic import create_model as _cm
-
-                patch_fields: dict[str, Any] = {}
-                for fname, finfo in cls.__schema_create__.model_fields.items():
-                    ann = finfo.annotation
-                    patch_fields[fname] = (_Opt[ann], None)  # type: ignore[valid-type]
-                PatchSchema = _cm(
-                    f"{cls.__name__}PatchSchema",
-                    __config__=_CD(from_attributes=True),
-                    **patch_fields,
-                )
-                validated = PatchSchema.model_validate(data)
-                from sqlalchemy import inspect as _sa_inspect
-
-                nullable_cols: set[str] = {
-                    attr.key
-                    for attr in _sa_inspect(cls._model_class).mapper.column_attrs
-                    if any(c.nullable for c in attr.columns)
-                }
-                update_data = {
-                    k: v
-                    for k, v in validated.model_dump(exclude_unset=True).items()
-                    if k not in _AUTO_FIELDS and (v is not None or k in nullable_cols)
-                }
-            else:
-                validated = cls.__schema_create__.model_validate(data)
-                update_data = {
-                    k: v
-                    for k, v in validated.model_dump().items()
-                    if k not in _AUTO_FIELDS
-                }
-        except ValidationError as exc:
-            return JSONResponse(
-                {RESPONSE_KEY_DETAIL: exc.errors()},
-                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            )
-
-        update_data.pop("version", None)
-
-        async with get_async_session(engine) as session:
-            result = await session.execute(
-                update(cls._model_class)
-                .where(
-                    cls._model_class.id == pk,
-                    cls._model_class.version == client_version,
-                )
-                .values(
-                    **update_data,
-                    version=client_version + 1,
-                    updated_at=datetime.datetime.now(datetime.timezone.utc).replace(
-                        tzinfo=None
-                    ),
-                )
-            )
-            if result.rowcount == 0:
-                exists = (
-                    await session.execute(
-                        sa_select(cls._model_class.id).where(cls._model_class.id == pk)
-                    )
-                ).first()
-                await session.rollback()
-                if not exists:
-                    return JSONResponse(
-                        {RESPONSE_KEY_DETAIL: "not found"},
-                        status_code=HTTPStatus.NOT_FOUND,
-                    )
-                return JSONResponse(
-                    {RESPONSE_KEY_DETAIL: "version conflict"},
-                    status_code=HTTPStatus.CONFLICT,
-                )
-            instance = (
-                (
-                    await session.execute(
-                        sa_select(cls._model_class).where(cls._model_class.id == pk)
-                    )
-                )
-                .scalars()
-                .first()
-            )
-            response_data = self._serialize_row(instance, "PUT")
-            return JSONResponse(response_data)
+        return await self._in_async_session(
+            lambda s: self._update(s, data, pk, partial)
+        )
 
     async def _destroy_async(self, request: Request, pk: int) -> Response:
-        """Async mirror of destroy()."""
-        from lightapi.session import get_async_session
-
-        engine = self._get_async_engine()
-        cls = type(self)
-        async with get_async_session(engine) as session:
-            stmt = (
-                delete(cls._model_class)
-                .where(cls._model_class.id == pk)
-                .returning(cls._model_class.id)
-            )
-            result = (await session.execute(stmt)).first()
-            if result is None:
-                return JSONResponse(
-                    {RESPONSE_KEY_DETAIL: "not found"}, status_code=HTTPStatus.NOT_FOUND
-                )
-            return Response(status_code=HTTPStatus.NO_CONTENT)
+        return await self._in_async_session(lambda s: self._destroy(s, pk))

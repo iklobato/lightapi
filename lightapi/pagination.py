@@ -55,15 +55,10 @@ class PageNumberPaginator:
         session: AsyncSession,
         page_size: int,
     ) -> tuple[list[Any], int]:
-        """Async mirror of paginate(); uses await session.execute()."""
-        page = max(1, int(request.query_params.get(PAGE_PARAM, 1)))
-        offset = (page - 1) * page_size
-        count_stmt = select(func.count()).select_from(qs.subquery())
-        total: int = (await session.execute(count_stmt)).scalar_one()
-        rows = (
-            (await session.execute(qs.limit(page_size).offset(offset))).scalars().all()
+        """paginate() for an AsyncSession."""
+        return await session.run_sync(
+            lambda sync_session: self.paginate(request, qs, sync_session, page_size)
         )
-        return list(rows), total
 
     def wrap(
         self,
@@ -136,33 +131,10 @@ class CursorPaginator:
         session: AsyncSession,
         page_size: int,
     ) -> tuple[list[Any], str | None]:
-        """Async mirror of paginate(); uses await session.execute()."""
-        cursor_str = request.query_params.get(CURSOR_PARAM)
-        if cursor_str:
-            try:
-                last_id = decode_cursor(cursor_str)
-                entity = (
-                    qs.columns_clause_froms[0]
-                    if hasattr(qs, "columns_clause_froms")
-                    else None
-                )
-                id_col = None
-                if entity is not None:
-                    id_col = entity.c.get("id")
-                if id_col is not None:
-                    qs = qs.where(id_col > last_id)
-            except Exception:
-                pass
-        rows = (
-            (await session.execute(qs.order_by("id").limit(page_size))).scalars().all()
+        """paginate() for an AsyncSession."""
+        return await session.run_sync(
+            lambda sync_session: self.paginate(request, qs, sync_session, page_size)
         )
-        next_cursor = None
-        if len(rows) == page_size:
-            last_obj = rows[-1]
-            last_row_id = getattr(last_obj, "id", None)
-            if last_row_id is not None:
-                next_cursor = encode_cursor(last_row_id)
-        return list(rows), next_cursor
 
     def wrap(
         self,
