@@ -47,15 +47,6 @@ class Config:
             )
         return algorithm
 
-    def update(self, **kwargs: Any) -> None:
-        """Update configuration values."""
-        if "jwt_secret" in kwargs:
-            self.jwt_secret = kwargs["jwt_secret"]
-        if "jwt_algorithm" in kwargs:
-            self.jwt_algorithm = kwargs["jwt_algorithm"]
-        if "jwt_expiration" in kwargs:
-            self.jwt_expiration = kwargs["jwt_expiration"]
-
 
 # Default global config instance for backward compatibility
 config = Config()
@@ -71,16 +62,6 @@ class Authentication:
     jwt_extra_claims: tuple[str, ...] = field(default_factory=tuple)
     jwt_algorithm: str | None = None
     rate_limiter: "RateLimiter | None" = field(default=None, repr=False)
-
-    def __post_init__(self) -> None:
-        # Lazy import to avoid circular imports
-        pass
-
-    @property
-    def permission_value(self) -> type:
-        from lightapi.authentication import AllowAny
-
-        return self.permission or AllowAny
 
 
 @dataclass(frozen=True)

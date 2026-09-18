@@ -21,17 +21,11 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Uuid,
     delete,
     update,
 )
 from sqlalchemy import select as sa_select
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-
-try:
-    from sqlalchemy import Uuid as SAUuid  # SQLAlchemy 2.0+
-except ImportError:
-    SAUuid = None  # type: ignore[assignment,misc]
-
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
@@ -59,7 +53,7 @@ _TYPE_MAP: dict[Any, Any] = {
     bool: Boolean,
     datetime.datetime: DateTime,
     Decimal: Numeric,
-    UUID: SAUuid if SAUuid is not None else PG_UUID,
+    UUID: Uuid,
 }
 
 _ALL_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
@@ -259,12 +253,6 @@ class RestEndpointMeta(type):
             all_columns = auto_cols + columns
             # Store columns for potential re-mapping during registration
             cls._all_columns = all_columns  # type: ignore[attr-defined]
-
-            # Determine table name for test isolation
-            table_name = getattr(meta_obj, "table", None) or f"{name.lower()}s"
-
-            # Store table name for potential test isolation during registration
-            cls._test_isolation_table_name = table_name  # type: ignore[attr-defined]
 
 
 class RestEndpoint(metaclass=RestEndpointMeta):
