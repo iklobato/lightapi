@@ -177,48 +177,7 @@ class LightApi:
             # Inject session manager into endpoint class
             cls._session_manager = self._session_manager
 
-            # Always map when test isolation is enabled or when not already mapped
-            if not getattr(cls, "_reflect_deferred", False):
-                from lightapi.session_manager import get_unique_table_name
-                from lightapi.table_mapping import map_imperatively
-
-                # Use test isolation table name if available
-                meta_obj = getattr(cls, "Meta", None)
-                table_name = (
-                    getattr(meta_obj, "table", None) or f"{cls.__name__.lower()}s"
-                )
-
-                # Always re-map with test-specific metadata when test isolation is enabled
-                if self._session_manager._use_test_isolation:
-                    # Generate unique table name for test isolation
-                    table_name = get_unique_table_name(table_name)
-                    logger.debug(
-                        "Mapping %s with test isolation table name: %s",
-                        cls.__name__,
-                        table_name,
-                    )
-
-                    # Create a new meta object with the unique table name
-                    class TestIsolationMeta:
-                        table = table_name
-                        reflect = getattr(meta_obj, "reflect", False)
-
-                    map_imperatively(
-                        cls,
-                        cls.__name__,
-                        columns=getattr(cls, "_all_columns", []),
-                        meta_obj=TestIsolationMeta,
-                        session_manager=self._session_manager,
-                    )
-                else:
-                    # Always map when not using test isolation
-                    map_imperatively(
-                        cls,
-                        cls.__name__,
-                        columns=getattr(cls, "_all_columns", []),
-                        meta_obj=meta_obj,
-                        session_manager=self._session_manager,
-                    )
+            cls._table_source.map(cls, self._session_manager)
 
             # Log registration for transparency
             logger.info(f"Registering endpoint {path} -> {cls.__name__}")
@@ -236,33 +195,6 @@ class LightApi:
                         RuntimeWarning,
                         stacklevel=2,
                     )
-            # Perform deferred reflection now that an engine is available
-            if getattr(cls, "_reflect_deferred", False):
-                from lightapi.table_mapping import map_reflected as _map_reflected
-
-                meta_obj = getattr(cls, "Meta", None) or type("Meta", (), {})
-                partial = cls._meta.get("reflect") == "partial"
-                extra_cols = getattr(cls, "_reflect_partial_columns", [])
-                _map_reflected(
-                    cls,
-                    cls.__name__,
-                    meta_obj,
-                    partial,
-                    extra_cols,
-                    session_manager=self._session_manager,
-                )
-                if getattr(cls, "_schema_deferred", False):
-                    from sqlalchemy import inspect as sa_inspect
-
-                    from lightapi.schema import SchemaFactory
-
-                    table = sa_inspect(cls).persist_selectable
-                    cls.__schema_create__, cls.__schema_read__ = (
-                        SchemaFactory.build_from_reflected_table(cls, table)
-                    )
-                    cls._schema_deferred = False
-                cls._reflect_deferred = False
-
             app_context = AppContext(
                 self._middlewares, self._mode == "async", self._login_validator
             )

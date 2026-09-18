@@ -46,6 +46,7 @@ from lightapi.schema import (
     resolve_fields,
 )
 from lightapi.session import get_async_session, get_sync_session
+from lightapi.table_mapping import DeclaredTable, ReflectedTable, TableSource
 
 _AUTO_FIELDS = AUTO_FIELDS
 
@@ -199,12 +200,11 @@ class RestEndpointMeta(type):
 
         # ── Step 4: SchemaFactory ─────────────────────────────────────────────
         if reflect is True or reflect == "full" or reflect == "partial":
+            # Built by ReflectedTable.map() once the columns are known.
             cls.__schema_create__ = None  # type: ignore[attr-defined]
             cls.__schema_read__ = None  # type: ignore[attr-defined]
-            cls._schema_deferred = True  # type: ignore[attr-defined]
         else:
             cls.__schema_create__, cls.__schema_read__ = SchemaFactory.build(cls)  # type: ignore[attr-defined]
-            cls._schema_deferred = False  # type: ignore[attr-defined]
 
         # ── Step 5: Parse Meta → _meta ────────────────────────────────────────
         meta_obj = namespace.get("Meta") or getattr(cls, "Meta", None)
@@ -246,16 +246,11 @@ class RestEndpointMeta(type):
                 allowed.add(http_method)
         cls._allowed_methods = allowed if allowed else set(_ALL_METHODS)  # type: ignore[attr-defined]
 
-        # ── Step 7: Imperative SQLAlchemy mapping ─────────────────────────────
+        # ── Step 7: Table source, mapped by LightApi.register() ───────────────
         if reflect is True or reflect == "full" or reflect == "partial":
-            # Defer reflection until LightApi.register() when an engine is available.
-            cls._reflect_deferred = True  # type: ignore[attr-defined]
-            cls._reflect_partial_columns = columns if reflect == "partial" else []  # type: ignore[attr-defined]
+            cls._table_source = ReflectedTable(columns, partial=reflect == "partial")  # type: ignore[attr-defined]
         else:
-            cls._reflect_deferred = False  # type: ignore[attr-defined]
-            all_columns = auto_cols + columns
-            # Store columns for potential re-mapping during registration
-            cls._all_columns = all_columns  # type: ignore[attr-defined]
+            cls._table_source = DeclaredTable(auto_cols + columns)  # type: ignore[attr-defined]
 
 
 class RestEndpoint(metaclass=RestEndpointMeta):
@@ -265,7 +260,8 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     The metaclass auto-generates SQLAlchemy columns and Pydantic schemas.
     """
 
-    _model_class: type
+    _model_class: type | None = None
+    _table_source: TableSource
     _meta: dict[str, Any]
     _allowed_methods: set[str]
     _fields_info: dict[str, Any]

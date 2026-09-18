@@ -96,3 +96,18 @@ class SessionManager:
     def registry(self) -> registry:
         """Get the registry."""
         return self._registry
+
+    @property
+    def is_async(self) -> bool:
+        return self._is_async
+
+    def table_name_for(self, base_name: str) -> str:
+        """The table name to use; test isolation gives every mapping a fresh one."""
+        if self._use_test_isolation:
+            return get_unique_table_name(base_name)
+        return base_name
+
+    def create_tables_now(self) -> None:
+        """Create missing tables on a sync engine; async engines wait for the loop."""
+        if not self._is_async:
+            self._metadata.create_all(self._engine)

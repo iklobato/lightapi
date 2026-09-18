@@ -628,7 +628,7 @@ def _build_endpoint_class(entry: EndpointConfig, defaults: DefaultsConfig) -> ty
                 pydantic_kwargs["default"] = default
             class_attrs[field_name] = Field(**pydantic_kwargs)
         # A constraint-less, default-less field is annotation-only. Do NOT set a
-        # class attribute: an Ellipsis placeholder would survive FieldInfoStripper
+        # class attribute: an Ellipsis placeholder would survive _strip_field_infos
         # (which only removes FieldInfo) and stop SQLAlchemy from mapping the
         # column, so the value would silently never be inserted.
 
