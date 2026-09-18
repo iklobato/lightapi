@@ -119,9 +119,6 @@ select = [
 "lightapi/cache.py" = [
     "E501",
 ]
-"lightapi/swagger.py" = [
-    "E501",
-]
 "lightapi/lightapi.py" = [
     "E501",
 ]
@@ -174,7 +171,6 @@ ignore_missing_imports = true
 module = [
     "lightapi.auth",
     "lightapi.cache",
-    "lightapi.swagger",
     "lightapi.lightapi",
     "lightapi.base_endpoint",
     "lightapi.core",
