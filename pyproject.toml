@@ -122,19 +122,7 @@ select = [
 "lightapi/lightapi.py" = [
     "E501",
 ]
-"lightapi/base_endpoint.py" = [
-    "E501",
-]
 "lightapi/core.py" = [
-    "E501",
-]
-"lightapi/database.py" = [
-    "E501",
-]
-"lightapi/handlers.py" = [
-    "E501",
-]
-"lightapi/models.py" = [
     "E501",
 ]
 "examples/*.py" = [
@@ -172,11 +160,7 @@ module = [
     "lightapi.auth",
     "lightapi.cache",
     "lightapi.lightapi",
-    "lightapi.base_endpoint",
     "lightapi.core",
-    "lightapi.database",
-    "lightapi.handlers",
-    "lightapi.models",
 ]
 ignore_errors = true
 
