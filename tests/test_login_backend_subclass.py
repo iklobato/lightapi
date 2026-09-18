@@ -10,6 +10,7 @@ from starlette.testclient import TestClient
 
 from lightapi import (
     Authentication,
+    BasicAuthentication,
     IsAuthenticated,
     JWTAuthentication,
     LightApi,
@@ -25,6 +26,16 @@ class SyncCredentialsBackend(JWTAuthentication):
     def validate_credentials(self, username: str, password: str):
         if password == "right":
             return {"sub": username, "is_admin": False}
+        return None
+
+
+class DirectoryBasicBackend(BasicAuthentication):
+    """A subclass of BasicAuthentication with its own validate_credentials,
+    matching how the README shows subclassing JWTAuthentication."""
+
+    def validate_credentials(self, username: str, password: str):
+        if password == "right":
+            return {"sub": username}
         return None
 
 
@@ -66,6 +77,15 @@ class OwnConstructorNote(RestEndpoint):
     class Meta:
         authentication = Authentication(
             backend=OwnConstructorBackend, permission=IsAuthenticated
+        )
+
+
+class DirectoryBasicNote(RestEndpoint):
+    text: str = LField(min_length=1)
+
+    class Meta:
+        authentication = Authentication(
+            backend=DirectoryBasicBackend, permission=IsAuthenticated
         )
 
 
@@ -143,6 +163,41 @@ def test_backend_with_its_own_constructor_still_protects_the_endpoint():
         "/ownconstructornotes", headers={"Authorization": f"Bearer {token}"}
     )
     denied = client.get("/ownconstructornotes")
+
+    assert allowed.status_code == 200
+    assert denied.status_code == 401
+
+
+def test_login_uses_a_basic_authentication_subclass():
+    client = _client("/directorybasicnotes", DirectoryBasicNote)
+
+    response = client.post(
+        "/auth/login", json={"username": "dora", "password": "right"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"user": {"sub": "dora"}}  # Basic: user, no token
+    assert "token" not in response.json()
+
+
+def test_login_with_wrong_password_on_basic_subclass_returns_401():
+    client = _client("/directorybasicnotes", DirectoryBasicNote)
+
+    response = client.post(
+        "/auth/login", json={"username": "dora", "password": "wrong"}
+    )
+
+    assert response.status_code == 401
+
+
+def test_basic_subclass_backend_still_guards_the_endpoint():
+    import base64
+
+    client = _client("/directorybasicnotes", DirectoryBasicNote)
+    header = "Basic " + base64.b64encode(b"dora:right").decode()
+
+    allowed = client.get("/directorybasicnotes", headers={"Authorization": header})
+    denied = client.get("/directorybasicnotes")
 
     assert allowed.status_code == 200
     assert denied.status_code == 401
