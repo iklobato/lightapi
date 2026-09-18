@@ -3,10 +3,11 @@ from __future__ import annotations
 import datetime
 import logging
 from decimal import Decimal
+from functools import lru_cache
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import ConfigDict, create_model
+from pydantic import BaseModel, ConfigDict, create_model
 from pydantic.fields import FieldInfo
 
 from lightapi.constants import AUTO_FIELDS
@@ -82,6 +83,24 @@ def _apply_fields(d: dict[str, Any], fields: list[str] | None) -> dict[str, Any]
     if fields is None:
         return d
     return {k: v for k, v in d.items() if k in fields}
+
+
+@lru_cache(maxsize=None)
+def patch_schema(schema_create: type[BaseModel]) -> type[BaseModel]:
+    """``schema_create`` with every field optional, so PATCH can send any subset.
+
+    Cached per create schema: endpoints are a fixed set of classes, and building a
+    pydantic model on every PATCH request was measurable work for nothing.
+    """
+    optional_fields: dict[str, Any] = {
+        name: (Optional[field.annotation], None)  # type: ignore[valid-type]
+        for name, field in schema_create.model_fields.items()
+    }
+    return create_model(
+        schema_create.__name__.replace("CreateSchema", "PatchSchema"),
+        __config__=ConfigDict(from_attributes=True),
+        **optional_fields,
+    )
 
 
 # Python types a reflected column is validated as; any other type stays ``Any``.

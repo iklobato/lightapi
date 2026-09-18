@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
     from starlette.background import BackgroundTasks
 
+from pydantic import ValidationError
 from sqlalchemy import (
     Boolean,
     Column,
@@ -24,8 +25,6 @@ from sqlalchemy import (
     Numeric,
     String,
     Uuid,
-    delete,
-    update,
 )
 from sqlalchemy import select as sa_select
 from starlette.requests import Request
@@ -38,11 +37,13 @@ from lightapi.constants import (
 )
 from lightapi.exceptions import ConfigurationError
 from lightapi.pagination import NoPagination
+from lightapi.repository import Repository, RowNotFound, VersionConflict
 from lightapi.schema import (
     SchemaFactory,
     _apply_fields,
     _row_to_dict,
     normalise_serializer,
+    patch_schema,
     resolve_fields,
 )
 from lightapi.session import get_async_session, get_sync_session
@@ -245,6 +246,23 @@ def _allowed_methods(cls: type) -> set[str]:
     return allowed or set(_ALL_METHODS)
 
 
+_ERROR_RESPONSES: dict[type[Exception], tuple[HTTPStatus, str]] = {
+    RowNotFound: (HTTPStatus.NOT_FOUND, "not found"),
+    VersionConflict: (HTTPStatus.CONFLICT, "version conflict"),
+}
+
+
+def _error_response(error: Exception) -> Response:
+    status, detail = _ERROR_RESPONSES[type(error)]
+    return JSONResponse({RESPONSE_KEY_DETAIL: detail}, status_code=status)
+
+
+def _unprocessable(errors: Any) -> Response:
+    return JSONResponse(
+        {RESPONSE_KEY_DETAIL: errors}, status_code=HTTPStatus.UNPROCESSABLE_ENTITY
+    )
+
+
 class RestEndpoint(metaclass=RestEndpointMeta):
     """Base class for all LightAPI endpoints.
 
@@ -338,163 +356,71 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         return JSONResponse(paginator.render(request, qs, session, serialize))
 
     def _retrieve(self, session: Session, pk: int) -> Response:
-        cls = type(self)
-        instance = (
-            session.execute(
-                sa_select(cls._model_class).where(cls._model_class.id == pk)
-            )
-            .scalars()
-            .first()
-        )
-        if instance is None:
-            return JSONResponse(
-                {RESPONSE_KEY_DETAIL: "not found"}, status_code=HTTPStatus.NOT_FOUND
-            )
-        return JSONResponse(self._serialize_row(instance, "GET"))
+        try:
+            row = self._repository(session).get(pk)
+        except RowNotFound as exc:
+            return _error_response(exc)
+        return JSONResponse(self._serialize_row(row, "GET"))
 
     def _create(self, session: Session, data: dict[str, Any]) -> Response:
-        from pydantic import ValidationError
-
-        cls = type(self)
         try:
-            validated = cls.__schema_create__.model_validate(data)
+            validated = type(self).__schema_create__.model_validate(data)
         except ValidationError as exc:
-            return JSONResponse(
-                {RESPONSE_KEY_DETAIL: exc.errors()},
-                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            )
+            return _unprocessable(exc.errors())
 
-        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-        instance = cls._model_class(
-            **validated.model_dump(),
-            created_at=now,
-            updated_at=now,
-            version=1,
-        )
-        session.add(instance)
-        session.flush()  # executes INSERT, populates auto-increment id
-        session.refresh(instance)  # re-loads DB-generated columns
+        row = self._repository(session).add(validated.model_dump())
         return JSONResponse(
-            self._serialize_row(instance, "POST"), status_code=HTTPStatus.CREATED
+            self._serialize_row(row, "POST"), status_code=HTTPStatus.CREATED
         )
 
     def _update(
         self, session: Session, data: dict[str, Any], pk: int, partial: bool
     ) -> Response:
-        """PUT/PATCH with optimistic locking on the ``version`` column."""
-        from pydantic import ValidationError
-
+        """PUT/PATCH; the client must send the ``version`` it last read."""
         client_version = data.get("version")
         if client_version is None:
-            return JSONResponse(
-                {
-                    RESPONSE_KEY_DETAIL: [
-                        {"loc": ["version"], "msg": "Field required", "type": "missing"}
-                    ]
-                },
-                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            return _unprocessable(
+                [{"loc": ["version"], "msg": "Field required", "type": "missing"}]
             )
 
-        cls = type(self)
+        repository = self._repository(session)
+        try:
+            values = self._update_values(data, partial, repository.nullable_columns)
+        except ValidationError as exc:
+            return _unprocessable(exc.errors())
 
         try:
-            if partial:
-                # Build a one-shot model where every field is Optional so that
-                # PATCH can supply any subset of fields without validation errors.
-                from typing import Optional as _Opt
+            row = repository.update(pk, client_version, values)
+        except (RowNotFound, VersionConflict) as exc:
+            return _error_response(exc)
+        return JSONResponse(self._serialize_row(row, "PUT"))
 
-                from pydantic import ConfigDict as _CD
-                from pydantic import create_model as _cm
+    def _update_values(
+        self, data: dict[str, Any], partial: bool, nullable_columns: set[str]
+    ) -> dict[str, Any]:
+        """Validated column values for an update, without the auto-managed fields."""
+        schema_create = type(self).__schema_create__
+        if not partial:
+            values = schema_create.model_validate(data).model_dump()
+            return {k: v for k, v in values.items() if k not in _AUTO_FIELDS}
 
-                patch_fields: dict[str, Any] = {}
-                for fname, finfo in cls.__schema_create__.model_fields.items():
-                    ann = finfo.annotation
-                    patch_fields[fname] = (_Opt[ann], None)  # type: ignore[valid-type]
-                PatchSchema = _cm(
-                    f"{cls.__name__}PatchSchema",
-                    __config__=_CD(from_attributes=True),
-                    **patch_fields,
-                )
-                validated = PatchSchema.model_validate(data)
-                # Determine which columns are nullable so explicit null values
-                # can clear Optional fields (non-nullable fields still skip None).
-                from sqlalchemy import inspect as _sa_inspect
-
-                nullable_cols: set[str] = {
-                    attr.key
-                    for attr in _sa_inspect(cls._model_class).mapper.column_attrs
-                    if any(c.nullable for c in attr.columns)
-                }
-                update_data = {
-                    k: v
-                    for k, v in validated.model_dump(exclude_unset=True).items()
-                    if k not in _AUTO_FIELDS and (v is not None or k in nullable_cols)
-                }
-            else:
-                validated = cls.__schema_create__.model_validate(data)
-                update_data = {
-                    k: v
-                    for k, v in validated.model_dump().items()
-                    if k not in _AUTO_FIELDS
-                }
-        except ValidationError as exc:
-            return JSONResponse(
-                {RESPONSE_KEY_DETAIL: exc.errors()},
-                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            )
-
-        update_data.pop("version", None)
-
-        result = session.execute(
-            update(cls._model_class)
-            .where(
-                cls._model_class.id == pk,
-                cls._model_class.version == client_version,
-            )
-            .values(
-                **update_data,
-                version=client_version + 1,
-                updated_at=datetime.datetime.now(datetime.timezone.utc).replace(
-                    tzinfo=None
-                ),
-            )
-        )
-        if result.rowcount == 0:
-            exists = session.execute(
-                sa_select(cls._model_class.id).where(cls._model_class.id == pk)
-            ).first()
-            session.rollback()
-            if not exists:
-                return JSONResponse(
-                    {RESPONSE_KEY_DETAIL: "not found"},
-                    status_code=HTTPStatus.NOT_FOUND,
-                )
-            return JSONResponse(
-                {RESPONSE_KEY_DETAIL: "version conflict"},
-                status_code=HTTPStatus.CONFLICT,
-            )
-        # Re-fetch so all columns (including updated_at/version) are current
-        instance = (
-            session.execute(
-                sa_select(cls._model_class).where(cls._model_class.id == pk)
-            )
-            .scalars()
-            .first()
-        )
-        return JSONResponse(self._serialize_row(instance, "PUT"))
+        sent = patch_schema(schema_create).model_validate(data)
+        # An explicit null clears a nullable column; on any other column it is ignored.
+        return {
+            k: v
+            for k, v in sent.model_dump(exclude_unset=True).items()
+            if k not in _AUTO_FIELDS and (v is not None or k in nullable_columns)
+        }
 
     def _destroy(self, session: Session, pk: int) -> Response:
-        cls = type(self)
-        stmt = (
-            delete(cls._model_class)
-            .where(cls._model_class.id == pk)
-            .returning(cls._model_class.id)
-        )
-        if session.execute(stmt).first() is None:
-            return JSONResponse(
-                {RESPONSE_KEY_DETAIL: "not found"}, status_code=HTTPStatus.NOT_FOUND
-            )
+        try:
+            self._repository(session).delete(pk)
+        except RowNotFound as exc:
+            return _error_response(exc)
         return Response(status_code=HTTPStatus.NO_CONTENT)
+
+    def _repository(self, session: Session) -> Repository:
+        return Repository(type(self)._model_class, session)
 
     # ── Sync CRUD: the core inside a sync Session ─────────────────────────────
 
