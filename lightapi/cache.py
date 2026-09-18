@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from functools import lru_cache
 from typing import Any, Dict, Optional
 
 import redis
@@ -81,28 +82,34 @@ class RedisCacheBackend:
             return False
 
 
-# Default global instance for backward compatibility
-_default_backend = RedisCacheBackend()
+@lru_cache(maxsize=1)
+def _default_backend() -> RedisCacheBackend:
+    """The process-wide Redis client, built on first use.
+
+    Building it at import time fixed LIGHTAPI_REDIS_URL to whatever the
+    environment held before ``import lightapi``.
+    """
+    return RedisCacheBackend()
 
 
 def _ping_redis() -> bool:
     """Return True if Redis is reachable."""
-    return _default_backend.ping()
+    return _default_backend().ping()
 
 
 def get_cached(key: str) -> Any | None:
     """Return the cached value for *key* or None on miss / Redis failure."""
-    return _default_backend.get(key)
+    return _default_backend().get(key)
 
 
 def set_cached(key: str, value: Any, ttl: int) -> None:
     """Store *value* under *key* for *ttl* seconds. Silently ignores errors."""
-    _default_backend.set(key, value, ttl)
+    _default_backend().set(key, value, ttl)
 
 
 def invalidate_cache_prefix(prefix: str) -> None:
     """Delete all keys that start with *prefix*. Silently ignores errors."""
-    _default_backend.invalidate_prefix(prefix)
+    _default_backend().invalidate_prefix(prefix)
 
 
 class BaseCache:

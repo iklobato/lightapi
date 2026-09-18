@@ -35,6 +35,9 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `jwt_algorithm` and `jwt_extra_claims` only reached a backend whose class was named
   exactly `JWTAuthentication`. Subclasses get them too, unless they define their own
   `__init__`.
+- **`LIGHTAPI_REDIS_URL` was read at import time**: the Redis client behind
+  `Meta.cache` was built when `lightapi` was imported, so a URL set afterwards (in
+  code, or by a test) was ignored. It is built on the first cache call now.
 
 ## [Unreleased] — 0.1.24
 
