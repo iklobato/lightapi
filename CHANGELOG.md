@@ -7,6 +7,16 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Sync CRUD runs in a worker thread**: with a sync `Engine`, `list`, `retrieve`,
+  `create`, `update`, `destroy` and the response-cache calls ran on the event loop
+  thread, so one slow query held up every other request on that worker. They now
+  go through `starlette.concurrency.run_in_threadpool`. Engines on `StaticPool` or
+  `SingletonThreadPool` (in-memory SQLite) still run in place, because those pools
+  cannot be shared across threads.
+
 ## [Unreleased] — 0.1.24
 
 ### Fixed

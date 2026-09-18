@@ -9,6 +9,7 @@ from starlette.responses import Response
 
 from lightapi.constants import RESPONSE_KEY_DETAIL, HTTPStatus
 from lightapi.rest import RestEndpoint
+from lightapi.session import run_blocking
 
 
 def make_collection_handler(
@@ -45,7 +46,13 @@ def make_collection_handler(
             else:
                 from lightapi.cache_helper import maybe_cached
 
-                result = maybe_cached(cls, request, lambda: endpoint.list(request))
+                result = await run_blocking(
+                    endpoint._get_engine(),
+                    maybe_cached,
+                    cls,
+                    request,
+                    lambda: endpoint.list(request),
+                )
         elif request.method == "POST":
             data = await read_body(request)
             post_override = getattr(cls, "post", None)
@@ -54,7 +61,9 @@ def make_collection_handler(
             elif is_async:
                 result = await endpoint._create_async(data)
             else:
-                result = endpoint.create(data)
+                result = await run_blocking(
+                    endpoint._get_engine(), endpoint.create, data
+                )
         else:
             allowed = ", ".join(sorted(cls._allowed_methods & {"GET", "POST"}))
             result = __import__(
@@ -67,10 +76,12 @@ def make_collection_handler(
 
         response = wrap_dict_response(result)
 
-        if not is_async:
+        if not is_async and request.method != "GET":
             from lightapi.cache_helper import maybe_invalidate_cache
 
-            maybe_invalidate_cache(cls, request)
+            await run_blocking(
+                endpoint._get_engine(), maybe_invalidate_cache, cls, request
+            )
 
         if endpoint._background.tasks:
             response.background = endpoint._background
@@ -117,8 +128,12 @@ def make_detail_handler(
             else:
                 from lightapi.cache_helper import maybe_cached
 
-                result = maybe_cached(
-                    cls, request, lambda: endpoint.retrieve(request, pk)
+                result = await run_blocking(
+                    endpoint._get_engine(),
+                    maybe_cached,
+                    cls,
+                    request,
+                    lambda: endpoint.retrieve(request, pk),
                 )
         elif request.method in {"PUT", "PATCH"}:
             data = await read_body(request)
@@ -129,7 +144,9 @@ def make_detail_handler(
             elif is_async:
                 result = await endpoint._update_async(data, pk, partial=partial)
             else:
-                result = endpoint.update(data, pk, partial=partial)
+                result = await run_blocking(
+                    endpoint._get_engine(), endpoint.update, data, pk, partial
+                )
         elif request.method == "DELETE":
             delete_override = getattr(cls, "delete", None)
             if delete_override and asyncio.iscoroutinefunction(delete_override):
@@ -137,7 +154,9 @@ def make_detail_handler(
             elif is_async:
                 result = await endpoint._destroy_async(request, pk)
             else:
-                result = endpoint.destroy(request, pk)
+                result = await run_blocking(
+                    endpoint._get_engine(), endpoint.destroy, request, pk
+                )
         else:
             allowed = ", ".join(
                 sorted(cls._allowed_methods & {"GET", "PUT", "PATCH", "DELETE"})
@@ -152,10 +171,12 @@ def make_detail_handler(
 
         response = wrap_dict_response(result)
 
-        if not is_async:
+        if not is_async and request.method != "GET":
             from lightapi.cache_helper import maybe_invalidate_cache
 
-            maybe_invalidate_cache(cls, request)
+            await run_blocking(
+                endpoint._get_engine(), maybe_invalidate_cache, cls, request
+            )
 
         if endpoint._background.tasks:
             response.background = endpoint._background
