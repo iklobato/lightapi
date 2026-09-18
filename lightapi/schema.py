@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, create_model
 from pydantic.fields import FieldInfo
+from sqlalchemy import Numeric, Uuid
 
 from lightapi.constants import AUTO_FIELDS
 from lightapi.exceptions import ConfigurationError, SerializationError
@@ -121,6 +122,14 @@ _REFLECTED_PYTHON_TYPES = frozenset(
 
 def _reflected_annotation(column: Any) -> Any:
     """Annotation for a reflected column, from SQLAlchemy's own type mapping."""
+    # Two answers of python_type differ from what released versions validated,
+    # and clients see the difference (a Decimal is a JSON string, a float a JSON
+    # number): Float, Double and REAL are Numeric subclasses and have always been
+    # Decimal here, and a Uuid column is a UUID whatever its as_uuid flag.
+    if isinstance(column.type, Numeric):
+        return Decimal
+    if isinstance(column.type, Uuid):
+        return UUID
     try:
         python_type = column.type.python_type
     except NotImplementedError:
