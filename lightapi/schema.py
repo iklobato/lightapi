@@ -135,6 +135,40 @@ def _reflected_annotation(column: Any) -> Any:
     return Any
 
 
+# Every read schema carries the auto-managed columns, after the endpoint's own fields.
+_AUTO_READ_FIELDS: dict[str, Any] = {
+    "id": (Optional[int], None),
+    "created_at": (Optional[datetime.datetime], None),
+    "updated_at": (Optional[datetime.datetime], None),
+    "version": (Optional[int], None),
+}
+
+
+def _schema_pair(
+    endpoint_name: str, create_fields: dict[str, Any], read_fields: dict[str, Any]
+) -> tuple[type, type]:
+    """(create schema, read schema) for an endpoint.
+
+    create: input validation for POST/PUT/PATCH.
+    read: response serialization; ``extra="allow"`` lets join labels through.
+    """
+    missing_auto = {k: v for k, v in _AUTO_READ_FIELDS.items() if k not in read_fields}
+    schema_create = create_model(
+        f"{endpoint_name}CreateSchema",
+        __config__=ConfigDict(from_attributes=True),
+        **create_fields,
+    )
+    schema_read = create_model(
+        f"{endpoint_name}ReadSchema",
+        __config__=ConfigDict(from_attributes=True, extra="allow"),
+        **read_fields,
+        **missing_auto,
+    )
+    schema_create.model_rebuild()
+    schema_read.model_rebuild()
+    return schema_create, schema_read
+
+
 class SchemaFactory:
     """Builds Pydantic validation models from a RestEndpoint class."""
 
@@ -161,57 +195,26 @@ class SchemaFactory:
                 }
             )
 
-        field_infos: dict[str, FieldInfo] = {}
-        for name in user_annotations:
-            val = cls.__dict__.get(name) or getattr(cls, name, None)
-            if isinstance(val, FieldInfo):
-                field_infos[name] = val
-
         create_fields: dict[str, Any] = {}
         read_fields: dict[str, Any] = {}
-
-        from typing import Optional
-
         for name, annotation in user_annotations.items():
             if name in _AUTO_FIELDS:
                 continue
-            fi = field_infos.get(name)
-            extra = (fi.json_schema_extra or {}) if fi else {}
+            value = cls.__dict__.get(name) or getattr(cls, name, None)
+            field_info = value if isinstance(value, FieldInfo) else None
+            extra = (
+                (field_info.json_schema_extra or {}) if field_info is not None else {}
+            )
             if extra.get("exclude"):
                 continue
 
-            if fi is not None:
-                # create: FieldInfo with constraints for INPUT validation
-                create_fields[name] = (annotation, fi)
-                # read: Optional[T] so serializer can project out any field
-                read_fields[name] = (Optional[annotation], None)  # type: ignore[valid-type]
-            else:
-                create_fields[name] = (annotation, ...)
-                read_fields[name] = (Optional[annotation], None)  # type: ignore[valid-type]
+            # create keeps the Field() constraints; read is Optional so a
+            # serializer can project any field out.
+            default = field_info if field_info is not None else ...
+            create_fields[name] = (annotation, default)
+            read_fields[name] = (Optional[annotation], None)  # type: ignore[valid-type]
 
-        import datetime
-        from typing import Optional
-
-        read_fields["id"] = (Optional[int], None)
-        read_fields["created_at"] = (Optional[datetime.datetime], None)
-        read_fields["updated_at"] = (Optional[datetime.datetime], None)
-        read_fields["version"] = (Optional[int], None)
-
-        from pydantic import ConfigDict
-
-        schema_create = create_model(
-            f"{cls.__name__}CreateSchema",
-            __config__=ConfigDict(from_attributes=True),
-            **create_fields,
-        )
-        schema_read = create_model(
-            f"{cls.__name__}ReadSchema",
-            __config__=ConfigDict(from_attributes=True, extra="allow"),
-            **read_fields,
-        )
-        schema_create.model_rebuild()
-        schema_read.model_rebuild()
-        return schema_create, schema_read
+        return _schema_pair(cls.__name__, create_fields, read_fields)
 
     @staticmethod
     def build_from_reflected_table(cls: type, table: Any) -> tuple[type, type]:
@@ -224,37 +227,11 @@ class SchemaFactory:
         """
         create_fields: dict[str, Any] = {}
         read_fields: dict[str, Any] = {}
-
         for col in table.c:
-            name = col.key
             annotation = _reflected_annotation(col)
-            use_optional = col.nullable
-            ann = Optional[annotation] if use_optional else annotation  # type: ignore[valid-type]
+            if col.key not in _AUTO_FIELDS:
+                required = Optional[annotation] if col.nullable else annotation  # type: ignore[valid-type]
+                create_fields[col.key] = (required, ...)
+            read_fields[col.key] = (Optional[annotation], None)  # type: ignore[valid-type]
 
-            if name not in _AUTO_FIELDS:
-                create_fields[name] = (ann, ...)
-
-            read_fields[name] = (Optional[annotation], None)  # type: ignore[valid-type]
-
-        if "id" not in read_fields:
-            read_fields["id"] = (Optional[int], None)
-        if "created_at" not in read_fields:
-            read_fields["created_at"] = (Optional[datetime.datetime], None)
-        if "updated_at" not in read_fields:
-            read_fields["updated_at"] = (Optional[datetime.datetime], None)
-        if "version" not in read_fields:
-            read_fields["version"] = (Optional[int], None)
-
-        schema_create = create_model(
-            f"{cls.__name__}CreateSchema",
-            __config__=ConfigDict(from_attributes=True),
-            **create_fields,
-        )
-        schema_read = create_model(
-            f"{cls.__name__}ReadSchema",
-            __config__=ConfigDict(from_attributes=True, extra="allow"),
-            **read_fields,
-        )
-        schema_create.model_rebuild()
-        schema_read.model_rebuild()
-        return schema_create, schema_read
+        return _schema_pair(cls.__name__, create_fields, read_fields)
