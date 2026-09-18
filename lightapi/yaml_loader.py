@@ -27,363 +27,87 @@ Declarative format::
 
 from __future__ import annotations
 
-import datetime
-import importlib
-import os
-from decimal import Decimal
-from typing import Any, Union
-
-from pydantic import BaseModel, field_validator, model_validator
+from typing import Any
 
 from lightapi.exceptions import ConfigurationError
-
-# ─────────────────────────────────────────────────────────────────────────────
-# String → class registry (everything a YAML author would reference by name)
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _build_name_registry() -> dict[str, type]:
-    from lightapi.auth import (
-        AllowAny,
-        BasicAuthentication,
-        IsAdminUser,
-        IsAuthenticated,
-        JWTAuthentication,
-    )
-    from lightapi.core import AuthenticationMiddleware, CORSMiddleware, Middleware
-    from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
-    from lightapi.methods import HttpMethod
-
-    return {
-        # Auth backends
-        "JWTAuthentication": JWTAuthentication,
-        "BasicAuthentication": BasicAuthentication,
-        # Permissions
-        "AllowAny": AllowAny,
-        "IsAuthenticated": IsAuthenticated,
-        "IsAdminUser": IsAdminUser,
-        # Filter backends
-        "FieldFilter": FieldFilter,
-        "SearchFilter": SearchFilter,
-        "OrderingFilter": OrderingFilter,
-        # Middleware
-        "Middleware": Middleware,
-        "CORSMiddleware": CORSMiddleware,
-        "AuthenticationMiddleware": AuthenticationMiddleware,
-        # HttpMethod mixins (for bases resolution)
-        "GET": HttpMethod.GET,
-        "POST": HttpMethod.POST,
-        "PUT": HttpMethod.PUT,
-        "PATCH": HttpMethod.PATCH,
-        "DELETE": HttpMethod.DELETE,
-    }
-
-
-def _resolve_callable(dotted_path: str) -> Any:
-    """Resolve a dotted path like 'myapp.validators.validate_login' to a callable."""
-    if "." not in dotted_path:
-        raise ConfigurationError(
-            f"login_validator must be a dotted path (e.g. myapp.validators.check), "
-            f"got '{dotted_path}'"
-        )
-    module_path, attr_name = dotted_path.rsplit(".", 1)
-    try:
-        mod = importlib.import_module(module_path)
-        fn = getattr(mod, attr_name)
-    except (ImportError, AttributeError) as exc:
-        raise ConfigurationError(
-            f"Cannot resolve login_validator '{dotted_path}': {exc}"
-        ) from exc
-    if not callable(fn):
-        raise ConfigurationError(f"login_validator '{dotted_path}' is not callable.")
-
-    # Validate signature: must be sync function with exactly 2 positional args
-    import inspect
-
-    if inspect.iscoroutinefunction(fn):
-        raise ConfigurationError(
-            f"login_validator '{dotted_path}' is async, but sync function required. "
-            f"Login validation must be a synchronous function."
-        )
-
-    try:
-        sig = inspect.signature(fn)
-    except ValueError:
-        # Some callables (e.g., builtins) don't have inspectable signatures
-        return fn
-
-    # Count required positional parameters
-    required_params = 0
-    for param in sig.parameters.values():
-        if param.kind in (
-            inspect.Parameter.POSITIONAL_ONLY,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        ):
-            if param.default is inspect.Parameter.empty:
-                required_params += 1
-
-    if required_params != 2:
-        raise ConfigurationError(
-            f"login_validator '{dotted_path}' must accept exactly 2 required "
-            f"positional parameters (username, password), got {required_params}"
-        )
-
-    return fn
-
-
-def _resolve_name(name: str) -> type:
-    """Resolve a class name string to a class.
-
-    Tries the built-in registry first, then falls back to dotted import path
-    (e.g. 'myapp.middleware.RequestIdMiddleware').
-    """
-    registry = _build_name_registry()
-    if name in registry:
-        return registry[name]
-    # Dotted path fallback
-    if "." in name:
-        module_path, class_name = name.rsplit(".", 1)
-        try:
-            mod = importlib.import_module(module_path)
-            return getattr(mod, class_name)
-        except (ImportError, AttributeError) as exc:
-            raise ConfigurationError(f"Cannot resolve '{name}': {exc}") from exc
-    raise ConfigurationError(
-        f"Unknown class name '{name}'. "
-        "Use a fully dotted import path for custom classes."
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Type map for declarative field definitions
-# ─────────────────────────────────────────────────────────────────────────────
-
-_YAML_TYPE_MAP: dict[str, type] = {
-    "str": str,
-    "int": int,
-    "float": float,
-    "bool": bool,
-    "datetime": datetime.datetime,
-    "Decimal": Decimal,
-    "decimal": Decimal,
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Pydantic v2 models — the YAML schema
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class DatabaseConfig(BaseModel):
-    """Nested database block: database: { url: ... }"""
-
-    url: str
-
-    @field_validator("url", mode="before")
-    @classmethod
-    def substitute_env(cls, v: str) -> str:
-        return _substitute_env(v)
-
-
-class AuthLoginConfig(BaseModel):
-    """Login/auth block: auth: { auth_path: ..., login_validator: ... }.
-
-    When using JWTAuthentication or BasicAuthentication, login_validator is required.
-    It can be specified as a dotted path (e.g. myapp.validators.validate_login)
-    or passed as an override to from_config(login_validator=...).
-    """
-
-    auth_path: str = "/auth"
-    login_validator: str | None = None
-
-
-class AuthConfig(BaseModel):
-    """Authentication block used in defaults and per-endpoint meta."""
-
-    backend: str | None = None
-    permission: Union[str, dict[str, str], None] = None
-    jwt_expiration: int | None = None
-    jwt_extra_claims: list[str] | None = None
-    jwt_algorithm: str | None = None
-
-
-class FilteringConfig(BaseModel):
-    """Filtering block inside meta."""
-
-    backends: list[str] = []
-    fields: list[str] = []
-    search: list[str] = []
-    ordering: list[str] = []
-
-
-class PaginationConfig(BaseModel):
-    """Pagination block used in defaults and per-endpoint meta."""
-
-    style: str = "page_number"
-    page_size: int = 20
-
-
-class DefaultsConfig(BaseModel):
-    """Global defaults applied to all endpoints unless overridden."""
-
-    authentication: AuthConfig | None = None
-    pagination: PaginationConfig | None = None
-
-
-class MethodAuthConfig(BaseModel):
-    """Per-method authentication override inside meta.methods dict."""
-
-    authentication: AuthConfig | None = None
-
-
-class CacheConfig(BaseModel):
-    """Cache block inside meta: cache: { ttl: 60 }"""
-
-    ttl: int = 60
-
-
-class SerializerConfig(BaseModel):
-    """Serializer block inside meta.
-
-    Use ``fields`` for a unified list, or ``read``/``write`` for per-verb lists.
-    """
-
-    fields: list[str] | None = None
-    read: list[str] | None = None
-    write: list[str] | None = None
-
-
-class MetaConfig(BaseModel):
-    """meta: block inside a declarative endpoint entry."""
-
-    # methods can be a list ["GET", "POST"] or a dict {GET: {...}, DELETE: {...}}
-    methods: Union[list[str], dict[str, MethodAuthConfig | None]] = []
-    authentication: AuthConfig | None = None
-    filtering: FilteringConfig | None = None
-    pagination: PaginationConfig | None = None
-    cache: CacheConfig | None = None
-    serializer: SerializerConfig | None = None
-    table: str | None = None  # custom table name (required when reflect: true)
-
-
-class FieldSpec(BaseModel):
-    """Single field definition inside fields:."""
-
-    type: str
-    optional: bool = False
-    # All remaining keys forwarded to Field() as pydantic constraints
-    model_config = {"extra": "allow"}
-
-    @field_validator("type")
-    @classmethod
-    def type_must_be_known(cls, v: str) -> str:
-        if v not in _YAML_TYPE_MAP:
-            raise ValueError(
-                f"Unknown field type '{v}'. Valid types: {sorted(_YAML_TYPE_MAP)}"
-            )
-        return v
-
-
-class EndpointConfig(BaseModel):
-    """A single endpoint entry."""
-
-    route: str
-    fields: dict[str, FieldSpec] = {}
-    reflect: bool = False
-    meta: MetaConfig = MetaConfig()
-
-    @model_validator(mode="after")
-    def require_route(self) -> "EndpointConfig":
-        if not self.route:
-            raise ValueError("Each endpoint must have a 'route'.")
-        return self
-
-    @property
-    def effective_route(self) -> str:
-        return self.route.strip()
-
-
-class LightAPIConfig(BaseModel):
-    """Root YAML document schema."""
-
-    database: DatabaseConfig | None = None
-    cors_origins: list[str] = []
-    defaults: DefaultsConfig = DefaultsConfig()
-    endpoints: list[EndpointConfig] = []
-    middleware: list[str] = []
-    auth: AuthLoginConfig | None = None
-    mode: str | None = None  # "sync" | "async" — auto-detected when omitted
-
-    @property
-    def effective_database_url(self) -> str | None:
-        return self.database.url if self.database else None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Translation: validated Pydantic model → LightAPI objects
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _substitute_env(value: str) -> str:
-    """Replace ${VAR} with the environment variable value."""
-    if value.startswith("${") and value.endswith("}"):
-        var = value[2:-1]
-        resolved = os.environ.get(var)
-        if not resolved:
-            raise ConfigurationError(
-                f"Environment variable '{var}' is not set (required by lightapi.yaml)."
-            )
-        return resolved
-    return value
+from lightapi.yaml_names import name_registry, resolve_callable, resolve_name
+from lightapi.yaml_schema import (
+    YAML_FIELD_TYPES,
+    AuthConfig,
+    DefaultsConfig,
+    EndpointConfig,
+    FilteringConfig,
+    LightAPIConfig,
+    MetaConfig,
+    PaginationConfig,
+)
 
 
 def _make_authentication(
     auth_cfg: AuthConfig | None,
     defaults_auth: AuthConfig | None,
 ) -> Any:
-    # Merge: explicit cfg wins over defaults, defaults fill gaps
-    merged_backend = None
-    merged_permission = None
-    merged_jwt_expiration = None
-    merged_jwt_extra_claims = None
-    merged_jwt_algorithm = None
-
-    for source in (defaults_auth, auth_cfg):
-        if source is None:
-            continue
-        if source.backend is not None:
-            merged_backend = source.backend
-        if source.permission is not None:
-            merged_permission = source.permission
-        if source.jwt_expiration is not None:
-            merged_jwt_expiration = source.jwt_expiration
-        if source.jwt_extra_claims is not None:
-            merged_jwt_extra_claims = source.jwt_extra_claims
-        if source.jwt_algorithm is not None:
-            merged_jwt_algorithm = source.jwt_algorithm
-
-    if merged_backend is None and merged_permission is None:
+    """Endpoint settings win; the defaults fill whatever the endpoint left unset."""
+    settings = (auth_cfg or AuthConfig()).merged_over(defaults_auth)
+    if settings.backend is None and settings.permission is None:
         return None
+    return _authentication_from(settings, _resolved_permission(settings.permission))
 
-    backend_cls = _resolve_name(merged_backend) if merged_backend else None
 
-    if isinstance(merged_permission, dict):
+def _per_method_authentication(meta: MetaConfig, defaults: DefaultsConfig) -> Any:
+    """Authentication for ``methods: {GET: {...}, DELETE: {...}}``.
+
+    Each method takes its own permission, else the endpoint's, else the default.
+    """
+    default_auth = defaults.authentication
+    default_permission = default_auth.permission if default_auth else None
+
+    permissions: dict[str, type] = {}
+    for method, method_cfg in meta.methods.items():
+        method_auth = (method_cfg.authentication if method_cfg else None) or (
+            meta.authentication
+        )
+        name = _permission_name(method, method_auth, default_permission)
+        if name:
+            permissions[method] = resolve_name(name)
+
+    if not permissions:
+        return None
+    settings = (meta.authentication or AuthConfig()).merged_over(default_auth)
+    return _authentication_from(settings, permissions)
+
+
+def _permission_name(
+    method: str,
+    method_auth: AuthConfig | None,
+    default_permission: str | dict[str, str] | None,
+) -> str | None:
+    own = method_auth.permission if method_auth else None
+    if isinstance(own, str):
+        return own
+    if isinstance(default_permission, dict):
+        return default_permission.get(method)
+    return default_permission
+
+
+def _resolved_permission(permission: str | dict[str, str] | None) -> Any:
+    if isinstance(permission, dict):
         # Per-method permission dict: {GET: IsAuthenticated, DELETE: IsAdminUser}
-        permission = {
-            method: _resolve_name(perm) for method, perm in merged_permission.items()
-        }
-    elif isinstance(merged_permission, str):
-        permission = _resolve_name(merged_permission)
-    else:
-        permission = None
+        return {method: resolve_name(name) for method, name in permission.items()}
+    if isinstance(permission, str):
+        return resolve_name(permission)
+    return None
 
+
+def _authentication_from(settings: AuthConfig, permission: Any) -> Any:
     from lightapi.config import Authentication
 
     return Authentication(
-        backend=backend_cls,
+        backend=resolve_name(settings.backend) if settings.backend else None,
         permission=permission,
-        jwt_expiration=merged_jwt_expiration,
-        jwt_extra_claims=merged_jwt_extra_claims,
-        jwt_algorithm=merged_jwt_algorithm,
+        jwt_expiration=settings.jwt_expiration,
+        jwt_extra_claims=settings.jwt_extra_claims,
+        jwt_algorithm=settings.jwt_algorithm,
     )
 
 
@@ -396,7 +120,7 @@ def _make_filtering(filtering_cfg: FilteringConfig | None) -> Any:
 
     # Auto-select backends based on which lists are populated
     backends: list[type] = list(
-        [_resolve_name(b) for b in filtering_cfg.backends]
+        [resolve_name(b) for b in filtering_cfg.backends]
         if filtering_cfg.backends
         else []
     )
@@ -439,83 +163,12 @@ def _build_meta_class(
             attrs["table"] = meta.table
         return type("Meta", (), attrs)
 
-    # Authentication — handle per-method dict (methods as dict form)
     if isinstance(meta.methods, dict):
-        # Build per-method permission dict from the methods dict
-        permission_map: dict[str, type] = {}
-        method_auth_default = meta.authentication  # endpoint-level auth override
-
-        # Get default permission from defaults
-        default_permission = None
-        if defaults.authentication and defaults.authentication.permission:
-            default_permission = defaults.authentication.permission
-
-        for method, method_cfg in meta.methods.items():
-            cfg_auth = method_cfg.authentication if method_cfg else None
-            src_auth = cfg_auth or method_auth_default
-
-            # Determine permission for this method
-            method_permission = None
-
-            # First, check method-specific auth
-            if src_auth and src_auth.permission:
-                perm = src_auth.permission
-                if isinstance(perm, str):
-                    method_permission = _resolve_name(perm)
-                # Note: per-method auth in YAML dict can't have dict permissions
-                # only string permissions are supported in this path
-
-            # If no method-specific permission, check default permission
-            if method_permission is None and default_permission is not None:
-                if isinstance(default_permission, dict):
-                    # Default permission is a dict: check for method-specific default
-                    if method in default_permission:
-                        perm = default_permission[method]
-                        if isinstance(perm, str):
-                            method_permission = _resolve_name(perm)
-                else:
-                    # Default permission is a string or class
-                    if isinstance(default_permission, str):
-                        method_permission = _resolve_name(default_permission)
-                    else:
-                        method_permission = default_permission
-
-            if method_permission is not None:
-                permission_map[method] = method_permission
-
-        if permission_map:
-            # Merge auth settings similar to _make_authentication
-            merged_backend = None
-            merged_jwt_expiration = None
-            merged_jwt_extra_claims = None
-            merged_jwt_algorithm = None
-
-            for source in (defaults.authentication, meta.authentication):
-                if source is None:
-                    continue
-                if source.backend is not None:
-                    merged_backend = source.backend
-                if source.jwt_expiration is not None:
-                    merged_jwt_expiration = source.jwt_expiration
-                if source.jwt_extra_claims is not None:
-                    merged_jwt_extra_claims = source.jwt_extra_claims
-                if source.jwt_algorithm is not None:
-                    merged_jwt_algorithm = source.jwt_algorithm
-
-            from lightapi.config import Authentication
-
-            attrs["authentication"] = Authentication(
-                backend=_resolve_name(merged_backend) if merged_backend else None,
-                permission=permission_map,
-                jwt_expiration=merged_jwt_expiration,
-                jwt_extra_claims=merged_jwt_extra_claims,
-                jwt_algorithm=merged_jwt_algorithm,
-            )
+        auth = _per_method_authentication(meta, defaults)
     else:
-        # Simple auth: endpoint overrides defaults
         auth = _make_authentication(meta.authentication, defaults.authentication)
-        if auth is not None:
-            attrs["authentication"] = auth
+    if auth is not None:
+        attrs["authentication"] = auth
 
     filtering = _make_filtering(meta.filtering)
     if filtering is not None:
@@ -565,7 +218,7 @@ def _resolve_methods_bases(meta: MetaConfig) -> tuple[type, ...]:
     if not method_list:
         return (RestEndpoint,)
 
-    registry = _build_name_registry()
+    registry = name_registry()
     bases: list[type] = [RestEndpoint]
     for m in method_list:
         mixin = registry.get(m)
@@ -590,7 +243,7 @@ def _build_endpoint_class(entry: EndpointConfig, defaults: DefaultsConfig) -> ty
     class_attrs: dict[str, Any] = {"__annotations__": annotations}
 
     for field_name, spec in entry.fields.items():
-        py_type = _YAML_TYPE_MAP[spec.type]
+        py_type = YAML_FIELD_TYPES[spec.type]
         if spec.optional:
             py_type = Optional[py_type]  # type: ignore[assignment]
 
@@ -670,7 +323,7 @@ def load_config(app_cls: type, config_path: str, **overrides: Any) -> Any:
         ) from exc
 
     db_url = cfg.effective_database_url
-    middlewares: list[type] = [_resolve_name(name) for name in cfg.middleware]
+    middlewares: list[type] = [resolve_name(name) for name in cfg.middleware]
 
     constructor_kwargs: dict[str, Any] = {
         "database_url": db_url or None,
@@ -685,7 +338,7 @@ def load_config(app_cls: type, config_path: str, **overrides: Any) -> Any:
     if cfg.auth:
         constructor_kwargs["auth_path"] = cfg.auth.auth_path
         if cfg.auth.login_validator:
-            constructor_kwargs["login_validator"] = _resolve_callable(
+            constructor_kwargs["login_validator"] = resolve_callable(
                 cfg.auth.login_validator
             )
 

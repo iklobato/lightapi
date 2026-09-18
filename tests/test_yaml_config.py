@@ -10,7 +10,8 @@ from pydantic import ValidationError
 
 from lightapi.exceptions import ConfigurationError
 from lightapi.lightapi import LightApi
-from lightapi.yaml_loader import LightAPIConfig, _resolve_name
+from lightapi.yaml_loader import LightAPIConfig
+from lightapi.yaml_names import resolve_name
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -474,18 +475,18 @@ class TestResolveName:
     def test_builtin_names_resolve(self):
         from lightapi.auth import IsAuthenticated
 
-        assert _resolve_name("IsAuthenticated") is IsAuthenticated
+        assert resolve_name("IsAuthenticated") is IsAuthenticated
 
     def test_dotted_path_resolves(self):
-        cls = _resolve_name("lightapi.auth.AllowAny")
+        cls = resolve_name("lightapi.auth.AllowAny")
         from lightapi.auth import AllowAny
 
         assert cls is AllowAny
 
     def test_unknown_name_raises(self):
         with pytest.raises(ConfigurationError, match="Unknown class name"):
-            _resolve_name("CompletlyUnknownClass")
+            resolve_name("CompletlyUnknownClass")
 
     def test_bad_dotted_path_raises(self):
         with pytest.raises(ConfigurationError):
-            _resolve_name("non.existent.module.Foo")
+            resolve_name("non.existent.module.Foo")
