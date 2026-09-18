@@ -37,7 +37,8 @@ def _load(path: str) -> tuple[str, dict[str, Any]]:
     steps = {step["id"]: step for step in recording["steps"]}
     if len(steps) != len(recording["steps"]):
         raise SystemExit(f"{path}: step ids are not unique")
-    return recording["lightapi"], steps
+    label = f"{recording['lightapi']}, source {recording.get('fingerprint', '?')}"
+    return label, steps
 
 
 def _describe(step: dict[str, Any] | None) -> str:
