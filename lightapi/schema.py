@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import datetime
 import logging
+from decimal import Decimal
 from typing import Any, Optional
+from uuid import UUID
 
 from pydantic import ConfigDict, create_model
 from pydantic.fields import FieldInfo
@@ -80,6 +82,38 @@ def _apply_fields(d: dict[str, Any], fields: list[str] | None) -> dict[str, Any]
     if fields is None:
         return d
     return {k: v for k, v in d.items() if k in fields}
+
+
+# Python types a reflected column is validated as; any other type stays ``Any``.
+_REFLECTED_PYTHON_TYPES = frozenset(
+    {
+        int,
+        str,
+        float,
+        bool,
+        Decimal,
+        UUID,
+        datetime.datetime,
+        datetime.date,
+        datetime.time,
+    }
+)
+
+
+def _reflected_annotation(column: Any) -> Any:
+    """Annotation for a reflected column, from SQLAlchemy's own type mapping."""
+    try:
+        python_type = column.type.python_type
+    except NotImplementedError:
+        python_type = None
+    if python_type in _REFLECTED_PYTHON_TYPES:
+        return python_type
+    logger.warning(
+        "Unknown SQLAlchemy type %s for column %s; using Any",
+        type(column.type).__name__,
+        column.name,
+    )
+    return Any
 
 
 class SchemaFactory:
@@ -169,109 +203,12 @@ class SchemaFactory:
         Includes all columns in read schema.
         Uses Optional[T] when column.nullable is True.
         """
-        from decimal import Decimal
-        from uuid import UUID
-
-        from sqlalchemy import (
-            Boolean,
-            Date,
-            DateTime,
-            Float,
-            Integer,
-            Numeric,
-            SmallInteger,
-            String,
-            Text,
-            Time,
-        )
-        from sqlalchemy.types import BigInteger
-
-        try:
-            from sqlalchemy import Uuid as SAUuid
-        except ImportError:
-            SAUuid = None  # type: ignore[assignment,misc]
-        try:
-            from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-        except ImportError:
-            PG_UUID = None  # type: ignore[assignment,misc]
-
-        def _col_type_to_annotation(col: Any) -> Any | None:
-            """Map SQLAlchemy column type to Pydantic annotation. None if unknown."""
-            col_type = type(col.type)
-            if isinstance(col.type, (Integer, BigInteger, SmallInteger)):
-                return int
-            if col_type in (String, Text) or issubclass(col_type, String):
-                return str
-            if col_type == Numeric or (
-                hasattr(Numeric, "__mro__") and Numeric in col_type.__mro__
-            ):
-                return Decimal
-            if col_type == Float or (
-                hasattr(Float, "__mro__") and Float in getattr(col_type, "__mro__", ())
-            ):
-                return float
-            if col_type == Boolean:
-                return bool
-            if col_type == Time or (
-                hasattr(Time, "__mro__") and Time in getattr(col_type, "__mro__", ())
-            ):
-                return datetime.time
-            if col_type in (DateTime,) or (
-                hasattr(DateTime, "__mro__")
-                and DateTime in getattr(col_type, "__mro__", ())
-            ):
-                return datetime.datetime
-            if col_type == Date or (
-                hasattr(Date, "__mro__") and Date in getattr(col_type, "__mro__", ())
-            ):
-                return datetime.date
-            if SAUuid is not None and col_type == SAUuid:
-                return UUID
-            if PG_UUID is not None and col_type == PG_UUID:
-                return UUID
-            type_name = (
-                getattr(col.type, "__visit_name__", "") or col_type.__name__ or ""
-            ).lower()
-            if type_name in ("integer", "big_integer", "small_integer", "int"):
-                return int
-            if type_name in (
-                "string",
-                "varchar",
-                "char",
-                "text",
-                "unicode",
-                "unicode_text",
-            ):
-                return str
-            if type_name in ("numeric", "decimal"):
-                return Decimal
-            if type_name in ("float", "double", "real"):
-                return float
-            if type_name == "boolean":
-                return bool
-            if type_name in ("datetime", "timestamp"):
-                return datetime.datetime
-            if type_name == "date":
-                return datetime.date
-            if type_name == "time":
-                return datetime.time
-            if type_name == "uuid":
-                return UUID
-            logger.warning(
-                "Unknown SQLAlchemy type %s for column %s; using Any",
-                col_type.__name__,
-                col.name,
-            )
-            return None
-
         create_fields: dict[str, Any] = {}
         read_fields: dict[str, Any] = {}
 
         for col in table.c:
             name = col.key
-            annotation = _col_type_to_annotation(col)
-            if annotation is None:
-                annotation = Any
+            annotation = _reflected_annotation(col)
             use_optional = col.nullable
             ann = Optional[annotation] if use_optional else annotation  # type: ignore[valid-type]
 
