@@ -49,11 +49,10 @@ class DeclaredTable:
 class ReflectedTable:
     """A table that already exists in the database (``Meta.reflect``).
 
-    With ``partial`` the endpoint's own fields are added to the reflected columns.
+    With ``partial`` the endpoint also declares some of those columns as fields.
     """
 
-    def __init__(self, partial_columns: list[Column], partial: bool) -> None:
-        self._partial_columns = partial_columns
+    def __init__(self, partial: bool) -> None:
         self._partial = partial
 
     def map(self, endpoint_cls: type, session_manager: SessionManager) -> None:
@@ -64,9 +63,6 @@ class ReflectedTable:
             _table_name(endpoint_cls, session_manager), session_manager
         )
         if self._partial:
-            for column in self._partial_columns:
-                if column.name not in table.c:
-                    table.append_column(column)
             _strip_field_infos(endpoint_cls, list(table.c))
 
         session_manager.registry.map_imperatively(endpoint_cls, table)
