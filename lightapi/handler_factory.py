@@ -42,7 +42,11 @@ def make_collection_handler(
             if get_override and asyncio.iscoroutinefunction(get_override):
                 result = await get_override(endpoint, request)
             elif is_async:
-                result = await endpoint._list_async(request)
+                from lightapi.cache_helper import maybe_cached_async
+
+                result = await maybe_cached_async(
+                    cls, request, lambda: endpoint._list_async(request)
+                )
             else:
                 from lightapi.cache_helper import maybe_cached
 
@@ -76,12 +80,9 @@ def make_collection_handler(
 
         response = wrap_dict_response(result)
 
-        if not is_async and request.method != "GET":
-            from lightapi.cache_helper import maybe_invalidate_cache
+        from lightapi.cache_helper import invalidate_cache_after_write
 
-            await run_blocking(
-                endpoint._get_engine(), maybe_invalidate_cache, cls, request
-            )
+        await invalidate_cache_after_write(cls, request)
 
         if endpoint._background.tasks:
             response.background = endpoint._background
@@ -124,7 +125,11 @@ def make_detail_handler(
             if get_override and asyncio.iscoroutinefunction(get_override):
                 result = await get_override(endpoint, request)
             elif is_async:
-                result = await endpoint._retrieve_async(request, pk)
+                from lightapi.cache_helper import maybe_cached_async
+
+                result = await maybe_cached_async(
+                    cls, request, lambda: endpoint._retrieve_async(request, pk)
+                )
             else:
                 from lightapi.cache_helper import maybe_cached
 
@@ -171,12 +176,9 @@ def make_detail_handler(
 
         response = wrap_dict_response(result)
 
-        if not is_async and request.method != "GET":
-            from lightapi.cache_helper import maybe_invalidate_cache
+        from lightapi.cache_helper import invalidate_cache_after_write
 
-            await run_blocking(
-                endpoint._get_engine(), maybe_invalidate_cache, cls, request
-            )
+        await invalidate_cache_after_write(cls, request)
 
         if endpoint._background.tasks:
             response.background = endpoint._background

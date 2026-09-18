@@ -17,6 +17,11 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `SingletonThreadPool` (in-memory SQLite) still run in place, because those pools
   cannot be shared across threads.
 
+### Fixed
+- **`Meta.cache` was ignored on async engines**: cached GETs and cache invalidation
+  only ran on the sync path, so an app on an `AsyncEngine` never read or wrote the
+  cache. Both engine kinds now use it. The Redis calls run in a worker thread.
+
 ## [Unreleased] — 0.1.24
 
 ### Fixed
