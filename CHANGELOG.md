@@ -21,6 +21,11 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`Meta.cache` was ignored on async engines**: cached GETs and cache invalidation
   only ran on the sync path, so an app on an `AsyncEngine` never read or wrote the
   cache. Both engine kinds now use it. The Redis calls run in a worker thread.
+- **Sync verb overrides were ignored**: a plain `def get(self, request)` (or `post`,
+  `put`, `patch`, `delete`) on an endpoint was skipped and the built-in CRUD ran
+  instead; only `async def` overrides were served. Both are served now, on sync and
+  async engines. A column that happens to be called `post` or `get` is still a
+  column, not an override.
 
 ## [Unreleased] — 0.1.24
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -135,9 +136,10 @@ class EndpointHandler:
         data = await _read_body(request) if verb.reads_body else {}
         args = verb.args(request, data, request.path_params.get("id"))
 
+        # A column may share a verb's name (`post: str`), so only functions count.
         override = getattr(self._endpoint_cls, verb.override, None)
-        if override and asyncio.iscoroutinefunction(override):
-            return await override(endpoint, request)
+        if inspect.isfunction(override):
+            return await self._call_override(override, endpoint, request)
 
         if self._is_async:
             crud_async = getattr(endpoint, verb.async_name)
@@ -154,6 +156,19 @@ class EndpointHandler:
                 engine, maybe_cached, self._endpoint_cls, request, lambda: crud(*args)
             )
         return await run_blocking(engine, crud, *args)
+
+    async def _call_override(
+        self, override: Callable[..., Any], endpoint: RestEndpoint, request: Request
+    ) -> Any:
+        if asyncio.iscoroutinefunction(override):
+            return await override(endpoint, request)
+        if self._is_async:
+            # Gives a sync override the greenlet context that endpoint.list() and
+            # friends need to reach an async driver.
+            return await endpoint._in_async_session(
+                lambda _session: override(endpoint, request)
+            )
+        return await run_blocking(endpoint._get_engine(), override, endpoint, request)
 
     def _method_not_allowed(self) -> Response:
         allowed = ", ".join(sorted(self.methods))
