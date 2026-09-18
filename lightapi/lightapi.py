@@ -6,6 +6,7 @@ import asyncio
 import importlib
 import logging
 import os
+import warnings
 from typing import Any, Callable
 
 import uvicorn
@@ -231,7 +232,8 @@ class LightApi:
     def from_dict(cls, config: dict[str, Any], **kwargs: Any) -> "LightApi":
         """Create a LightApi instance from a Python dictionary.
 
-        Simpler alternative to YAML config for programmatic setup.
+        Deprecated: removed in 0.2.0. Declare RestEndpoint subclasses and call
+        register(), or use from_config() with a YAML file.
 
         Example::
 
@@ -252,6 +254,13 @@ class LightApi:
         """
         from lightapi._dict_config_loader import load_from_dict
 
+        warnings.warn(
+            "LightApi.from_dict is deprecated and will be removed in 0.2.0. "
+            "Declare RestEndpoint subclasses and call register(), or use "
+            "from_config() with a YAML file.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return load_from_dict(cls, config, **kwargs)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -293,8 +302,6 @@ class LightApi:
 
     def _check_cache_connections(self) -> None:
         """Emit RuntimeWarning if any endpoint has cache configured but Redis is unreachable."""
-        import warnings
-
         for cls in self._endpoint_map.values():
             cache_cfg = getattr(cls, "_meta", {}).get("cache")
             if cache_cfg:

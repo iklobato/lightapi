@@ -86,6 +86,9 @@ a precise message before the server starts.
 
 ### `from_dict(config: dict) → LightApi`
 
+!!! warning "Deprecated"
+    `from_dict` is removed in 0.2.0 and emits a `DeprecationWarning` today. Declare `RestEndpoint` subclasses and call `register()`, or use `from_config()` with a YAML file.
+
 ```python
 app = LightApi.from_dict({
     "database_url": "sqlite:///db.sqlite3",

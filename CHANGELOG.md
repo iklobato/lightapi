@@ -9,6 +9,10 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Deprecated
+- **`LightApi.from_dict`** emits a `DeprecationWarning` and is removed in 0.2.0. Use
+  `RestEndpoint` subclasses with `register()`, or `from_config()` with a YAML file.
+
 ### Changed
 - **Sync CRUD runs in a worker thread**: with a sync `Engine`, `list`, `retrieve`,
   `create`, `update`, `destroy` and the response-cache calls ran on the event loop
