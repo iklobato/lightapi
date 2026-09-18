@@ -12,8 +12,8 @@ When `app.register({"/items": ItemEndpoint})` is called, LightAPI registers two 
 
 | Route | Methods | Handler |
 |-------|---------|---------|
-| `/items` | `GET`, `POST` | `_make_collection_handler(cls)` |
-| `/items/{id:int}` | `GET`, `PUT`, `PATCH`, `DELETE` | `_make_detail_handler(cls)` |
+| `/items` | `GET`, `POST` | `handler_factory.make_collection_handler(cls, ...)` |
+| `/items/{id:int}` | `GET`, `PUT`, `PATCH`, `DELETE` | `handler_factory.make_detail_handler(cls, ...)` |
 
 Both handlers are closures that instantiate the endpoint class per request and dispatch to the appropriate CRUD method.
 

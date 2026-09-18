@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-import json
 import logging
 import os
 import warnings
@@ -13,15 +12,12 @@ from typing import TYPE_CHECKING, Any, Callable
 import uvicorn
 from sqlalchemy import create_engine
 from starlette.applications import Starlette
-from starlette.background import BackgroundTasks
 from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import Response
 from starlette.routing import Route
 
-from lightapi.authentication import AllowAny, BasicAuthentication, JWTAuthentication
-from lightapi.cache import get_cached, invalidate_cache_prefix, set_cached
-from lightapi.constants import RESPONSE_KEY_DETAIL, HTTPStatus
+from lightapi.authentication import BasicAuthentication, JWTAuthentication
 from lightapi.exceptions import ConfigurationError
 from lightapi.health import HEALTH_PATH, HealthCheckEndpoint
 from lightapi.rest import RestEndpoint
@@ -429,134 +425,6 @@ class LightApi:
 
         return handler
 
-    def _make_collection_handler(self, cls: type) -> Any:
-        app_middlewares = self._middlewares
-        is_async = self._mode == "async"
-
-        async def handler(request: Request) -> Response:
-            endpoint = cls()
-            endpoint._background = BackgroundTasks()
-            endpoint._current_request = request
-
-            pre_result = await _run_pre_middlewares(app_middlewares, request)
-            if pre_result is not None:
-                return pre_result
-
-            auth_result = _check_auth(cls, request)
-            if auth_result is not None:
-                return auth_result
-
-            if request.method == "GET":
-                get_override = getattr(cls, "get", None)
-                if get_override and asyncio.iscoroutinefunction(get_override):
-                    result = await get_override(endpoint, request)
-                elif is_async:
-                    result = await endpoint._list_async(request)
-                else:
-                    result = _maybe_cached(cls, request, lambda: endpoint.list(request))
-            elif request.method == "POST":
-                data = await _read_body(request)
-                post_override = getattr(cls, "post", None)
-                if post_override and asyncio.iscoroutinefunction(post_override):
-                    result = await post_override(endpoint, request)
-                elif is_async:
-                    result = await endpoint._create_async(data)
-                else:
-                    result = endpoint.create(data)
-            else:
-                allowed = ", ".join(sorted(cls._allowed_methods & {"GET", "POST"}))
-                result = JSONResponse(
-                    {RESPONSE_KEY_DETAIL: f"Method Not Allowed. Allowed: {allowed}"},
-                    status_code=HTTPStatus.METHOD_NOT_ALLOWED,
-                    headers={"Allow": allowed},
-                )
-
-            # Wrap dict responses in JSONResponse
-            response = _wrap_dict_response(result)
-
-            if not is_async:
-                _maybe_invalidate_cache(cls, request)
-
-            if endpoint._background.tasks:
-                response.background = endpoint._background
-
-            return await _run_post_middlewares(app_middlewares, request, response)
-
-        handler.__name__ = f"{cls.__name__}_collection"
-        handler.__endpoint_cls__ = cls
-        return handler
-
-    def _make_detail_handler(self, cls: type) -> Any:
-        app_middlewares = self._middlewares
-        is_async = self._mode == "async"
-
-        async def handler(request: Request) -> Response:
-            pk: int = request.path_params["id"]
-            endpoint = cls()
-            endpoint._background = BackgroundTasks()
-            endpoint._current_request = request
-
-            pre_result = await _run_pre_middlewares(app_middlewares, request)
-            if pre_result is not None:
-                return pre_result
-
-            auth_result = _check_auth(cls, request)
-            if auth_result is not None:
-                return auth_result
-
-            if request.method == "GET":
-                get_override = getattr(cls, "get", None)
-                if get_override and asyncio.iscoroutinefunction(get_override):
-                    result = await get_override(endpoint, request)
-                elif is_async:
-                    result = await endpoint._retrieve_async(request, pk)
-                else:
-                    result = _maybe_cached(
-                        cls, request, lambda: endpoint.retrieve(request, pk)
-                    )
-            elif request.method in {"PUT", "PATCH"}:
-                data = await _read_body(request)
-                partial = request.method == "PATCH"
-                put_override = getattr(cls, "put" if not partial else "patch", None)
-                if put_override and asyncio.iscoroutinefunction(put_override):
-                    result = await put_override(endpoint, request)
-                elif is_async:
-                    result = await endpoint._update_async(data, pk, partial=partial)
-                else:
-                    result = endpoint.update(data, pk, partial=partial)
-            elif request.method == "DELETE":
-                delete_override = getattr(cls, "delete", None)
-                if delete_override and asyncio.iscoroutinefunction(delete_override):
-                    result = await delete_override(endpoint, request)
-                elif is_async:
-                    result = await endpoint._destroy_async(request, pk)
-                else:
-                    result = endpoint.destroy(request, pk)
-            else:
-                allowed = ", ".join(
-                    sorted(cls._allowed_methods & {"GET", "PUT", "PATCH", "DELETE"})
-                )
-                result = JSONResponse(
-                    {RESPONSE_KEY_DETAIL: f"Method Not Allowed. Allowed: {allowed}"},
-                    status_code=HTTPStatus.METHOD_NOT_ALLOWED,
-                    headers={"Allow": allowed},
-                )
-
-            # Wrap dict responses in JSONResponse
-            response = _wrap_dict_response(result)
-
-            if not is_async:
-                _maybe_invalidate_cache(cls, request)
-
-            if endpoint._background.tasks:
-                response.background = endpoint._background
-
-            return await _run_post_middlewares(app_middlewares, request, response)
-
-        handler.__name__ = f"{cls.__name__}_detail"
-        handler.__endpoint_cls__ = cls
-        return handler
-
     # ─────────────────────────────────────────────────────────────────────────
     # Run
     # ─────────────────────────────────────────────────────────────────────────
@@ -722,11 +590,6 @@ class LightApi:
                 break
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Handler utilities
-# ─────────────────────────────────────────────────────────────────────────────
-
-
 def _validate_async_dependencies(engine: Any) -> None:
     """Raise ConfigurationError if async SQLAlchemy extras or dialect driver are missing."""
     try:
@@ -747,164 +610,3 @@ def _validate_async_dependencies(engine: Any) -> None:
                 f"Async driver for '{dialect}' is not installed. "
                 f"Install with: uv add {driver}"
             )
-
-
-async def _read_body(request: Request) -> dict[str, Any]:
-    """Read and parse JSON body; return {} on failure."""
-
-    try:
-        body = await request.body()
-        return json.loads(body) if body else {}
-    except Exception:
-        return {}
-
-
-def _check_auth(
-    cls: type,
-    request: Request,
-) -> Response | None:
-    """Run authentication + permission checks; return 401/403 response or None."""
-
-    auth_cfg = cls._meta.get("authentication")
-    if auth_cfg is None:
-        return None
-
-    backend = auth_cfg.backend
-    permission_cls = auth_cfg.permission
-
-    # Resolve permission for this method
-    if permission_cls is not None:
-        if isinstance(permission_cls, dict):
-            perm_cls = permission_cls.get(request.method)
-            if perm_cls is None:
-                perm_cls = AllowAny
-        else:
-            perm_cls = permission_cls
-    else:
-        perm_cls = AllowAny
-
-    # AllowAny means the endpoint is fully public — skip backend authentication.
-    if perm_cls is AllowAny:
-        return None
-
-    if backend is not None:
-        # Create authenticator with config based on backend type
-        # Note: We need to access self._login_validator from the LightApi instance
-        # but _check_auth is a standalone function. For now, we'll rely on the
-        # authentication backend's validate_credentials method being overridden
-        # or use the login_validator from the global config
-        login_validator = getattr(auth_cfg, "_login_validator", None)
-
-        if backend.__name__ == "JWTAuthentication":
-            authenticator = backend(
-                expiration=getattr(auth_cfg, "jwt_expiration", None),
-                algorithm=getattr(auth_cfg, "jwt_algorithm", None),
-                rate_limiter=getattr(auth_cfg, "rate_limiter", None),
-            )
-        elif backend.__name__ == "BasicAuthentication":
-            authenticator = backend(
-                rate_limiter=getattr(auth_cfg, "rate_limiter", None),
-                login_validator=login_validator,
-            )
-        else:
-            authenticator = backend()
-
-        if not authenticator.authenticate(request):
-            return JSONResponse(
-                {RESPONSE_KEY_DETAIL: "Authentication credentials invalid."},
-                status_code=HTTPStatus.UNAUTHORIZED,
-            )
-
-    if perm_cls is not None:
-        perm = perm_cls()
-        if not perm.has_permission(request):
-            return JSONResponse(
-                {
-                    RESPONSE_KEY_DETAIL: "You do not have permission to perform this action."
-                },
-                status_code=HTTPStatus.FORBIDDEN,
-            )
-
-    return None
-
-
-async def _run_pre_middlewares(
-    middlewares: list[type], request: Request
-) -> Response | None:
-    """Run pre-request middleware; supports both sync and async process() methods."""
-    for mw_cls in middlewares:
-        mw = mw_cls()
-        if asyncio.iscoroutinefunction(mw.process):
-            result = await mw.process(request, None)
-        else:
-            result = mw.process(request, None)
-        if result is not None:
-            return result
-    return None
-
-
-async def _run_post_middlewares(
-    middlewares: list[type], request: Request, response: Response
-) -> Response:
-    """Run post-response middleware in reverse order; supports sync and async process()."""
-    for mw_cls in reversed(middlewares):
-        mw = mw_cls()
-        if asyncio.iscoroutinefunction(mw.process):
-            result = await mw.process(request, response)
-        else:
-            result = mw.process(request, response)
-        if result is not None:
-            response = result
-    return response
-
-
-def _maybe_cached(cls: type, request: Request, fn: Any) -> Response:
-    """Serve from Redis cache (GET only) or call fn() and populate cache."""
-
-    cache_cfg = cls._meta.get("cache")
-    if cache_cfg is None:
-        return fn()
-
-    key = _cache_key(cls, request)
-    try:
-        cached = get_cached(key)
-    except Exception:
-        cached = None
-    if cached is not None:
-        return JSONResponse(cached)
-    response = fn()
-    if isinstance(response, JSONResponse) and response.status_code == 200:
-        import json
-
-        try:
-            set_cached(key, json.loads(response.body), cache_cfg.ttl)
-        except Exception:
-            pass
-    return response
-
-
-def _maybe_invalidate_cache(cls: type, request: Request) -> None:
-    """Invalidate cache entries after mutating requests."""
-    if request.method == "GET":
-        return
-    cache_cfg = cls._meta.get("cache")
-    if cache_cfg is None:
-        return
-
-    invalidate_cache_prefix(_cache_key_prefix(cls))
-
-
-def _cache_key(cls: type, request: Request) -> str:
-    query = str(request.query_params)
-    return f"lightapi:{cls.__name__}:{request.url.path}:{query}"
-
-
-def _cache_key_prefix(cls: type) -> str:
-    return f"lightapi:{cls.__name__}:"
-
-
-def _wrap_dict_response(result: Any) -> Response:
-    """Wrap dict responses in JSONResponse, leave Response unchanged."""
-    if isinstance(result, dict):
-        return JSONResponse(result)
-    return result
