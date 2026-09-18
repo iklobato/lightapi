@@ -3,21 +3,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Dict, Optional, Protocol
+from typing import Any, Dict, Optional
 
 import redis
 
-from lightapi.constants import DEFAULT_CACHE_TTL, DEFAULT_REDIS_URL
+from lightapi.constants import DEFAULT_REDIS_URL
 
 logger = logging.getLogger(__name__)
-
-
-class CacheBackend(Protocol):
-    """Protocol for cache backends."""
-
-    def get(self, key: str) -> Optional[Dict[str, Any]]: ...
-    def set(self, key: str, value: Dict[str, Any], timeout: int = 300) -> bool: ...
-    def delete(self, key: str) -> bool: ...
 
 
 class RedisCacheBackend:
@@ -91,84 +83,6 @@ class RedisCacheBackend:
 
 # Default global instance for backward compatibility
 _default_backend = RedisCacheBackend()
-
-
-class CacheManager:
-    """Consolidated cache manager class for all cache operations.
-
-    Provides a unified interface for caching with configurable backends.
-    Supports both Redis and no-op caching.
-    """
-
-    def __init__(self, backend: Optional[CacheBackend] = None) -> None:
-        """Initialize the cache manager.
-
-        Args:
-            backend: Optional cache backend. If None, uses RedisCacheBackend.
-        """
-        self._backend = backend or _default_backend
-
-    def get(self, key: str) -> Any | None:
-        """Retrieve cached value.
-
-        Args:
-            key: Cache key
-
-        Returns:
-            Cached value or None
-        """
-        return self._backend.get(key)
-
-    def set(self, key: str, value: Any, ttl: int = DEFAULT_CACHE_TTL) -> bool:
-        """Store value in cache.
-
-        Args:
-            key: Cache key
-            value: Value to cache
-            ttl: Time to live in seconds
-
-        Returns:
-            True if successful
-        """
-        return self._backend.set(key, value, ttl)
-
-    def delete(self, key: str) -> bool:
-        """Delete a cache key.
-
-        Args:
-            key: Cache key
-
-        Returns:
-            True if successful
-        """
-        return self._backend.delete(key)
-
-    def invalidate_prefix(self, prefix: str) -> bool:
-        """Invalidate all keys matching prefix.
-
-        Args:
-            prefix: Key prefix to match
-
-        Returns:
-            True if successful
-        """
-        return self._backend.invalidate_prefix(prefix)
-
-    def ping(self) -> bool:
-        """Check if cache backend is available.
-
-        Returns:
-            True if backend is reachable
-        """
-        return self._backend.ping()
-
-
-# Global cache manager instance
-_cache_manager = CacheManager()
-
-
-def _get_redis() -> "redis.Redis | None":
-    return _default_backend._get_client()
 
 
 def _ping_redis() -> bool:

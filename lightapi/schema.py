@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from pydantic import ConfigDict, create_model
 from pydantic.fields import FieldInfo
@@ -12,49 +12,6 @@ from lightapi.exceptions import ConfigurationError, SerializationError
 
 logger = logging.getLogger(__name__)
 _AUTO_FIELDS = AUTO_FIELDS
-
-# Type registry for extensible column type mapping (OCP)
-_TYPE_ANNOTATION_REGISTRY: dict[type, Callable[[Any], type]] = {}
-
-
-class SchemaHelper:
-    """Helper class for schema operations.
-
-    Provides a unified interface for serialization, field projection,
-    and row-to-dict conversion.
-    """
-
-    @staticmethod
-    def normalise_serializer(
-        serializer: object,
-    ) -> tuple[list[str] | None, list[str] | None, list[str] | None]:
-        """Return (fields, read, write) from any Serializer form."""
-        return normalise_serializer(serializer)
-
-    @staticmethod
-    def resolve_fields(cls: type, method: str) -> list[str] | None:
-        """Return the field list to project for the given HTTP method."""
-        return resolve_fields(cls, method)
-
-    @staticmethod
-    def row_to_dict(row: Any) -> dict[str, Any]:
-        """Convert a SQLAlchemy row or ORM instance to a plain dict."""
-        return _row_to_dict(row)
-
-    @staticmethod
-    def apply_fields(d: dict[str, Any], fields: list[str] | None) -> dict[str, Any]:
-        """Project a dict to only the requested field names."""
-        return _apply_fields(d, fields)
-
-
-def register_column_type(db_type: type, annotation_fn: Callable[[Any], type]) -> None:
-    """Register a column type to annotation mapping for extensibility.
-
-    Args:
-        db_type: SQLAlchemy column type class
-        annotation_fn: Function that takes column and returns Pydantic annotation
-    """
-    _TYPE_ANNOTATION_REGISTRY[db_type] = annotation_fn
 
 
 def normalise_serializer(
@@ -345,38 +302,3 @@ class SchemaFactory:
         schema_create.model_rebuild()
         schema_read.model_rebuild()
         return schema_create, schema_read
-
-
-def _strip_lightapi_kwargs(fi: FieldInfo) -> FieldInfo:
-    """Copy of FieldInfo with LightAPI-only keys removed from json_schema_extra."""
-    from pydantic import Field as pydantic_Field
-    from pydantic_core import PydanticUndefined
-
-    from lightapi.fields import _LIGHTAPI_KWARGS
-
-    extra = fi.json_schema_extra or {}
-    clean_extra = {k: v for k, v in extra.items() if k not in _LIGHTAPI_KWARGS}
-
-    kwargs: dict[str, Any] = {}
-    if fi.default is not PydanticUndefined:
-        kwargs["default"] = fi.default
-    if fi.default_factory is not None:
-        kwargs["default_factory"] = fi.default_factory
-    for attr in (
-        "title",
-        "description",
-        "gt",
-        "ge",
-        "lt",
-        "le",
-        "min_length",
-        "max_length",
-        "pattern",
-    ):
-        val = getattr(fi, attr, None)
-        if val is not None:
-            kwargs[attr] = val
-    if clean_extra:
-        kwargs["json_schema_extra"] = clean_extra
-
-    return pydantic_Field(**kwargs)  # type: ignore[return-value]

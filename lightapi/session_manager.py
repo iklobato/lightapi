@@ -1,17 +1,12 @@
-"""Session management abstraction for LightAPI.
-
-Replaces the global registry pattern with proper dependency injection.
-Provides both sync and async session management with proper cleanup.
-"""
+"""Engine, registry and metadata holder for one LightApi app."""
 
 from __future__ import annotations
 
-import contextlib
 import threading
-from typing import Any, Protocol, Union, runtime_checkable
+from typing import Any
 
 from sqlalchemy import MetaData
-from sqlalchemy.orm import Session, registry
+from sqlalchemy.orm import registry
 
 # Thread-local storage for test isolation
 _thread_local = threading.local()
@@ -56,55 +51,19 @@ def get_unique_table_name(base_name: str) -> str:
     return result
 
 
-def clear_test_registries():
-    """Clear test-specific registries and metadata."""
-    if hasattr(_thread_local, "metadata"):
-        delattr(_thread_local, "metadata")
-    if hasattr(_thread_local, "registry"):
-        _thread_local.registry.dispose()
-        delattr(_thread_local, "registry")
-    if hasattr(_thread_local, "table_counter"):
-        delattr(_thread_local, "table_counter")
-
-
 # Global shared metadata for all endpoints (backward compatibility)
 _GLOBAL_METADATA = MetaData()
 _GLOBAL_REGISTRY = registry(metadata=_GLOBAL_METADATA)
 
 
-class EngineProtocol(Protocol):
-    """Protocol for SQLAlchemy engines (sync or async)."""
-
-    def dispose(self) -> None: ...
-
-    @property
-    def url(self) -> Any: ...
-
-
-@runtime_checkable
-class AsyncEngineProtocol(Protocol):
-    """Protocol for SQLAlchemy async engines."""
-
-    def dispose(self) -> None: ...
-
-    @property
-    def url(self) -> Any: ...
-
-    @property
-    def sync_engine(self) -> Any: ...
-
-
-EngineType = Union[EngineProtocol, AsyncEngineProtocol, Any]
-
-
 class SessionManager:
-    """Manages SQLAlchemy sessions and registry for LightAPI.
+    """Holds the engine plus the registry and metadata endpoints are mapped into.
 
-    Replaces the global registry pattern with instance-based management.
+    Sessions are opened by the CRUD code itself, not here.
     Supports both sync and async engines.
     """
 
-    def __init__(self, engine: EngineType, use_test_isolation: bool = False) -> None:
+    def __init__(self, engine: Any, use_test_isolation: bool = False) -> None:
         """Initialize with an engine (sync or async).
 
         Args:
@@ -124,7 +83,7 @@ class SessionManager:
             self._registry = _GLOBAL_REGISTRY
 
     @property
-    def engine(self) -> EngineType:
+    def engine(self) -> Any:
         """Get the engine."""
         return self._engine
 
@@ -137,91 +96,3 @@ class SessionManager:
     def registry(self) -> registry:
         """Get the registry."""
         return self._registry
-
-    @property
-    def is_async(self) -> bool:
-        """Check if engine is async."""
-        return self._is_async
-
-    def get_registry_and_metadata(self) -> tuple[registry, MetaData]:
-        """Get registry and metadata (compatibility with old API)."""
-        return self._registry, self._metadata
-
-    @contextlib.contextmanager
-    def session(self):
-        """Get a sync session context manager.
-
-        Yields:
-            SQLAlchemy Session
-        """
-        if self._is_async:
-            # For async engines, use the sync engine
-            from sqlalchemy.ext.asyncio import AsyncEngine
-
-            async_engine = self._engine
-            if isinstance(async_engine, AsyncEngine):
-                engine = async_engine.sync_engine
-            else:
-                raise TypeError(f"Expected AsyncEngine, got {type(async_engine)}")
-        else:
-            engine = self._engine
-
-        with Session(engine) as session:
-            yield session
-
-    @contextlib.asynccontextmanager
-    async def async_session(self):
-        """Get an async session context manager.
-
-        Yields:
-            SQLAlchemy AsyncSession
-        """
-        if not self._is_async:
-            raise TypeError("Cannot create async session from sync engine")
-
-        from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
-
-        if not isinstance(self._engine, AsyncEngine):
-            raise TypeError(f"Expected AsyncEngine, got {type(self._engine)}")
-
-        async with AsyncSession(self._engine) as session:
-            yield session
-
-    def dispose(self) -> None:
-        """Dispose the engine."""
-        self._engine.dispose()
-
-
-class LoginValidator:
-    """Manages login validation functions."""
-
-    def __init__(self, validator: Any = None) -> None:
-        """Initialize with optional validator function.
-
-        Args:
-            validator: Function that accepts (username, password) and returns
-                      user payload dict or None
-        """
-        self._validator = validator
-
-    def set_validator(self, validator: Any) -> None:
-        """Set the validator function."""
-        self._validator = validator
-
-    def get_validator(self) -> Any:
-        """Get the validator function."""
-        return self._validator
-
-    def __call__(self, username: str, password: str) -> dict[str, Any] | None:
-        """Validate credentials using the registered validator.
-
-        Args:
-            username: Username
-            password: Password
-
-        Returns:
-            User payload dict or None if validation fails
-        """
-        if self._validator is None:
-            return None
-        return self._validator(username, password)

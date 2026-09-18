@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import math
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -17,65 +17,10 @@ from lightapi.constants import (
     RESPONSE_KEY_PAGES,
     RESPONSE_KEY_PREVIOUS,
     RESPONSE_KEY_RESULTS,
-    VALID_PAGINATION_STYLES,
 )
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-
-class PaginatorProtocol(Protocol):
-    """Protocol for pagination strategies."""
-
-    def paginate(
-        self,
-        request: Request,
-        qs: Any,
-        session: Session,
-        page_size: int,
-    ) -> tuple[list[Any], int] | tuple[list[Any], str | None]:
-        """Paginate a queryset."""
-        ...
-
-    def wrap(
-        self,
-        request: Request,
-        results: list[Any],
-        total: int = ...,
-        page: int = ...,
-        page_size: int = ...,
-        next_cursor: str | None = ...,
-        prev_cursor: str | None = ...,
-    ) -> dict[str, Any]:
-        """Wrap results in pagination response."""
-        ...
-
-
-class PaginatorFactory:
-    """Factory to create paginator instances based on configuration."""
-
-    @staticmethod
-    def create(style: str = "page_number") -> PaginatorProtocol:
-        """Create a paginator instance based on the style.
-
-        Args:
-            style: Pagination style ("page_number" or "cursor")
-
-        Returns:
-            A paginator instance implementing PaginatorProtocol
-
-        Raises:
-            ValueError: If style is not recognized
-        """
-        if style not in VALID_PAGINATION_STYLES:
-            raise ValueError(
-                f"Unknown pagination style: {style}. "
-                f"Valid styles: {VALID_PAGINATION_STYLES}"
-            )
-
-        if style == "cursor":
-            return CursorPaginator()
-        return PageNumberPaginator()
 
 
 def encode_cursor(last_id: int) -> str:
