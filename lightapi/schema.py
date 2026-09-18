@@ -2,59 +2,20 @@ from __future__ import annotations
 
 import datetime
 import logging
-from typing import Any, Callable, Optional
+from decimal import Decimal
+from functools import lru_cache
+from typing import Any, Optional
+from uuid import UUID
 
-from pydantic import ConfigDict, create_model
+from pydantic import BaseModel, ConfigDict, create_model
 from pydantic.fields import FieldInfo
+from sqlalchemy import Numeric, Uuid
 
 from lightapi.constants import AUTO_FIELDS
 from lightapi.exceptions import ConfigurationError, SerializationError
 
 logger = logging.getLogger(__name__)
 _AUTO_FIELDS = AUTO_FIELDS
-
-# Type registry for extensible column type mapping (OCP)
-_TYPE_ANNOTATION_REGISTRY: dict[type, Callable[[Any], type]] = {}
-
-
-class SchemaHelper:
-    """Helper class for schema operations.
-
-    Provides a unified interface for serialization, field projection,
-    and row-to-dict conversion.
-    """
-
-    @staticmethod
-    def normalise_serializer(
-        serializer: object,
-    ) -> tuple[list[str] | None, list[str] | None, list[str] | None]:
-        """Return (fields, read, write) from any Serializer form."""
-        return normalise_serializer(serializer)
-
-    @staticmethod
-    def resolve_fields(cls: type, method: str) -> list[str] | None:
-        """Return the field list to project for the given HTTP method."""
-        return resolve_fields(cls, method)
-
-    @staticmethod
-    def row_to_dict(row: Any) -> dict[str, Any]:
-        """Convert a SQLAlchemy row or ORM instance to a plain dict."""
-        return _row_to_dict(row)
-
-    @staticmethod
-    def apply_fields(d: dict[str, Any], fields: list[str] | None) -> dict[str, Any]:
-        """Project a dict to only the requested field names."""
-        return _apply_fields(d, fields)
-
-
-def register_column_type(db_type: type, annotation_fn: Callable[[Any], type]) -> None:
-    """Register a column type to annotation mapping for extensibility.
-
-    Args:
-        db_type: SQLAlchemy column type class
-        annotation_fn: Function that takes column and returns Pydantic annotation
-    """
-    _TYPE_ANNOTATION_REGISTRY[db_type] = annotation_fn
 
 
 def normalise_serializer(
@@ -125,6 +86,98 @@ def _apply_fields(d: dict[str, Any], fields: list[str] | None) -> dict[str, Any]
     return {k: v for k, v in d.items() if k in fields}
 
 
+@lru_cache(maxsize=None)
+def patch_schema(schema_create: type[BaseModel]) -> type[BaseModel]:
+    """``schema_create`` with every field optional, so PATCH can send any subset.
+
+    Cached per create schema: endpoints are a fixed set of classes, and building a
+    pydantic model on every PATCH request was measurable work for nothing.
+    """
+    optional_fields: dict[str, Any] = {
+        name: (Optional[field.annotation], None)  # type: ignore[valid-type]
+        for name, field in schema_create.model_fields.items()
+    }
+    return create_model(
+        schema_create.__name__.replace("CreateSchema", "PatchSchema"),
+        __config__=ConfigDict(from_attributes=True),
+        **optional_fields,
+    )
+
+
+# Python types a reflected column is validated as; any other type stays ``Any``.
+_REFLECTED_PYTHON_TYPES = frozenset(
+    {
+        int,
+        str,
+        float,
+        bool,
+        Decimal,
+        UUID,
+        datetime.datetime,
+        datetime.date,
+        datetime.time,
+    }
+)
+
+
+def _reflected_annotation(column: Any) -> Any:
+    """Annotation for a reflected column, from SQLAlchemy's own type mapping."""
+    # Two answers of python_type differ from what released versions validated,
+    # and clients see the difference (a Decimal is a JSON string, a float a JSON
+    # number): Float, Double and REAL are Numeric subclasses and have always been
+    # Decimal here, and a Uuid column is a UUID whatever its as_uuid flag.
+    if isinstance(column.type, Numeric):
+        return Decimal
+    if isinstance(column.type, Uuid):
+        return UUID
+    try:
+        python_type = column.type.python_type
+    except NotImplementedError:
+        python_type = None
+    if python_type in _REFLECTED_PYTHON_TYPES:
+        return python_type
+    logger.warning(
+        "Unknown SQLAlchemy type %s for column %s; using Any",
+        type(column.type).__name__,
+        column.name,
+    )
+    return Any
+
+
+# Every read schema carries the auto-managed columns, after the endpoint's own fields.
+_AUTO_READ_FIELDS: dict[str, Any] = {
+    "id": (Optional[int], None),
+    "created_at": (Optional[datetime.datetime], None),
+    "updated_at": (Optional[datetime.datetime], None),
+    "version": (Optional[int], None),
+}
+
+
+def _schema_pair(
+    endpoint_name: str, create_fields: dict[str, Any], read_fields: dict[str, Any]
+) -> tuple[type, type]:
+    """(create schema, read schema) for an endpoint.
+
+    create: input validation for POST/PUT/PATCH.
+    read: response serialization; ``extra="allow"`` lets join labels through.
+    """
+    missing_auto = {k: v for k, v in _AUTO_READ_FIELDS.items() if k not in read_fields}
+    schema_create = create_model(
+        f"{endpoint_name}CreateSchema",
+        __config__=ConfigDict(from_attributes=True),
+        **create_fields,
+    )
+    schema_read = create_model(
+        f"{endpoint_name}ReadSchema",
+        __config__=ConfigDict(from_attributes=True, extra="allow"),
+        **read_fields,
+        **missing_auto,
+    )
+    schema_create.model_rebuild()
+    schema_read.model_rebuild()
+    return schema_create, schema_read
+
+
 class SchemaFactory:
     """Builds Pydantic validation models from a RestEndpoint class."""
 
@@ -151,57 +204,26 @@ class SchemaFactory:
                 }
             )
 
-        field_infos: dict[str, FieldInfo] = {}
-        for name in user_annotations:
-            val = cls.__dict__.get(name) or getattr(cls, name, None)
-            if isinstance(val, FieldInfo):
-                field_infos[name] = val
-
         create_fields: dict[str, Any] = {}
         read_fields: dict[str, Any] = {}
-
-        from typing import Optional
-
         for name, annotation in user_annotations.items():
             if name in _AUTO_FIELDS:
                 continue
-            fi = field_infos.get(name)
-            extra = (fi.json_schema_extra or {}) if fi else {}
+            value = cls.__dict__.get(name) or getattr(cls, name, None)
+            field_info = value if isinstance(value, FieldInfo) else None
+            extra = (
+                (field_info.json_schema_extra or {}) if field_info is not None else {}
+            )
             if extra.get("exclude"):
                 continue
 
-            if fi is not None:
-                # create: FieldInfo with constraints for INPUT validation
-                create_fields[name] = (annotation, fi)
-                # read: Optional[T] so serializer can project out any field
-                read_fields[name] = (Optional[annotation], None)  # type: ignore[valid-type]
-            else:
-                create_fields[name] = (annotation, ...)
-                read_fields[name] = (Optional[annotation], None)  # type: ignore[valid-type]
+            # create keeps the Field() constraints; read is Optional so a
+            # serializer can project any field out.
+            default = field_info if field_info is not None else ...
+            create_fields[name] = (annotation, default)
+            read_fields[name] = (Optional[annotation], None)  # type: ignore[valid-type]
 
-        import datetime
-        from typing import Optional
-
-        read_fields["id"] = (Optional[int], None)
-        read_fields["created_at"] = (Optional[datetime.datetime], None)
-        read_fields["updated_at"] = (Optional[datetime.datetime], None)
-        read_fields["version"] = (Optional[int], None)
-
-        from pydantic import ConfigDict
-
-        schema_create = create_model(
-            f"{cls.__name__}CreateSchema",
-            __config__=ConfigDict(from_attributes=True),
-            **create_fields,
-        )
-        schema_read = create_model(
-            f"{cls.__name__}ReadSchema",
-            __config__=ConfigDict(from_attributes=True, extra="allow"),
-            **read_fields,
-        )
-        schema_create.model_rebuild()
-        schema_read.model_rebuild()
-        return schema_create, schema_read
+        return _schema_pair(cls.__name__, create_fields, read_fields)
 
     @staticmethod
     def build_from_reflected_table(cls: type, table: Any) -> tuple[type, type]:
@@ -212,171 +234,13 @@ class SchemaFactory:
         Includes all columns in read schema.
         Uses Optional[T] when column.nullable is True.
         """
-        from decimal import Decimal
-        from uuid import UUID
-
-        from sqlalchemy import (
-            Boolean,
-            Date,
-            DateTime,
-            Float,
-            Integer,
-            Numeric,
-            SmallInteger,
-            String,
-            Text,
-            Time,
-        )
-        from sqlalchemy.types import BigInteger
-
-        try:
-            from sqlalchemy import Uuid as SAUuid
-        except ImportError:
-            SAUuid = None  # type: ignore[assignment,misc]
-        try:
-            from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-        except ImportError:
-            PG_UUID = None  # type: ignore[assignment,misc]
-
-        def _col_type_to_annotation(col: Any) -> Any | None:
-            """Map SQLAlchemy column type to Pydantic annotation. None if unknown."""
-            col_type = type(col.type)
-            if isinstance(col.type, (Integer, BigInteger, SmallInteger)):
-                return int
-            if col_type in (String, Text) or issubclass(col_type, String):
-                return str
-            if col_type == Numeric or (
-                hasattr(Numeric, "__mro__") and Numeric in col_type.__mro__
-            ):
-                return Decimal
-            if col_type == Float or (
-                hasattr(Float, "__mro__") and Float in getattr(col_type, "__mro__", ())
-            ):
-                return float
-            if col_type == Boolean:
-                return bool
-            if col_type == Time or (
-                hasattr(Time, "__mro__") and Time in getattr(col_type, "__mro__", ())
-            ):
-                return datetime.time
-            if col_type in (DateTime,) or (
-                hasattr(DateTime, "__mro__")
-                and DateTime in getattr(col_type, "__mro__", ())
-            ):
-                return datetime.datetime
-            if col_type == Date or (
-                hasattr(Date, "__mro__") and Date in getattr(col_type, "__mro__", ())
-            ):
-                return datetime.date
-            if SAUuid is not None and col_type == SAUuid:
-                return UUID
-            if PG_UUID is not None and col_type == PG_UUID:
-                return UUID
-            type_name = (
-                getattr(col.type, "__visit_name__", "") or col_type.__name__ or ""
-            ).lower()
-            if type_name in ("integer", "big_integer", "small_integer", "int"):
-                return int
-            if type_name in (
-                "string",
-                "varchar",
-                "char",
-                "text",
-                "unicode",
-                "unicode_text",
-            ):
-                return str
-            if type_name in ("numeric", "decimal"):
-                return Decimal
-            if type_name in ("float", "double", "real"):
-                return float
-            if type_name == "boolean":
-                return bool
-            if type_name in ("datetime", "timestamp"):
-                return datetime.datetime
-            if type_name == "date":
-                return datetime.date
-            if type_name == "time":
-                return datetime.time
-            if type_name == "uuid":
-                return UUID
-            logger.warning(
-                "Unknown SQLAlchemy type %s for column %s; using Any",
-                col_type.__name__,
-                col.name,
-            )
-            return None
-
         create_fields: dict[str, Any] = {}
         read_fields: dict[str, Any] = {}
-
         for col in table.c:
-            name = col.key
-            annotation = _col_type_to_annotation(col)
-            if annotation is None:
-                annotation = Any
-            use_optional = col.nullable
-            ann = Optional[annotation] if use_optional else annotation  # type: ignore[valid-type]
+            annotation = _reflected_annotation(col)
+            if col.key not in _AUTO_FIELDS:
+                required = Optional[annotation] if col.nullable else annotation  # type: ignore[valid-type]
+                create_fields[col.key] = (required, ...)
+            read_fields[col.key] = (Optional[annotation], None)  # type: ignore[valid-type]
 
-            if name not in _AUTO_FIELDS:
-                create_fields[name] = (ann, ...)
-
-            read_fields[name] = (Optional[annotation], None)  # type: ignore[valid-type]
-
-        if "id" not in read_fields:
-            read_fields["id"] = (Optional[int], None)
-        if "created_at" not in read_fields:
-            read_fields["created_at"] = (Optional[datetime.datetime], None)
-        if "updated_at" not in read_fields:
-            read_fields["updated_at"] = (Optional[datetime.datetime], None)
-        if "version" not in read_fields:
-            read_fields["version"] = (Optional[int], None)
-
-        schema_create = create_model(
-            f"{cls.__name__}CreateSchema",
-            __config__=ConfigDict(from_attributes=True),
-            **create_fields,
-        )
-        schema_read = create_model(
-            f"{cls.__name__}ReadSchema",
-            __config__=ConfigDict(from_attributes=True, extra="allow"),
-            **read_fields,
-        )
-        schema_create.model_rebuild()
-        schema_read.model_rebuild()
-        return schema_create, schema_read
-
-
-def _strip_lightapi_kwargs(fi: FieldInfo) -> FieldInfo:
-    """Copy of FieldInfo with LightAPI-only keys removed from json_schema_extra."""
-    from pydantic import Field as pydantic_Field
-    from pydantic_core import PydanticUndefined
-
-    from lightapi.fields import _LIGHTAPI_KWARGS
-
-    extra = fi.json_schema_extra or {}
-    clean_extra = {k: v for k, v in extra.items() if k not in _LIGHTAPI_KWARGS}
-
-    kwargs: dict[str, Any] = {}
-    if fi.default is not PydanticUndefined:
-        kwargs["default"] = fi.default
-    if fi.default_factory is not None:
-        kwargs["default_factory"] = fi.default_factory
-    for attr in (
-        "title",
-        "description",
-        "gt",
-        "ge",
-        "lt",
-        "le",
-        "min_length",
-        "max_length",
-        "pattern",
-    ):
-        val = getattr(fi, attr, None)
-        if val is not None:
-            kwargs[attr] = val
-    if clean_extra:
-        kwargs["json_schema_extra"] = clean_extra
-
-    return pydantic_Field(**kwargs)  # type: ignore[return-value]
+        return _schema_pair(cls.__name__, create_fields, read_fields)

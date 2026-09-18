@@ -8,9 +8,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from lightapi._login import _parse_basic_header
-from lightapi.authentication.base import BaseAuthentication
+from lightapi.authentication.base import BaseAuthentication, LoginValidator
 
 if TYPE_CHECKING:
+    from lightapi.config import Authentication
     from lightapi.rate_limiter import RateLimiter
 
 
@@ -28,6 +29,19 @@ class BasicAuthentication(BaseAuthentication):
     ) -> None:
         self.rate_limiter = rate_limiter
         self._login_validator = login_validator
+
+    @classmethod
+    def from_config(
+        cls,
+        authentication: Authentication,
+        login_validator: LoginValidator | None = None,
+    ) -> BasicAuthentication:
+        # A subclass with its own constructor keeps being built without arguments.
+        if cls.__init__ is not BasicAuthentication.__init__:
+            return cls()
+        return cls(
+            rate_limiter=authentication.rate_limiter, login_validator=login_validator
+        )
 
     def authenticate(self, request: Request) -> bool:
         if request.method == "OPTIONS":

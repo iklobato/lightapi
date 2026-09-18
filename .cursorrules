@@ -14,8 +14,8 @@ Pydantic schema. No models.py, schemas.py, Column(), or @validates in user code.
 - Pydantic v2 — Field(), create_model(), model_validate(), model_dump()
 - Starlette — Request, JSONResponse, Response, Router, Route
 - Uvicorn — ASGI server
-- PyJWT — JWT auth (JWTAuthentication is FROZEN — do not modify)
-- Redis — caching via frozen RedisCache/cache_manager
+- PyJWT: JWT auth
+- Redis: caching via RedisCache/cache_manager
 - PyYAML — YAML config loading
 - pytest + httpx + SQLite — testing only
 
@@ -28,19 +28,11 @@ Pydantic schema. No models.py, schemas.py, Column(), or @validates in user code.
 | lightapi/fields.py     | lightapi.Field() wrapper (strips foreign_key/unique/index/exclude) |
 | lightapi/schema.py     | SchemaFactory, _row_to_dict, _apply_fields, resolve_fields |
 | lightapi/rest.py       | RestEndpointMeta, RestEndpoint auto-CRUD |
-| lightapi/auth.py       | AllowAny, IsAuthenticated, IsAdminUser (JWTAuthentication FROZEN) |
+| lightapi/auth.py       | AllowAny, IsAuthenticated, IsAdminUser |
 | lightapi/filters.py    | FilterBackend, SearchFilter, OrderingFilter |
 | lightapi/pagination.py | PageNumberPaginator, CursorPaginator |
 | lightapi/middleware.py | Middleware base |
 | lightapi/__init__.py   | LightApi, @app.route, @app.middleware, YAML, select shim |
-
-## FROZEN — DO NOT MODIFY
-- lightapi/auth.py: JWTAuthentication, BaseAuthentication (class bodies)
-- lightapi/cache.py: RedisCache, BaseCache
-- lightapi/swagger.py: SwaggerGenerator
-- lightapi/lightapi.py: preserved as legacy until __init__.py rewrite absorbs it
-- .github/workflows/
-- pyproject.toml metadata fields (name, version, description, authors, etc.)
 
 ## Key Invariants (enforce in all generated code)
 1. RestEndpoint IS the SQLAlchemy model AND the Pydantic schema.

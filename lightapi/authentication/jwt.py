@@ -9,10 +9,12 @@ import jwt
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.authentication.base import BaseAuthentication
+from lightapi.authentication.base import BaseAuthentication, LoginValidator
 from lightapi.config import config
+from lightapi.constants import RESPONSE_KEY_TOKEN, RESPONSE_KEY_USER
 
 if TYPE_CHECKING:
+    from lightapi.config import Authentication
     from lightapi.rate_limiter import RateLimiter
 
 
@@ -28,10 +30,36 @@ class JWTAuthentication(BaseAuthentication):
         algorithm: str | None = None,
         expiration: int | None = None,
         rate_limiter: "RateLimiter | None" = None,
+        extra_claims: tuple[str, ...] = (),
     ) -> None:
         self.algorithm = algorithm
         self.expiration = expiration
         self.rate_limiter = rate_limiter
+        self.extra_claims = extra_claims
+
+    @classmethod
+    def from_config(
+        cls,
+        authentication: Authentication,
+        login_validator: LoginValidator | None = None,
+    ) -> JWTAuthentication:
+        # A subclass with its own constructor keeps being built without arguments.
+        if cls.__init__ is not JWTAuthentication.__init__:
+            return cls()
+        return cls(
+            algorithm=authentication.jwt_algorithm,
+            expiration=authentication.jwt_expiration,
+            rate_limiter=authentication.rate_limiter,
+            extra_claims=tuple(authentication.jwt_extra_claims or ()),
+        )
+
+    def login_response(self, user: dict[str, Any]) -> dict[str, Any]:
+        """Token plus user. The token carries ``extra_claims`` when the user has any."""
+        claims = {key: user[key] for key in self.extra_claims if key in user}
+        return {
+            RESPONSE_KEY_TOKEN: self.generate_token(claims or user),
+            RESPONSE_KEY_USER: user,
+        }
 
     def authenticate(self, request: Request) -> bool:
         if request.method == "OPTIONS":

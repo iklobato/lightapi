@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import math
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Protocol
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,71 +11,17 @@ from starlette.requests import Request
 
 from lightapi.constants import (
     CURSOR_PARAM,
+    DEFAULT_PAGE_SIZE,
     PAGE_PARAM,
     RESPONSE_KEY_COUNT,
     RESPONSE_KEY_NEXT,
     RESPONSE_KEY_PAGES,
     RESPONSE_KEY_PREVIOUS,
     RESPONSE_KEY_RESULTS,
-    VALID_PAGINATION_STYLES,
 )
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-
-class PaginatorProtocol(Protocol):
-    """Protocol for pagination strategies."""
-
-    def paginate(
-        self,
-        request: Request,
-        qs: Any,
-        session: Session,
-        page_size: int,
-    ) -> tuple[list[Any], int] | tuple[list[Any], str | None]:
-        """Paginate a queryset."""
-        ...
-
-    def wrap(
-        self,
-        request: Request,
-        results: list[Any],
-        total: int = ...,
-        page: int = ...,
-        page_size: int = ...,
-        next_cursor: str | None = ...,
-        prev_cursor: str | None = ...,
-    ) -> dict[str, Any]:
-        """Wrap results in pagination response."""
-        ...
-
-
-class PaginatorFactory:
-    """Factory to create paginator instances based on configuration."""
-
-    @staticmethod
-    def create(style: str = "page_number") -> PaginatorProtocol:
-        """Create a paginator instance based on the style.
-
-        Args:
-            style: Pagination style ("page_number" or "cursor")
-
-        Returns:
-            A paginator instance implementing PaginatorProtocol
-
-        Raises:
-            ValueError: If style is not recognized
-        """
-        if style not in VALID_PAGINATION_STYLES:
-            raise ValueError(
-                f"Unknown pagination style: {style}. "
-                f"Valid styles: {VALID_PAGINATION_STYLES}"
-            )
-
-        if style == "cursor":
-            return CursorPaginator()
-        return PageNumberPaginator()
 
 
 def encode_cursor(last_id: int) -> str:
@@ -86,8 +32,40 @@ def decode_cursor(cursor: str) -> int:
     return json.loads(base64.urlsafe_b64decode(cursor.encode()))["id"]
 
 
+RowSerializer = Callable[[Any], dict[str, Any]]
+
+
+class Paginator(Protocol):
+    """Turns a query into the body of a list response."""
+
+    def render(
+        self, request: Request, qs: Any, session: Session, serialize: RowSerializer
+    ) -> dict[str, Any]: ...
+
+
+class NoPagination:
+    """Every row in a single response."""
+
+    def render(
+        self, request: Request, qs: Any, session: Session, serialize: RowSerializer
+    ) -> dict[str, Any]:
+        rows = session.execute(qs).scalars().all()
+        return {RESPONSE_KEY_RESULTS: [serialize(row) for row in rows]}
+
+
 class PageNumberPaginator:
     """Page-number based paginator that returns count/next/previous/results."""
+
+    def __init__(self, page_size: int = DEFAULT_PAGE_SIZE) -> None:
+        self.page_size = page_size
+
+    def render(
+        self, request: Request, qs: Any, session: Session, serialize: RowSerializer
+    ) -> dict[str, Any]:
+        rows, total = self.paginate(request, qs, session, self.page_size)
+        page = int(request.query_params.get(PAGE_PARAM, 1))
+        results = [serialize(row) for row in rows]
+        return self.wrap(request, results, total, page, self.page_size)
 
     def paginate(
         self,
@@ -110,15 +88,10 @@ class PageNumberPaginator:
         session: AsyncSession,
         page_size: int,
     ) -> tuple[list[Any], int]:
-        """Async mirror of paginate(); uses await session.execute()."""
-        page = max(1, int(request.query_params.get(PAGE_PARAM, 1)))
-        offset = (page - 1) * page_size
-        count_stmt = select(func.count()).select_from(qs.subquery())
-        total: int = (await session.execute(count_stmt)).scalar_one()
-        rows = (
-            (await session.execute(qs.limit(page_size).offset(offset))).scalars().all()
+        """paginate() for an AsyncSession."""
+        return await session.run_sync(
+            lambda sync_session: self.paginate(request, qs, sync_session, page_size)
         )
-        return list(rows), total
 
     def wrap(
         self,
@@ -150,6 +123,15 @@ class PageNumberPaginator:
 
 class CursorPaginator:
     """Keyset cursor-based paginator using base64(json({"id": last_id}))."""
+
+    def __init__(self, page_size: int = DEFAULT_PAGE_SIZE) -> None:
+        self.page_size = page_size
+
+    def render(
+        self, request: Request, qs: Any, session: Session, serialize: RowSerializer
+    ) -> dict[str, Any]:
+        rows, next_cursor = self.paginate(request, qs, session, self.page_size)
+        return self.wrap([serialize(row) for row in rows], next_cursor, None)
 
     def paginate(
         self,
@@ -191,33 +173,10 @@ class CursorPaginator:
         session: AsyncSession,
         page_size: int,
     ) -> tuple[list[Any], str | None]:
-        """Async mirror of paginate(); uses await session.execute()."""
-        cursor_str = request.query_params.get(CURSOR_PARAM)
-        if cursor_str:
-            try:
-                last_id = decode_cursor(cursor_str)
-                entity = (
-                    qs.columns_clause_froms[0]
-                    if hasattr(qs, "columns_clause_froms")
-                    else None
-                )
-                id_col = None
-                if entity is not None:
-                    id_col = entity.c.get("id")
-                if id_col is not None:
-                    qs = qs.where(id_col > last_id)
-            except Exception:
-                pass
-        rows = (
-            (await session.execute(qs.order_by("id").limit(page_size))).scalars().all()
+        """paginate() for an AsyncSession."""
+        return await session.run_sync(
+            lambda sync_session: self.paginate(request, qs, sync_session, page_size)
         )
-        next_cursor = None
-        if len(rows) == page_size:
-            last_obj = rows[-1]
-            last_row_id = getattr(last_obj, "id", None)
-            if last_row_id is not None:
-                next_cursor = encode_cursor(last_row_id)
-        return list(rows), next_cursor
 
     def wrap(
         self,
@@ -230,3 +189,9 @@ class CursorPaginator:
             RESPONSE_KEY_PREVIOUS: prev_cursor,
             RESPONSE_KEY_RESULTS: results,
         }
+
+
+PAGINATORS: dict[str, type[PageNumberPaginator] | type[CursorPaginator]] = {
+    "page_number": PageNumberPaginator,
+    "cursor": CursorPaginator,
+}

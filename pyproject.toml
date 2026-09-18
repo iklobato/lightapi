@@ -119,25 +119,10 @@ select = [
 "lightapi/cache.py" = [
     "E501",
 ]
-"lightapi/swagger.py" = [
-    "E501",
-]
 "lightapi/lightapi.py" = [
     "E501",
 ]
-"lightapi/base_endpoint.py" = [
-    "E501",
-]
 "lightapi/core.py" = [
-    "E501",
-]
-"lightapi/database.py" = [
-    "E501",
-]
-"lightapi/handlers.py" = [
-    "E501",
-]
-"lightapi/models.py" = [
     "E501",
 ]
 "examples/*.py" = [
@@ -174,13 +159,8 @@ ignore_missing_imports = true
 module = [
     "lightapi.auth",
     "lightapi.cache",
-    "lightapi.swagger",
     "lightapi.lightapi",
-    "lightapi.base_endpoint",
     "lightapi.core",
-    "lightapi.database",
-    "lightapi.handlers",
-    "lightapi.models",
 ]
 ignore_errors = true
 
@@ -196,19 +176,8 @@ module = [
     "lightapi._dict_config_loader",
     "lightapi._login",
     "lightapi.auth_checker",
-    "lightapi.auth_strategy",
-    "lightapi.cache_handler",
     "lightapi.cache_helper",
-    "lightapi.cache_service",
-    "lightapi.crud_async",
-    "lightapi.crud_sync",
-    "lightapi.handler_factory",
-    "lightapi.http_dispatcher",
-    "lightapi.middleware_pipeline",
     "lightapi.middleware_runner",
-    "lightapi.queryset",
-    "lightapi.response_wrapper",
-    "lightapi.route_builder",
     "lightapi.session_manager",
     "lightapi.table_mapping",
 ]

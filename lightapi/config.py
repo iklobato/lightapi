@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from lightapi.constants import (
     DEFAULT_CACHE_TTL,
@@ -13,8 +13,10 @@ from lightapi.constants import (
     VALID_PAGINATION_STYLES,
 )
 from lightapi.exceptions import ConfigurationError
+from lightapi.pagination import PAGINATORS, Paginator
 
 if TYPE_CHECKING:
+    from lightapi.authentication import BaseAuthentication
     from lightapi.rate_limiter import RateLimiter
 
 
@@ -47,15 +49,6 @@ class Config:
             )
         return algorithm
 
-    def update(self, **kwargs: Any) -> None:
-        """Update configuration values."""
-        if "jwt_secret" in kwargs:
-            self.jwt_secret = kwargs["jwt_secret"]
-        if "jwt_algorithm" in kwargs:
-            self.jwt_algorithm = kwargs["jwt_algorithm"]
-        if "jwt_expiration" in kwargs:
-            self.jwt_expiration = kwargs["jwt_expiration"]
-
 
 # Default global config instance for backward compatibility
 config = Config()
@@ -66,21 +59,40 @@ class Authentication:
     """Authentication configuration for a RestEndpoint."""
 
     backend: type | None = None
-    permission: type | None = None
+    # One permission class for every method, or {"GET": ..., "DELETE": ...}.
+    permission: type | dict[str, type] | None = None
     jwt_expiration: int | None = None
     jwt_extra_claims: tuple[str, ...] = field(default_factory=tuple)
     jwt_algorithm: str | None = None
     rate_limiter: "RateLimiter | None" = field(default=None, repr=False)
 
-    def __post_init__(self) -> None:
-        # Lazy import to avoid circular imports
-        pass
-
-    @property
-    def permission_value(self) -> type:
+    def permission_for(self, method: str) -> type:
+        """Permission class for an HTTP method; AllowAny when none is set for it."""
+        # lightapi.authentication imports this module, so this cannot be a top import.
         from lightapi.authentication import AllowAny
 
+        if isinstance(self.permission, dict):
+            return self.permission.get(method) or AllowAny
         return self.permission or AllowAny
+
+    def requires_login(self, method: str) -> bool:
+        """Whether the backend has to authenticate a request with this method.
+
+        A backend with no permission set still authenticates. An AllowAny
+        permission, for every method or for this one, makes the request public.
+        """
+        from lightapi.authentication import AllowAny
+
+        if self.backend is None:
+            return False
+        if self.permission is None:
+            return True
+        return self.permission_for(method) is not AllowAny
+
+    def build_backend(
+        self, login_validator: Callable[[str, str], Any] | None = None
+    ) -> BaseAuthentication:
+        return self.backend.from_config(self, login_validator)
 
 
 @dataclass(frozen=True)
@@ -108,6 +120,9 @@ class Pagination:
             )
         if self.page_size < 1:
             raise ConfigurationError("Pagination page_size must be a positive integer.")
+
+    def build_paginator(self) -> Paginator:
+        return PAGINATORS[self.style](self.page_size)
 
 
 @dataclass(frozen=True)

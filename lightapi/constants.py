@@ -2,18 +2,6 @@ from enum import Enum
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# HTTP Methods
-# ─────────────────────────────────────────────────────────────────────────
-class HttpMethod(str, Enum):
-    GET = "GET"
-    POST = "POST"
-    PUT = "PUT"
-    PATCH = "PATCH"
-    DELETE = "DELETE"
-    OPTIONS = "OPTIONS"
-
-
-# ─────────────────────────────────────────────────────────────────────────
 # HTTP Status Codes
 # ─────────────────────────────────────────────────────────────────────────
 class HTTPStatus(int, Enum):
@@ -35,14 +23,12 @@ class HTTPStatus(int, Enum):
 # ─────────────────────────────────────────────────────────────────────────
 RESPONSE_KEY_DETAIL = "detail"
 RESPONSE_KEY_RESULTS = "results"
-RESPONSE_KEY_ERROR = "error"
 RESPONSE_KEY_TOKEN = "token"
 RESPONSE_KEY_USER = "user"
 RESPONSE_KEY_COUNT = "count"
 RESPONSE_KEY_PAGES = "pages"
 RESPONSE_KEY_NEXT = "next"
 RESPONSE_KEY_PREVIOUS = "previous"
-RESPONSE_KEY_ALLOWED_METHODS = "allowed_methods"
 
 # ─────────────────────────────────────────────────────────────────────────
 # Pagination
@@ -75,22 +61,6 @@ VALID_JWT_ALGORITHMS = frozenset(
         "ES512",
     }
 )
-RESERVED_JWT_CLAIMS = frozenset({"exp", "iat", "nbf", "iss", "sub", "aud", "jti"})
-
-# ─────────────────────────────────────────────────────────────────────────
-# Rate Limiting
-# ─────────────────────────────────────────────────────────────────────────
-DEFAULT_RATE_LIMIT_PER_MINUTE = 10
-DEFAULT_RATE_LIMIT_PER_HOUR = 100
-DEFAULT_RATE_LIMIT_PER_DAY = 1000
-CLEANUP_INTERVAL = 300  # seconds
-
-# ─────────────────────────────────────────────────────────────────────────
-# Application Defaults
-# ─────────────────────────────────────────────────────────────────────────
-DEFAULT_MODE = "sync"
-VALID_MODES = ("sync", "async")
-DEFAULT_AUTH_PATH = "/auth"
 
 # ─────────────────────────────────────────────────────────────────────────
 # Cache

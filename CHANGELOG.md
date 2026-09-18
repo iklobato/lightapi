@@ -7,6 +7,42 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Deprecated
+- **`LightApi.from_dict`** emits a `DeprecationWarning` and is removed in 0.2.0. Use
+  `RestEndpoint` subclasses with `register()`, or `from_config()` with a YAML file.
+
+### Changed
+- **Sync CRUD runs in a worker thread**: with a sync `Engine`, `list`, `retrieve`,
+  `create`, `update`, `destroy` and the response-cache calls ran on the event loop
+  thread, so one slow query held up every other request on that worker. They now
+  go through `starlette.concurrency.run_in_threadpool`. Engines on `StaticPool` or
+  `SingletonThreadPool` (in-memory SQLite) still run in place, because those pools
+  cannot be shared across threads.
+
+### Fixed
+- **`Meta.cache` was ignored on async engines**: cached GETs and cache invalidation
+  only ran on the sync path, so an app on an `AsyncEngine` never read or wrote the
+  cache. Both engine kinds now use it. The Redis calls run in a worker thread.
+- **Sync verb overrides were ignored**: a plain `def get(self, request)` (or `post`,
+  `put`, `patch`, `delete`) on an endpoint was skipped and the built-in CRUD ran
+  instead; only `async def` overrides were served. Both are served now, on sync and
+  async engines. A column that happens to be called `post` or `get` is still a
+  column, not an override.
+- **`/auth/login` ignored a backend's `validate_credentials`**: the login route
+  always validated through a bare `JWTAuthentication()`, so overriding
+  `validate_credentials()` on a subclass (the README's "custom authentication")
+  never ran and login returned `401`. The route now uses the backend the endpoint
+  configured, sync or `async def`. An app-level `login_validator` still wins.
+- **Auth settings were dropped for backend subclasses**: `jwt_expiration`,
+  `jwt_algorithm` and `jwt_extra_claims` only reached a backend whose class was named
+  exactly `JWTAuthentication`. Subclasses get them too, unless they define their own
+  `__init__`.
+- **`LIGHTAPI_REDIS_URL` was read at import time**: the Redis client behind
+  `Meta.cache` was built when `lightapi` was imported, so a URL set afterwards (in
+  code, or by a test) was ignored. It is built on the first cache call now.
+
 ## [Unreleased] — 0.1.24
 
 ### Fixed

@@ -1,5 +1,7 @@
 """Integration tests for US1: CRUD auto-generation."""
 
+from typing import Optional
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
@@ -14,6 +16,11 @@ class BookEndpoint(RestEndpoint):
     author: str = LField(min_length=1)
 
 
+class NoteEndpoint(RestEndpoint):
+    title: str = LField(min_length=1)
+    subtitle: Optional[str] = LField(default=None)
+
+
 @pytest.fixture
 def client():
     engine = create_engine(
@@ -22,7 +29,7 @@ def client():
         poolclass=StaticPool,
     )
     app_instance = LightApi(engine=engine)
-    app_instance.register({"/books": BookEndpoint})
+    app_instance.register({"/books": BookEndpoint, "/notes": NoteEndpoint})
     app = app_instance.build_app()
     return TestClient(app)
 
@@ -159,6 +166,42 @@ class TestPATCH:
             json={"title": "X", "version": 1},
         )
         assert resp.status_code == 404
+
+    def test_patch_null_clears_a_nullable_column(self, client):
+        note = client.post("/notes", json={"title": "T", "subtitle": "original"}).json()
+
+        resp = client.patch(
+            f"/notes/{note['id']}",
+            json={"subtitle": None, "version": note["version"]},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["subtitle"] is None
+        assert resp.json()["title"] == "T"
+
+    def test_patch_null_on_a_required_column_is_ignored(self, client):
+        note = client.post("/notes", json={"title": "T", "subtitle": "s"}).json()
+
+        resp = client.patch(
+            f"/notes/{note['id']}",
+            json={"title": None, "version": note["version"]},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "T"  # unchanged, null on non-nullable ignored
+        assert resp.json()["version"] == note["version"] + 1
+
+    def test_patch_omitted_field_does_not_change(self, client):
+        note = client.post("/notes", json={"title": "Original", "subtitle": "s"}).json()
+
+        resp = client.patch(
+            f"/notes/{note['id']}",
+            json={"subtitle": "updated", "version": note["version"]},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "Original"  # not sent, stays as-is
+        assert resp.json()["subtitle"] == "updated"
 
 
 class TestDELETE:

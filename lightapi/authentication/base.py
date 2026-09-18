@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from lightapi.constants import RESPONSE_KEY_USER
+
 if TYPE_CHECKING:
-    pass
+    from lightapi.config import Authentication
+
+LoginValidator = Callable[[str, str], "dict[str, Any] | None"]
 
 
 class BaseAuthentication:
@@ -17,6 +21,22 @@ class BaseAuthentication:
     Provides a common interface for all authentication methods.
     By default, allows all requests.
     """
+
+    @classmethod
+    def from_config(
+        cls,
+        authentication: Authentication,
+        login_validator: LoginValidator | None = None,
+    ) -> BaseAuthentication:
+        """Build the backend for an endpoint's ``Authentication`` settings.
+
+        Backends that take settings override this; the default needs none.
+        """
+        return cls()
+
+    def login_response(self, user: dict[str, Any]) -> dict[str, Any]:
+        """Body of a successful ``/auth/login`` for a validated user."""
+        return {RESPONSE_KEY_USER: user}
 
     def authenticate(self, request: Request) -> bool:
         """Authenticate a request.

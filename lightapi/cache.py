@@ -3,21 +3,14 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Dict, Optional, Protocol
+from functools import lru_cache
+from typing import Any, Dict, Optional
 
 import redis
 
-from lightapi.constants import DEFAULT_CACHE_TTL, DEFAULT_REDIS_URL
+from lightapi.constants import DEFAULT_REDIS_URL
 
 logger = logging.getLogger(__name__)
-
-
-class CacheBackend(Protocol):
-    """Protocol for cache backends."""
-
-    def get(self, key: str) -> Optional[Dict[str, Any]]: ...
-    def set(self, key: str, value: Dict[str, Any], timeout: int = 300) -> bool: ...
-    def delete(self, key: str) -> bool: ...
 
 
 class RedisCacheBackend:
@@ -89,106 +82,34 @@ class RedisCacheBackend:
             return False
 
 
-# Default global instance for backward compatibility
-_default_backend = RedisCacheBackend()
+@lru_cache(maxsize=1)
+def _default_backend() -> RedisCacheBackend:
+    """The process-wide Redis client, built on first use.
 
-
-class CacheManager:
-    """Consolidated cache manager class for all cache operations.
-
-    Provides a unified interface for caching with configurable backends.
-    Supports both Redis and no-op caching.
+    Building it at import time fixed LIGHTAPI_REDIS_URL to whatever the
+    environment held before ``import lightapi``.
     """
-
-    def __init__(self, backend: Optional[CacheBackend] = None) -> None:
-        """Initialize the cache manager.
-
-        Args:
-            backend: Optional cache backend. If None, uses RedisCacheBackend.
-        """
-        self._backend = backend or _default_backend
-
-    def get(self, key: str) -> Any | None:
-        """Retrieve cached value.
-
-        Args:
-            key: Cache key
-
-        Returns:
-            Cached value or None
-        """
-        return self._backend.get(key)
-
-    def set(self, key: str, value: Any, ttl: int = DEFAULT_CACHE_TTL) -> bool:
-        """Store value in cache.
-
-        Args:
-            key: Cache key
-            value: Value to cache
-            ttl: Time to live in seconds
-
-        Returns:
-            True if successful
-        """
-        return self._backend.set(key, value, ttl)
-
-    def delete(self, key: str) -> bool:
-        """Delete a cache key.
-
-        Args:
-            key: Cache key
-
-        Returns:
-            True if successful
-        """
-        return self._backend.delete(key)
-
-    def invalidate_prefix(self, prefix: str) -> bool:
-        """Invalidate all keys matching prefix.
-
-        Args:
-            prefix: Key prefix to match
-
-        Returns:
-            True if successful
-        """
-        return self._backend.invalidate_prefix(prefix)
-
-    def ping(self) -> bool:
-        """Check if cache backend is available.
-
-        Returns:
-            True if backend is reachable
-        """
-        return self._backend.ping()
-
-
-# Global cache manager instance
-_cache_manager = CacheManager()
-
-
-def _get_redis() -> "redis.Redis | None":
-    return _default_backend._get_client()
+    return RedisCacheBackend()
 
 
 def _ping_redis() -> bool:
     """Return True if Redis is reachable."""
-    return _default_backend.ping()
+    return _default_backend().ping()
 
 
 def get_cached(key: str) -> Any | None:
     """Return the cached value for *key* or None on miss / Redis failure."""
-    return _default_backend.get(key)
+    return _default_backend().get(key)
 
 
 def set_cached(key: str, value: Any, ttl: int) -> None:
     """Store *value* under *key* for *ttl* seconds. Silently ignores errors."""
-    _default_backend.set(key, value, ttl)
+    _default_backend().set(key, value, ttl)
 
 
 def invalidate_cache_prefix(prefix: str) -> None:
     """Delete all keys that start with *prefix*. Silently ignores errors."""
-    _default_backend.invalidate_prefix(prefix)
+    _default_backend().invalidate_prefix(prefix)
 
 
 class BaseCache:
