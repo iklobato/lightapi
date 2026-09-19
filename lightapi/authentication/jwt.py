@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse
 
 from lightapi.authentication.base import BaseAuthentication, LoginValidator
 from lightapi.config import config
-from lightapi.constants import RESPONSE_KEY_TOKEN, RESPONSE_KEY_USER
+from lightapi.constants import ResponseKey
 
 if TYPE_CHECKING:
     from lightapi.config import Authentication
@@ -57,8 +57,8 @@ class JWTAuthentication(BaseAuthentication):
         """Token plus user. The token carries ``extra_claims`` when the user has any."""
         claims = {key: user[key] for key in self.extra_claims if key in user}
         return {
-            RESPONSE_KEY_TOKEN: self.generate_token(claims or user),
-            RESPONSE_KEY_USER: user,
+            ResponseKey.TOKEN: self.generate_token(claims or user),
+            ResponseKey.USER: user,
         }
 
     def authenticate(self, request: Request) -> bool:

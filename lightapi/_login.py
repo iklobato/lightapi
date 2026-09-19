@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.constants import RESPONSE_KEY_DETAIL, HTTPStatus
+from lightapi.constants import HTTPStatus, ResponseKey
 
 if TYPE_CHECKING:
     from lightapi.authentication.base import BaseAuthentication, LoginValidator
@@ -103,7 +103,7 @@ class LoginEndpoint:
 
         if request.method != "POST":
             return JSONResponse(
-                {RESPONSE_KEY_DETAIL: "method not allowed"},
+                {ResponseKey.DETAIL: "method not allowed"},
                 status_code=HTTPStatus.METHOD_NOT_ALLOWED,
                 headers={"Allow": "POST"},
             )
@@ -112,14 +112,14 @@ class LoginEndpoint:
             creds = await _parse_credentials(request)
         except ValidationError as exc:
             return JSONResponse(
-                {RESPONSE_KEY_DETAIL: exc.errors()},
+                {ResponseKey.DETAIL: exc.errors()},
                 status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
             )
 
         user = await self._validated_user(*creds) if creds is not None else None
         if user is None:
             return JSONResponse(
-                {RESPONSE_KEY_DETAIL: "Invalid credentials"},
+                {ResponseKey.DETAIL: "Invalid credentials"},
                 status_code=HTTPStatus.UNAUTHORIZED,
             )
         return JSONResponse(self._backend.login_response(user))

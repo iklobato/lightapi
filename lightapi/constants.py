@@ -21,14 +21,16 @@ class HTTPStatus(int, Enum):
 # ─────────────────────────────────────────────────────────────────────────
 # Response Keys
 # ─────────────────────────────────────────────────────────────────────────
-RESPONSE_KEY_DETAIL = "detail"
-RESPONSE_KEY_RESULTS = "results"
-RESPONSE_KEY_TOKEN = "token"
-RESPONSE_KEY_USER = "user"
-RESPONSE_KEY_COUNT = "count"
-RESPONSE_KEY_PAGES = "pages"
-RESPONSE_KEY_NEXT = "next"
-RESPONSE_KEY_PREVIOUS = "previous"
+class ResponseKey(str, Enum):
+    DETAIL = "detail"
+    RESULTS = "results"
+    TOKEN = "token"
+    USER = "user"
+    COUNT = "count"
+    PAGES = "pages"
+    NEXT = "next"
+    PREVIOUS = "previous"
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # Pagination
