@@ -2,58 +2,65 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Any
 
 from sqlalchemy import MetaData
 from sqlalchemy.orm import registry
 
-# Thread-local storage for test isolation
-_thread_local = threading.local()
+logger = logging.getLogger(__name__)
 
 
-def _get_test_metadata():
-    """Get or create test-specific metadata."""
-    if not hasattr(_thread_local, "metadata"):
-        _thread_local.metadata = MetaData()
-    return _thread_local.metadata
+class _GlobalState:
+    """Process-wide SQLAlchemy metadata/registry, plus a thread-local copy.
+
+    Every non-isolated SessionManager shares the one `metadata`/`registry`
+    pair below. `use_test_isolation=True` gets a separate pair per thread
+    instead (plus per-thread table-name counters), so tests running in
+    parallel don't map two different classes onto the same table name.
+    """
+
+    def __init__(self) -> None:
+        self._local = threading.local()
+        self.reset()
+
+    def reset(self) -> None:
+        """Start over with fresh global metadata/registry.
+
+        Lets a test that redefines an endpoint class under a name already
+        used by a previous test (see tests/test_examples_e2e.py) map it
+        without inheriting columns from that earlier mapping.
+        """
+        self.metadata = MetaData()
+        self.registry = registry(metadata=self.metadata)
+
+    @property
+    def test_metadata(self) -> MetaData:
+        if not hasattr(self._local, "metadata"):
+            self._local.metadata = MetaData()
+        return self._local.metadata
+
+    @property
+    def test_registry(self) -> registry:
+        if not hasattr(self._local, "registry"):
+            self._local.registry = registry(metadata=self.test_metadata)
+        return self._local.registry
+
+    def unique_table_name(self, base_name: str) -> str:
+        """A table name unique to this thread, for parallel test isolation."""
+        if not hasattr(self._local, "table_counter"):
+            self._local.table_counter = {}
+        counter = self._local.table_counter.get(base_name, 0) + 1
+        self._local.table_counter[base_name] = counter
+        result = base_name if counter == 1 else f"{base_name}_{counter}"
+        logger.debug(
+            "unique_table_name: %s -> %s (counter: %s)", base_name, result, counter
+        )
+        return result
 
 
-def _get_test_registry():
-    """Get or create test-specific registry."""
-    if not hasattr(_thread_local, "registry"):
-        _thread_local.registry = registry(metadata=_get_test_metadata())
-    return _thread_local.registry
-
-
-def get_unique_table_name(base_name: str) -> str:
-    """Get a unique table name for test isolation."""
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    if not hasattr(_thread_local, "table_counter"):
-        _thread_local.table_counter = {}
-
-    if base_name not in _thread_local.table_counter:
-        _thread_local.table_counter[base_name] = 0
-
-    _thread_local.table_counter[base_name] += 1
-    counter = _thread_local.table_counter[base_name]
-
-    # For the first table, use the base name, for subsequent ones add counter
-    if counter == 1:
-        result = base_name
-    else:
-        result = f"{base_name}_{counter}"
-
-    logger.debug(f"get_unique_table_name: {base_name} -> {result} (counter: {counter})")
-    return result
-
-
-# Global shared metadata for all endpoints (backward compatibility)
-_GLOBAL_METADATA = MetaData()
-_GLOBAL_REGISTRY = registry(metadata=_GLOBAL_METADATA)
+_state = _GlobalState()
 
 
 class SessionManager:
@@ -76,11 +83,11 @@ class SessionManager:
 
         # Use test-specific or global metadata based on configuration
         if use_test_isolation:
-            self._metadata = _get_test_metadata()
-            self._registry = _get_test_registry()
+            self._metadata = _state.test_metadata
+            self._registry = _state.test_registry
         else:
-            self._metadata = _GLOBAL_METADATA
-            self._registry = _GLOBAL_REGISTRY
+            self._metadata = _state.metadata
+            self._registry = _state.registry
 
     @property
     def engine(self) -> Any:
@@ -104,7 +111,7 @@ class SessionManager:
     def table_name_for(self, base_name: str) -> str:
         """The table name to use; test isolation gives every mapping a fresh one."""
         if self._use_test_isolation:
-            return get_unique_table_name(base_name)
+            return _state.unique_table_name(base_name)
         return base_name
 
     def create_tables_now(self) -> None:

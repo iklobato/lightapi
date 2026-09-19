@@ -43,8 +43,8 @@ requires_redis = [
 @pytest.fixture
 def pg_engine():
     """A sync Postgres engine. Endpoints map with use_test_isolation, so
-    concurrent runs get distinct table names (get_unique_table_name) instead
-    of colliding on a shared 'items' table."""
+    concurrent runs get distinct table names (SessionManager.table_name_for)
+    instead of colliding on a shared 'items' table."""
     engine = create_engine(PG_SYNC_URL)
     yield engine
     engine.dispose()

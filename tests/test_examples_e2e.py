@@ -38,13 +38,9 @@ def _reset_global_registry():
     this reset, the second example would try to map a different class onto
     the same table name and inherit columns from the previous example.
     """
-    from sqlalchemy import MetaData
-    from sqlalchemy.orm import registry as sa_registry
+    from lightapi.session_manager import _state
 
-    from lightapi import session_manager as sm
-
-    sm._GLOBAL_METADATA = MetaData()
-    sm._GLOBAL_REGISTRY = sa_registry(metadata=sm._GLOBAL_METADATA)
+    _state.reset()
     yield
 
 
@@ -92,7 +88,11 @@ def test_example_01_minimal_full_crud():
 
         r = c.put(
             f"/books/{book['id']}",
-            json={"title": "Clean Code v2", "author": "Martin", "version": book["version"]},
+            json={
+                "title": "Clean Code v2",
+                "author": "Martin",
+                "version": book["version"],
+            },
         )
         assert r.status_code == 200
 
@@ -291,7 +291,10 @@ def test_example_06_page_pagination_response_envelope():
 def test_example_07_cursor_pagination():
     with _client("07_pagination_cursor.py") as c:
         for i in range(3):
-            assert c.post("/books", json={"title": f"B{i}", "author": f"A{i}"}).status_code == 201
+            assert (
+                c.post("/books", json={"title": f"B{i}", "author": f"A{i}"}).status_code
+                == 201
+            )
         r = c.get("/books")
         assert r.status_code == 200
         body = r.json()
@@ -380,9 +383,7 @@ def test_example_09_caching_basic_crud_still_works():
 
 def test_example_10_async_full_crud():
     with _client("10_async.py") as c:
-        r = c.post(
-            "/books", json={"title": "Async Book", "author": "A", "price": 25}
-        )
+        r = c.post("/books", json={"title": "Async Book", "author": "A", "price": 25})
         assert r.status_code == 201
         book = r.json()
 
@@ -408,8 +409,7 @@ def test_example_11_async_app_with_sync_and_async_endpoints():
         )
         assert c.get("/async-books").status_code == 200
         assert (
-            c.post("/sync-books", json={"title": "S", "author": "Y"}).status_code
-            == 201
+            c.post("/sync-books", json={"title": "S", "author": "Y"}).status_code == 201
         )
         assert c.get("/sync-books").status_code == 200
 
@@ -523,9 +523,7 @@ def test_example_17_foreign_key_relationship():
         assert r.status_code == 201
         author_id = r.json()["id"]
 
-        r = c.post(
-            "/books", json={"title": "Test Book", "author_id": author_id}
-        )
+        r = c.post("/books", json={"title": "Test Book", "author_id": author_id})
         assert r.status_code == 201
         book = r.json()
         assert book["author_id"] == author_id
