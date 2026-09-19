@@ -86,6 +86,10 @@ class TestGETDetail:
         resp = client.get("/books/999999")
         assert resp.status_code == 404
 
+    def test_retrieve_id_beyond_a_64_bit_int_is_404_not_500(self, client):
+        resp = client.get(f"/books/{2**63}")
+        assert resp.status_code == 404
+
 
 class TestPUT:
     def test_update_returns_200(self, client):
