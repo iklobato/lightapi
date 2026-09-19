@@ -32,6 +32,15 @@ def decode_cursor(cursor: str) -> int:
     return json.loads(base64.urlsafe_b64decode(cursor.encode()))["id"]
 
 
+def _current_page(request: Request) -> int:
+    """The requested page, clamped to at least 1; a non-numeric value is page 1."""
+    try:
+        page = int(request.query_params.get(PAGE_PARAM, 1))
+    except ValueError:
+        return 1
+    return max(1, page)
+
+
 RowSerializer = Callable[[Any], dict[str, Any]]
 
 
@@ -63,7 +72,7 @@ class PageNumberPaginator:
         self, request: Request, qs: Any, session: Session, serialize: RowSerializer
     ) -> dict[str, Any]:
         rows, total = self.paginate(request, qs, session, self.page_size)
-        page = int(request.query_params.get(PAGE_PARAM, 1))
+        page = _current_page(request)
         results = [serialize(row) for row in rows]
         return self.wrap(request, results, total, page, self.page_size)
 
@@ -74,7 +83,7 @@ class PageNumberPaginator:
         session: Session,
         page_size: int,
     ) -> tuple[list[Any], int]:
-        page = max(1, int(request.query_params.get(PAGE_PARAM, 1)))
+        page = _current_page(request)
         offset = (page - 1) * page_size
         count_stmt = select(func.count()).select_from(qs.subquery())
         total: int = session.execute(count_stmt).scalar_one()
