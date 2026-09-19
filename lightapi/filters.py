@@ -5,18 +5,6 @@ from typing import Any
 from sqlalchemy import asc, desc
 from starlette.requests import Request
 
-_RESERVED_PARAMS = frozenset({"page", "page_size", "cursor", "ordering"})
-_LIKE_ESCAPE_CHAR = "\\"
-
-
-def _escape_like(value: str) -> str:
-    """Escape LIKE special characters so user input is treated as a literal string."""
-    return (
-        value.replace(_LIKE_ESCAPE_CHAR, _LIKE_ESCAPE_CHAR * 2)
-        .replace("%", _LIKE_ESCAPE_CHAR + "%")
-        .replace("_", _LIKE_ESCAPE_CHAR + "_")
-    )
-
 
 class BaseFilter:
     """Base class for SQLAlchemy 2.0-style filter backends.
@@ -25,28 +13,53 @@ class BaseFilter:
     which receives a Select statement and should return a Select statement.
     """
 
+    RESERVED_PARAMS = frozenset({"page", "page_size", "cursor", "ordering"})
+    LIKE_ESCAPE_CHAR = "\\"
+
     def filter_queryset(self, request: Request, queryset: Any, view: Any) -> Any:
         return queryset
 
+    @classmethod
+    def _escape_like(cls, value: str) -> str:
+        """Escape LIKE special characters so user input is a literal string."""
+        char = cls.LIKE_ESCAPE_CHAR
+        return (
+            value.replace(char, char * 2)
+            .replace("%", char + "%")
+            .replace("_", char + "_")
+        )
+
+    @staticmethod
+    def _coerce_filter_value(col: Any, value: str) -> Any:
+        """Coerce a query-string value to match the column's Python type."""
+        try:
+            from sqlalchemy import Boolean, Float, Integer, Numeric
+
+            col_type = (
+                col.property.columns[0].type if hasattr(col, "property") else None
+            )
+            if col_type is None:
+                # InstrumentedAttribute from mapped class
+                col_type = getattr(col, "type", None)
+            if isinstance(col_type, Boolean):
+                return value.lower() in ("1", "true", "yes", "on")
+            if isinstance(col_type, Integer):
+                return int(value)
+            if isinstance(col_type, (Numeric, Float)):
+                return float(value)
+        except Exception:
+            pass
+        return value
+
 
 def _coerce_filter_value(col: Any, value: str) -> Any:
-    """Coerce a query-string value to match the column's Python type."""
-    try:
-        from sqlalchemy import Boolean, Float, Integer, Numeric
+    """Module-level alias of BaseFilter._coerce_filter_value.
 
-        col_type = col.property.columns[0].type if hasattr(col, "property") else None
-        if col_type is None:
-            # InstrumentedAttribute from mapped class
-            col_type = getattr(col, "type", None)
-        if isinstance(col_type, Boolean):
-            return value.lower() in ("1", "true", "yes", "on")
-        if isinstance(col_type, Integer):
-            return int(value)
-        if isinstance(col_type, (Numeric, Float)):
-            return float(value)
-    except Exception:
-        pass
-    return value
+    docs/api-reference/filters.md teaches custom backends to import this
+    name directly; keep it importing here even though subclasses now get
+    it for free via self._coerce_filter_value.
+    """
+    return BaseFilter._coerce_filter_value(col, value)
 
 
 class FieldFilter(BaseFilter):
@@ -62,11 +75,11 @@ class FieldFilter(BaseFilter):
 
         cls = type(view)
         for param, value in request.query_params.items():
-            if param in _RESERVED_PARAMS or param not in allowed_fields:
+            if param in self.RESERVED_PARAMS or param not in allowed_fields:
                 continue
             col = getattr(cls._model_class, param, None)
             if col is not None:
-                coerced = _coerce_filter_value(col, value)
+                coerced = self._coerce_filter_value(col, value)
                 queryset = queryset.where(col == coerced)
         return queryset
 
@@ -92,7 +105,9 @@ class SearchFilter(BaseFilter):
             col = getattr(cls._model_class, field, None)
             if col is not None:
                 clauses.append(
-                    col.ilike(f"%{_escape_like(query)}%", escape=_LIKE_ESCAPE_CHAR)
+                    col.ilike(
+                        f"%{self._escape_like(query)}%", escape=self.LIKE_ESCAPE_CHAR
+                    )
                 )
         if clauses:
             queryset = queryset.where(or_(*clauses))
