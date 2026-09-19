@@ -67,6 +67,26 @@ def test_delete_of_missing_row_raises_not_found(engine):
             Repository(LedgerEntry, session).delete(MISSING_PK)
 
 
+@pytest.mark.parametrize("pk", [2**63, -(2**63) - 1, 10**30])
+def test_get_of_a_pk_outside_sqlite_int64_range_raises_not_found(engine, pk):
+    """A pk this large can never match a row; used to raise OverflowError."""
+    with get_sync_session(engine) as session:
+        with pytest.raises(RowNotFound):
+            Repository(LedgerEntry, session).get(pk)
+
+
+def test_update_of_a_pk_outside_sqlite_int64_range_raises_not_found(engine):
+    with get_sync_session(engine) as session:
+        with pytest.raises(RowNotFound):
+            Repository(LedgerEntry, session).update(2**63, 1, {"memo": "x"})
+
+
+def test_delete_of_a_pk_outside_sqlite_int64_range_raises_not_found(engine):
+    with get_sync_session(engine) as session:
+        with pytest.raises(RowNotFound):
+            Repository(LedgerEntry, session).delete(2**63)
+
+
 def test_patch_schema_is_built_once_per_create_schema():
     first = patch_schema(LedgerEntry.__schema_create__)
     second = patch_schema(LedgerEntry.__schema_create__)
