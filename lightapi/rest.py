@@ -30,11 +30,7 @@ from sqlalchemy import select as sa_select
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from lightapi.constants import (
-    AUTO_FIELDS,
-    RESPONSE_KEY_DETAIL,
-    HTTPStatus,
-)
+from lightapi.constants import AUTO_FIELDS, HTTPStatus, ResponseKey
 from lightapi.exceptions import ConfigurationError
 from lightapi.pagination import NoPagination
 from lightapi.repository import Repository, RowNotFound, VersionConflict
@@ -254,12 +250,12 @@ _ERROR_RESPONSES: dict[type[Exception], tuple[HTTPStatus, str]] = {
 
 def _error_response(error: Exception) -> Response:
     status, detail = _ERROR_RESPONSES[type(error)]
-    return JSONResponse({RESPONSE_KEY_DETAIL: detail}, status_code=status)
+    return JSONResponse({ResponseKey.DETAIL: detail}, status_code=status)
 
 
 def _unprocessable(errors: Any) -> Response:
     return JSONResponse(
-        {RESPONSE_KEY_DETAIL: errors}, status_code=HTTPStatus.UNPROCESSABLE_ENTITY
+        {ResponseKey.DETAIL: errors}, status_code=HTTPStatus.UNPROCESSABLE_ENTITY
     )
 
 
