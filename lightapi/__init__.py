@@ -25,6 +25,7 @@ from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
 from lightapi.lightapi import LightApi
 from lightapi.methods import HttpMethod
 from lightapi.rate_limiter import RateLimiter
+from lightapi.rate_limit_middleware import EndpointRateLimitMiddleware
 from lightapi.rest import RestEndpoint
 from lightapi.schema import SchemaFactory
 from lightapi.session import get_async_session, get_sync_session  # noqa: E402
@@ -51,6 +52,7 @@ __all__ = [
     "IsAdminUser",
     # Rate Limiter
     "RateLimiter",
+    "EndpointRateLimitMiddleware",
     # Filters
     "FieldFilter",
     "SearchFilter",
