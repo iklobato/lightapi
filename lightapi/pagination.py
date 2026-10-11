@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import math
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Protocol
 
 from sqlalchemy import func, select
@@ -41,6 +42,18 @@ class Paginator(Protocol):
     def render(
         self, request: Request, qs: Any, session: Session, serialize: RowSerializer
     ) -> dict[str, Any]: ...
+
+
+class PaginationStyle(str, Enum):
+    """How a list response is split; the value is what `Pagination(style=...)` takes."""
+
+    PAGE_NUMBER = "page_number"
+    CURSOR = "cursor"
+
+    def build(self, page_size: int) -> Paginator:
+        if self is PaginationStyle.CURSOR:
+            return CursorPaginator(page_size)
+        return PageNumberPaginator(page_size)
 
 
 class NoPagination:
@@ -189,9 +202,3 @@ class CursorPaginator:
             ResponseKey.PREVIOUS: prev_cursor,
             ResponseKey.RESULTS: results,
         }
-
-
-PAGINATORS: dict[str, type[PageNumberPaginator] | type[CursorPaginator]] = {
-    "page_number": PageNumberPaginator,
-    "cursor": CursorPaginator,
-}

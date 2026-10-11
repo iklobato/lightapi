@@ -71,7 +71,6 @@ CRUD_VERBS: Final = frozenset(
 DEFAULT_PAGE_SIZE = 20
 PAGE_PARAM = "page"
 CURSOR_PARAM = "cursor"
-VALID_PAGINATION_STYLES = ("page_number", "cursor")
 
 # ─────────────────────────────────────────────────────────────────────────
 # Auto Fields (consolidated)

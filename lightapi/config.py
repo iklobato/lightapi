@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, Callable
 
 from lightapi.constants import (
@@ -10,10 +11,9 @@ from lightapi.constants import (
     DEFAULT_JWT_EXPIRATION,
     DEFAULT_PAGE_SIZE,
     VALID_JWT_ALGORITHMS,
-    VALID_PAGINATION_STYLES,
 )
 from lightapi.exceptions import ConfigurationError
-from lightapi.pagination import PAGINATORS, Paginator
+from lightapi.pagination import PaginationStyle, Paginator
 
 if TYPE_CHECKING:
     from lightapi.authentication import BaseAuthentication
@@ -109,20 +109,26 @@ class Filtering:
 class Pagination:
     """Pagination configuration for a RestEndpoint."""
 
-    style: str = "page_number"
+    style: PaginationStyle = PaginationStyle.PAGE_NUMBER
     page_size: int = DEFAULT_PAGE_SIZE
 
-    def __post_init__(self):
-        if self.style not in VALID_PAGINATION_STYLES:
+    def __post_init__(self) -> None:
+        try:
+            style = PaginationStyle(self.style)
+        except ValueError:
             raise ConfigurationError(
                 f"Pagination style '{self.style}' is invalid. "
-                f"Choose from: {VALID_PAGINATION_STYLES}"
-            )
+                f"Choose from: {tuple(valid.value for valid in PaginationStyle)}"
+            ) from None
+        # The documented way to normalise a field of a frozen dataclass.
+        object.__setattr__(self, "style", style)
         if self.page_size < 1:
             raise ConfigurationError("Pagination page_size must be a positive integer.")
 
-    def build_paginator(self) -> Paginator:
-        return PAGINATORS[self.style](self.page_size)
+    @cached_property
+    def paginator(self) -> Paginator:
+        """Built once per configuration; paginators keep no per-request state."""
+        return self.style.build(self.page_size)
 
 
 @dataclass(frozen=True)

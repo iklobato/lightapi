@@ -9,7 +9,15 @@ from collections.abc import Callable
 from decimal import Decimal
 from functools import partial
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, Union, get_args, get_origin, get_type_hints
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Final,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 from uuid import UUID
 
 if TYPE_CHECKING:
@@ -65,6 +73,8 @@ _TYPE_MAP: dict[Any, Any] = {
 # field, and rejects anything else with a 422 instead of a TypeError deep in
 # the repository's `expected_version + 1` arithmetic.
 _VERSION_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
+
+_NO_PAGINATION: Final = NoPagination()
 
 
 def _is_optional(annotation: Any) -> tuple[bool, Any]:
@@ -342,7 +352,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     def _list(self, session: Session, request: Request, qs: Any) -> Response:
         pagination = self._meta.get("pagination")
-        paginator = pagination.build_paginator() if pagination else NoPagination()
+        paginator = pagination.paginator if pagination else _NO_PAGINATION
         qs = self._run_filter_backends(request, qs)
         serialize = partial(self._serialize_row, method=HttpVerb.GET)
         return JSONResponse(paginator.render(request, qs, session, serialize))

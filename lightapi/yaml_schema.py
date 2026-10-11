@@ -9,7 +9,9 @@ from typing import Union
 
 from pydantic import BaseModel, field_validator, model_validator
 
+from lightapi.constants import DEFAULT_PAGE_SIZE
 from lightapi.exceptions import ConfigurationError
+from lightapi.pagination import PaginationStyle
 
 YAML_FIELD_TYPES: dict[str, type] = {
     "str": str,
@@ -86,8 +88,8 @@ class FilteringConfig(BaseModel):
 class PaginationConfig(BaseModel):
     """Pagination block used in defaults and per-endpoint meta."""
 
-    style: str = "page_number"
-    page_size: int = 20
+    style: str = PaginationStyle.PAGE_NUMBER.value
+    page_size: int = DEFAULT_PAGE_SIZE
 
 
 class DefaultsConfig(BaseModel):
