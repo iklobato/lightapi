@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import importlib
 import logging
 import os
@@ -10,7 +11,8 @@ import warnings
 from typing import Any, Callable
 
 import uvicorn
-from sqlalchemy import create_engine
+from sqlalchemy import MetaData, create_engine
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
 from starlette.routing import Route
@@ -278,31 +280,28 @@ class LightApi:
         logger.debug("Available tables in metadata: %s", list(metadata.tables.keys()))
         try:
             if self._mode is ExecutionMode.ASYNC:
-                # For async engines, table creation must run inside the same event loop
-                # that will serve requests (uvicorn's loop), so we defer it to on_startup
-                # unless we are already inside a running loop (pytest-asyncio).
-                try:
-                    asyncio.get_running_loop()
-
-                    # Inside a running loop — create tables directly here (test context).
-                    async def _create_inside_loop() -> None:
-                        async with self._engine.begin() as conn:
-                            await conn.run_sync(metadata.create_all)
-
-                    import concurrent.futures
-
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                        pool.submit(asyncio.run, _create_inside_loop()).result()
-                except RuntimeError:
-                    # No running loop; registration is deferred to the on_startup handler
-                    # that build_app() adds. Nothing to do here.
-                    pass
+                self._create_tables_inside_running_loop(metadata)
             else:
-                engine = self._engine
-                metadata.create_all(bind=engine)
-                logger.info("Tables created/verified against %s", engine.url)
-        except Exception as exc:
+                metadata.create_all(bind=self._engine)
+                logger.info("Tables created/verified against %s", self._engine.url)
+        except SQLAlchemyError as exc:
             logger.warning("Table creation warning: %s", exc)
+
+    def _create_tables_inside_running_loop(self, metadata: MetaData) -> None:
+        """Async engines create their tables on uvicorn's loop (the on_startup handler
+        build_app() adds); inside a loop that is already running (pytest-asyncio) the
+        work runs on a loop of its own, in a worker thread."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        async def create_all() -> None:
+            async with self._engine.begin() as conn:
+                await conn.run_sync(metadata.create_all)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(asyncio.run, create_all()).result()
 
     def _check_cache_connections(self) -> None:
         """Emit RuntimeWarning if any endpoint has cache configured but Redis is unreachable."""

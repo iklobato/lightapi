@@ -223,5 +223,26 @@ of `PageNumberPaginator`. `filters.py`: SQLAlchemy imports at the top;
 `_coerce_filter_value` catches `(ValueError, AttributeError, IndexError)`. `test_paginate_async`
 reads the cursor through `Cursor.decode(...).last_id`.
 
-Next: 5d (`SessionManager.run_blocking`/`sync_engine`, repository statics), 5e (remaining
-broad excepts in `lightapi.py` and `rest.py`).
+### 5d. Session and repository
+
+`SessionManager` gains `sync_engine` (unwraps an `AsyncEngine`, by its own `is_async`) and
+`run_blocking(fn, *args)` (from `session.py`; the single-connection-pool rule moves with it).
+`RestEndpoint._session_manager_or_raise()` is the one place that raises the "No
+session_manager configured" error; `_get_engine` and `_get_async_engine` (documented) delegate
+to it, and the per-request `AsyncEngine` import in `_get_engine` is gone. `session.py` keeps
+only the two public context managers (the in-function `AsyncSession` import stays: optional
+extra). `repository.py`: `_utcnow` and `_in_pk_range` (PR #46) are methods of `Repository`,
+with the 64-bit bounds as class constants.
+
+### 5e. Remaining broad excepts
+
+`lightapi.py`: `_create_tables` catches `SQLAlchemyError` (the warning on a failed
+`create_all` stays; a programming error now propagates); the async branch is its own method
+that returns early when no loop is running instead of wrapping the whole thread hand-off in
+`except RuntimeError`. B19 (asyncio.run on a worker thread) is unchanged. `rest.py`:
+`get_type_hints` fallback catches `(NameError, TypeError, SyntaxError, AttributeError)`.
+Remaining `except Exception` in the package, all deliberate: `_login.py` (validator raised ->
+401, documented), `session.py` (rollback + re-raise), FROZEN `RedisCache` body.
+
+Next: Step 7 (`rest.py`: `_get_queryset` dedupe, projection resolved once per request, loose
+functions onto `RestEndpointMeta`/`DeclaredTable`/`SchemaFactory`/`FieldProjection`).

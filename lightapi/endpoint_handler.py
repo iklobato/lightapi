@@ -18,7 +18,6 @@ from starlette.responses import JSONResponse, Response
 from lightapi.cache import EndpointCache
 from lightapi.constants import ApiError, ExecutionMode, HttpVerb, ResponseKey
 from lightapi.rest import RestEndpoint
-from lightapi.session import run_blocking
 
 if TYPE_CHECKING:
     from lightapi.authentication.base import BaseAuthentication, LoginValidator
@@ -264,12 +263,12 @@ class EndpointHandler:
             return await crud_async(*args)
 
         crud = getattr(endpoint, verb.sync_name)
-        engine = endpoint._get_engine()
+        sessions = endpoint._session_manager_or_raise()
         if verb.cached:
-            return await run_blocking(
-                engine, self._cache.serve, request, lambda: crud(*args)
+            return await sessions.run_blocking(
+                self._cache.serve, request, lambda: crud(*args)
             )
-        return await run_blocking(engine, crud, *args)
+        return await sessions.run_blocking(crud, *args)
 
     async def _call_override(
         self, override: Callable[..., Any], endpoint: RestEndpoint, request: Request
@@ -282,7 +281,9 @@ class EndpointHandler:
             return await endpoint._in_async_session(
                 lambda _session: override(endpoint, request)
             )
-        return await run_blocking(endpoint._get_engine(), override, endpoint, request)
+        return await endpoint._session_manager_or_raise().run_blocking(
+            override, endpoint, request
+        )
 
     @staticmethod
     async def _json_body(request: Request) -> dict[str, Any]:

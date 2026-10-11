@@ -24,6 +24,8 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
     from starlette.background import BackgroundTasks
 
+    from lightapi.session_manager import SessionManager
+
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from pydantic.fields import FieldInfo
 from sqlalchemy import (
@@ -157,7 +159,9 @@ def _field_annotations(cls: type) -> dict[str, Any]:
     # `from __future__ import annotations` leaves behind.
     try:
         resolved = get_type_hints(cls)
-    except Exception:
+    except (NameError, TypeError, SyntaxError, AttributeError):
+        # A string annotation that cannot be evaluated; _column_for then reports
+        # the raw annotation as not being in the type map.
         resolved = {}
 
     annotations: dict[str, Any] = {}
@@ -287,27 +291,19 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     # ── CRUD helpers ──────────────────────────────────────────────────────────
 
-    def _get_engine(self) -> Any:
-        cls = type(self)
-        session_manager = getattr(cls, "_session_manager", None)
-
+    def _session_manager_or_raise(self) -> SessionManager:
+        """The SessionManager register() bound to this endpoint class."""
+        session_manager = getattr(type(self), "_session_manager", None)
         if session_manager is None:
             raise RuntimeError(
                 "No session_manager configured. "
                 "Ensure LightApi.register() was called with a properly configured app."
             )
+        return session_manager
 
-        engine = session_manager.engine
-
-        # Sync callers use the sync engine; if an AsyncEngine was registered, unwrap it.
-        try:
-            from sqlalchemy.ext.asyncio import AsyncEngine as _AE
-
-            if isinstance(engine, _AE):
-                return engine.sync_engine
-        except ImportError:
-            pass
-        return engine
+    def _get_engine(self) -> Any:
+        """The engine for sync CRUD; an AsyncEngine is unwrapped to its sync one."""
+        return self._session_manager_or_raise().sync_engine
 
     def _get_queryset(self, request: Request) -> Any:
         cls = type(self)
@@ -468,16 +464,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     def _get_async_engine(self) -> Any:
         """Return the raw (AsyncEngine) engine for async session creation."""
-        cls = type(self)
-        session_manager = getattr(cls, "_session_manager", None)
-
-        if session_manager is None:
-            raise RuntimeError(
-                "No session_manager configured. "
-                "Ensure LightApi.register() was called with a properly configured app."
-            )
-
-        return session_manager.engine
+        return self._session_manager_or_raise().engine
 
     async def _in_async_session(self, work: Callable[[Session], Response]) -> Response:
         async with get_async_session(self._get_async_engine()) as session:

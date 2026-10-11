@@ -3,22 +3,12 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any, Protocol
+from typing import Any, Final, Protocol
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, class_mapper
 
-FIRST_VERSION = 1
-
-# SQLite (and every backend LightAPI supports) stores an id in a signed
-# 64-bit column; a pk outside this range can never match a row, so treat it
-# as not-found instead of letting the driver raise OverflowError.
-_MIN_PK = -(2**63)
-_MAX_PK = 2**63 - 1
-
-
-def _in_pk_range(pk: int) -> bool:
-    return _MIN_PK <= pk <= _MAX_PK
+FIRST_VERSION: Final = 1
 
 
 class RowNotFound(Exception):
@@ -45,9 +35,24 @@ class Repository:
     ``updated_at`` timestamps and optimistic locking on ``version``.
     """
 
+    # SQLite (and every backend LightAPI supports) stores an id in a signed
+    # 64-bit column; a pk outside this range can never match a row, so treat it
+    # as not-found instead of letting the driver raise OverflowError.
+    _MIN_PK: Final = -(2**63)
+    _MAX_PK: Final = 2**63 - 1
+
     def __init__(self, model: type[VersionedRow], session: Session) -> None:
         self._model = model
         self._session = session
+
+    @classmethod
+    def _in_pk_range(cls, pk: int) -> bool:
+        return cls._MIN_PK <= pk <= cls._MAX_PK
+
+    @staticmethod
+    def _utcnow() -> datetime.datetime:
+        """Naive UTC, which is what the DateTime columns store."""
+        return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
     @property
     def nullable_columns(self) -> set[str]:
@@ -58,7 +63,7 @@ class Repository:
         }
 
     def get(self, pk: int) -> Any:
-        if not _in_pk_range(pk):
+        if not self._in_pk_range(pk):
             raise RowNotFound(pk)
         model = self._model
         row = (
@@ -69,7 +74,7 @@ class Repository:
         return row
 
     def add(self, values: dict[str, Any]) -> Any:
-        now = _utcnow()
+        now = self._utcnow()
         row = self._model(
             **values, created_at=now, updated_at=now, version=FIRST_VERSION
         )
@@ -80,13 +85,13 @@ class Repository:
 
     def update(self, pk: int, expected_version: int, values: dict[str, Any]) -> Any:
         """Write ``values`` only if the row is still at ``expected_version``."""
-        if not _in_pk_range(pk):
+        if not self._in_pk_range(pk):
             raise RowNotFound(pk)
         model = self._model
         result = self._session.execute(
             update(model)
             .where(model.id == pk, model.version == expected_version)
-            .values(**values, version=expected_version + 1, updated_at=_utcnow())
+            .values(**values, version=expected_version + 1, updated_at=self._utcnow())
         )
         if result.rowcount == 0:
             exists = self._session.execute(
@@ -98,7 +103,7 @@ class Repository:
         return self.get(pk)
 
     def delete(self, pk: int) -> None:
-        if not _in_pk_range(pk):
+        if not self._in_pk_range(pk):
             raise RowNotFound(pk)
         model = self._model
         deleted = self._session.execute(
@@ -106,8 +111,3 @@ class Repository:
         ).first()
         if deleted is None:
             raise RowNotFound(pk)
-
-
-def _utcnow() -> datetime.datetime:
-    """Naive UTC, which is what the DateTime columns store."""
-    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
