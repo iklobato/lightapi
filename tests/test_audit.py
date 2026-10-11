@@ -579,6 +579,42 @@ class TestB6AsyncFromUrl:
             client.portal.call(app._engine.dispose)
 
 
+class TestYamlUnknownKeys:
+    """A key the YAML format does not know is a ConfigurationError naming it, not a
+    silently ignored block; found by e2e scenario 12 (`defaults.filtering`)."""
+
+    def test_unknown_key_under_defaults_is_rejected(self, tmp_path):
+        document = tmp_path / "bad.yaml"
+        document.write_text(
+            'database:\n  url: "sqlite:///:memory:"\ndefaults:\n  filtering:\n'
+            "    fields: [genre]\nendpoints:\n  - route: /x\n    fields:\n"
+            "      title: {type: str}\n"
+        )
+
+        with pytest.raises(ConfigurationError, match="filtering"):
+            LightAPIConfig.from_file(document)
+
+    def test_unknown_key_under_meta_is_rejected(self, tmp_path):
+        document = tmp_path / "bad.yaml"
+        document.write_text(
+            'database:\n  url: "sqlite:///:memory:"\nendpoints:\n  - route: /x\n'
+            "    fields:\n      title: {type: str}\n    meta:\n      paginate: true\n"
+        )
+
+        with pytest.raises(ConfigurationError, match="paginate"):
+            LightAPIConfig.from_file(document)
+
+    def test_unknown_top_level_key_is_rejected(self, tmp_path):
+        document = tmp_path / "bad.yaml"
+        document.write_text(
+            'database:\n  url: "sqlite:///:memory:"\nmiddlewares: []\nendpoints:\n'
+            "  - route: /x\n    fields:\n      title: {type: str}\n"
+        )
+
+        with pytest.raises(ConfigurationError, match="middlewares"):
+            LightAPIConfig.from_file(document)
+
+
 class TestB19LifespanLoop:
     def test_lifespan_creates_tables_on_the_serving_loop_not_a_worker_thread(self):
         """B19/B7-003: tables created on a worker loop poison an asyncpg pool; the

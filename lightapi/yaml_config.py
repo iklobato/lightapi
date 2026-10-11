@@ -34,7 +34,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 import yaml
-from pydantic import BaseModel, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from lightapi.authentication import (
     AllowAny,
@@ -103,7 +109,17 @@ FIELD_CONSTRAINT_KEYS: Final = frozenset(
 )
 
 
-class DatabaseConfig(BaseModel):
+class _Document(BaseModel):
+    """A block of the YAML document: a key the format does not know is an error.
+
+    The docs promise that a typo fails at load time; pydantic's default would
+    drop it and serve an app without the feature the user thought they configured.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DatabaseConfig(_Document):
     """Nested database block: database: { url: ... }"""
 
     url: str
@@ -124,7 +140,7 @@ class DatabaseConfig(BaseModel):
         return value
 
 
-class AuthLoginConfig(BaseModel):
+class AuthLoginConfig(_Document):
     """Login/auth block: auth: { auth_path: ..., login_validator: ... }.
 
     When using JWTAuthentication or BasicAuthentication, login_validator is required.
@@ -136,7 +152,7 @@ class AuthLoginConfig(BaseModel):
     login_validator: str | None = None
 
 
-class AuthConfig(BaseModel):
+class AuthConfig(_Document):
     """Authentication block used in defaults and per-endpoint meta."""
 
     backend: str | None = None
@@ -179,7 +195,7 @@ class AuthConfig(BaseModel):
         )
 
 
-class FilteringConfig(BaseModel):
+class FilteringConfig(_Document):
     """Filtering block inside meta."""
 
     backends: list[str] = []
@@ -206,7 +222,7 @@ class FilteringConfig(BaseModel):
         )
 
 
-class PaginationConfig(BaseModel):
+class PaginationConfig(_Document):
     """Pagination block used in defaults and per-endpoint meta."""
 
     style: str = PaginationStyle.PAGE_NUMBER.value
@@ -216,26 +232,26 @@ class PaginationConfig(BaseModel):
         return Pagination(style=self.style, page_size=self.page_size)
 
 
-class DefaultsConfig(BaseModel):
+class DefaultsConfig(_Document):
     """Global defaults applied to all endpoints unless overridden."""
 
     authentication: AuthConfig | None = None
     pagination: PaginationConfig | None = None
 
 
-class MethodAuthConfig(BaseModel):
+class MethodAuthConfig(_Document):
     """Per-method authentication override inside meta.methods dict."""
 
     authentication: AuthConfig | None = None
 
 
-class CacheConfig(BaseModel):
+class CacheConfig(_Document):
     """Cache block inside meta: cache: { ttl: 60 }"""
 
     ttl: int = DEFAULT_CACHE_TTL
 
 
-class SerializerConfig(BaseModel):
+class SerializerConfig(_Document):
     """Serializer block inside meta.
 
     Use ``fields`` for a unified list, or ``read``/``write`` for per-verb lists.
@@ -246,7 +262,7 @@ class SerializerConfig(BaseModel):
     write: list[str] | None = None
 
 
-class MetaConfig(BaseModel):
+class MetaConfig(_Document):
     """meta: block inside a declarative endpoint entry."""
 
     # methods can be a list ["GET", "POST"] or a dict {GET: {...}, DELETE: {...}}
@@ -403,7 +419,7 @@ class FieldSpec(BaseModel):
         return Field(**kwargs) if kwargs else None
 
 
-class EndpointConfig(BaseModel):
+class EndpointConfig(_Document):
     """A single endpoint entry."""
 
     route: str
@@ -442,7 +458,7 @@ class EndpointConfig(BaseModel):
         return type(self.class_name, self.meta.endpoint_bases(), class_attrs)
 
 
-class LightAPIConfig(BaseModel):
+class LightAPIConfig(_Document):
     """Root YAML document schema."""
 
     database: DatabaseConfig | None = None

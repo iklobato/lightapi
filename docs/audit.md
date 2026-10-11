@@ -22,7 +22,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | A9 per-request constants | 0 | 0 | 0 | 0 | 0 |
 | A10 error replies | 3 | 2 | 1 | 0 | 0 |
 | B1 silent errors | 18 | 5 | 11 | 2 | 0 |
-| B2 hiding defaults | 11 | 4 | 7 | 0 | 0 |
+| B2 hiding defaults | 12 | 5 | 7 | 0 | 0 |
 | B3 sentinel returns | 3 | 0 | 3 | 0 | 0 |
 | B4 lying types | 12 | 12 | 0 | 0 | 0 |
 | B5 per-request checks | 9 | 3 | 6 | 0 | 0 |
@@ -37,7 +37,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B14 logs and warnings | 8 | 7 | 1 | 0 | 0 |
 | B15 hidden YAGNI | 5 | 3 | 1 | 1 | 0 |
 | B16 tests that do not protect | 5 | 2 | 3 | 0 | 0 |
-| **Total** | **120** | **52** | **56** | **12** | **0** |
+| **Total** | **121** | **53** | **56** | **12** | **0** |
 
 ## Phase 0: baseline
 
@@ -148,6 +148,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B2-007 | B2 | `lightapi/pagination.py:187,194` | `getattr(qs, "columns_clause_froms", ())`, `getattr(row, "id", None)` | manter: the queryset and its rows come from the user's `queryset` hook | justificado | |
 | B2-008 | B2 | `lightapi/filters.py:41,45` | `hasattr(col, "property")`, `getattr(col, "type", None)` | manter: SQLAlchemy exposes the type on `InstrumentedAttribute` and `Column` differently | justificado | |
 | B2-009 | B2 | `lightapi/cache.py:31` | `LIGHTAPI_REDIS_URL` defaults to `redis://localhost:6379/0` | manter: documented default, same in v0.1.29 | justificado | |
+| B2-012 | B2 | `lightapi/yaml_config.py` (every block model) | The YAML models used pydantic's default `extra="ignore"`: a key the format does not know (`defaults.filtering`, `meta.paginate`, a misspelt top-level key) was dropped and the app started without the feature, while `docs/getting-started/configuration.md:89` promises a typo fails at load time. Same in v0.1.29. Found by e2e scenario 12 | corrigido: every block model inherits `_Document` with `extra="forbid"`; `FieldSpec` keeps `extra="allow"` for the constraint keys | corrigido | `see git log: fix(B2-012)` |
 | B2-011 | B2 | `lightapi/schema.py:254`, `table_mapping.py:228` | A reflected table required every non-auto column on POST, nullable or not, and on `reflect = "partial"` the declared `Field()` (default, constraints) was stripped before the schema was built, so `notes: str = Field(default="")` still answered 422 "Field required". Same in v0.1.29. Found by e2e scenario 11 | corrigido: nullable reflected columns are optional (None); `ReflectedTable.map` keeps the declared FieldInfos and `build_from_reflected_table(cls, table, declared)` uses them | corrigido | `0adf7b1` |
 | B2-010 | B2 | `lightapi/rest.py:197,202,217`, `endpoint_handler.py:192`, `table_mapping.py:65`, `lightapi.py:170,324` | `_meta.get("pagination")` etc. on keys `_parsed_meta` always writes | manter: `_meta` is `{}` for `base_only` classes | justificado | |
 | B3-001 | B3 | `lightapi/cache.py:57-105` | `RedisCacheBackend` methods return None/False on failure | manter: "no Redis, no cache, requests still answered" is the documented contract; B1-005 adds the log | justificado | |
@@ -174,7 +175,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B5-007 | B5 | `lightapi/session_manager.py:90` | `hasattr(engine, "sync_engine")` | manter: once at construction; `AsyncEngine` lives in the optional `async` extra | justificado | |
 | B5-008 | B5 | `lightapi/endpoint_handler.py:240` | `isinstance(result, dict)` per request | manter: an override may return a dict (documented) | justificado | |
 | B5-009 | B5 | `lightapi/filters.py:41-50` | `hasattr`/`isinstance` on the column type per filter parameter | manter: SQLAlchemy type dispatch, one parameter at a time | justificado | |
-| B6-001 | B6 | `lightapi/yaml_config.py:465`, `lightapi.py:115` | YAML `mode: async` with `database.url` can never start: `from_config` builds a sync `Engine`, then `register()` raises `mode='async' requires AsyncEngine, got Engine`. `lightapi serve` cannot serve an async app. Same in v0.1.29 | corrigido: `_engine_from_url(url, mode)` builds an `AsyncEngine` in async mode; a URL without an async driver is a `ConfigurationError` naming the drivers. e2e scenario 12 serves the async document | corrigido | `see git log: fix(B6-001)` |
+| B6-001 | B6 | `lightapi/yaml_config.py:465`, `lightapi.py:115` | YAML `mode: async` with `database.url` can never start: `from_config` builds a sync `Engine`, then `register()` raises `mode='async' requires AsyncEngine, got Engine`. `lightapi serve` cannot serve an async app. Same in v0.1.29 | corrigido: `_engine_from_url(url, mode)` builds an `AsyncEngine` in async mode; a URL without an async driver is a `ConfigurationError` naming the drivers. e2e scenario 12 serves the async document | corrigido | `4248fc8` |
 | B6-002 | B6 | `lightapi/config.py:125`, `cache.py:166` | `Cache.vary_on` is documented (`docs/advanced/caching.md:57-141`: "only the listed query parameters contribute to the key") but never read; the key is always the full query string. Same in v0.1.29 | propor: implement (visible: cache keys and hits change for apps that set it) or fix the docs | proposta | |
 | B6-003 | B6 | `lightapi/config.py:31` | `Config.jwt_expiration` is never read: `JWTAuthentication.generate_token` (FROZEN) uses `self.expiration or 3600` | propor: remove the field in 0.2.0 or make the FROZEN class read it | proposta | |
 | B6-004 | B6 | `lightapi/lightapi.py:291` | `LightApi(engine=AsyncEngine)` without `mode="async"` and without an `async def` hook: tables are never created and every request is a 500 (now with a startup warning; v0.1.29 swallowed an `AttributeError`) | propor: detect async mode from the engine type (visible: 500s become a working app); alternative: `ConfigurationError` at register | proposta | |

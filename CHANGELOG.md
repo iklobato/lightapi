@@ -97,6 +97,10 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_startup` handler; same moment, no deprecation warning. `created_at`/`updated_at`
   column defaults no longer use the deprecated `datetime.utcnow()`; the stored value is the
   same naive UTC.
+- **A YAML key the format does not know fails at load time**: `defaults.filtering`,
+  `meta.paginate` or a misspelt top-level key now raise `ConfigurationError` naming the
+  key, as the configuration guide promises. Before, pydantic dropped the key and the app
+  started without the feature. Field constraint keys under `fields.<name>` are unaffected.
 - **`mode="async"` works from a database URL**: `LightApi(database_url=..., mode="async")`
   and a YAML document with `mode: async` build an `AsyncEngine`, so `lightapi serve` can
   start an async app. Before, both failed at `register()` with "requires AsyncEngine". A
