@@ -1,0 +1,15 @@
+---
+# Scenario 12: a key the format does not know (`defaults.filtering`) must refuse
+# to start instead of silently serving an app without the feature.
+database:
+  url: "sqlite:///:memory:"
+
+defaults:
+  filtering:
+    fields: [genre]
+
+endpoints:
+  - route: /books
+    fields:
+      title:
+        type: str
