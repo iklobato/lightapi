@@ -87,11 +87,6 @@ class ApiError(Enum):
     CONSTRAINT_VIOLATION = (HTTPStatus.CONFLICT, "constraint violation")
     INSUFFICIENT_PERMISSIONS = (HTTPStatus.FORBIDDEN, "Insufficient permissions")
     INVALID_CREDENTIALS = (HTTPStatus.UNAUTHORIZED, "Invalid credentials")
-    LOGIN_METHOD_NOT_ALLOWED = (
-        HTTPStatus.METHOD_NOT_ALLOWED,
-        "method not allowed",
-        {"Allow": HttpVerb.POST.value},
-    )
 
     def __init__(
         self, status: HTTPStatus, detail: str, headers: "dict[str, str] | None" = None

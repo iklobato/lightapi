@@ -88,7 +88,7 @@ expect "healthz" 200 '.status=="ok"' -- "$BASE/healthz"
 expect "login bad password" 401 '.detail=="Invalid credentials"' -- -X POST -H "$JSON" -d '{"username":"admin","password":"wrong"}' "$BASE/auth/login"
 expect "login unknown user" 401 '.detail=="Invalid credentials"' -- -X POST -H "$JSON" -d '{"username":"ghost","password":"x"}' "$BASE/auth/login"
 expect "login missing field" 422 '' -- -X POST -H "$JSON" -d '{"username":"admin"}' "$BASE/auth/login"
-expect "login get is 405" 405 '.detail=="method not allowed"' -- "$BASE/auth/login"
+expect "login get is 405" 405 '.detail=="Method Not Allowed. Allowed: POST"' -- "$BASE/auth/login"
 header "login 405 allow" '^allow: POST'
 expect "login user" 200 '(.token|type)=="string" and .user.username=="user" and .user.is_admin==false' -- -X POST -H "$JSON" -d '{"username":"user","password":"password"}' "$BASE/auth/login"
 USER_TOKEN=$(body .token)

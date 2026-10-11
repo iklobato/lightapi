@@ -137,9 +137,13 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   finally heard. Status 401 unchanged.
 - **A method the endpoint does not allow answers the documented JSON 405**:
   `{"detail": "Method Not Allowed. Allowed: GET"}` with the `Allow` header, on the CRUD
-  routes and on `/auth/login`. Before, the route listed only the allowed methods and
-  Starlette answered the others with a `text/plain` "Method Not Allowed" (the JSON reply
-  existed in the code but only `HEAD` ever reached it). Status and `Allow` are unchanged.
+  routes and on `/auth/login`. Before, Starlette answered with its `text/plain` "Method
+  Not Allowed" (the JSON reply existed in the code but only `HEAD` ever reached it). The
+  routes still list only the verbs they serve, so two classes may share a path split by
+  method, and a disallowed verb is refused before the authentication guard, the
+  middlewares and the login rate limiter see it. `/auth/login` answers the same body as
+  the CRUD routes; its former `{"detail": "method not allowed"}` is gone. Status and
+  `Allow` are unchanged.
 - **An async app on asyncpg no longer fails its first request after startup** ("Future
   attached to a different loop"). The startup created the tables on a worker thread with
   its own event loop, and the connection that did it went back to the pool bound to that

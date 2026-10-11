@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.constants import ApiError, HttpVerb
+from lightapi.constants import ApiError
 
 if TYPE_CHECKING:
     from lightapi.authentication.base import BaseAuthentication, LoginValidator
@@ -91,9 +91,6 @@ class LoginEndpoint:
         )
         if exhausted_window is not None:
             return self._rate_limiter.get_rate_limit_response(request, exhausted_window)
-
-        if request.method != HttpVerb.POST:
-            return ApiError.LOGIN_METHOD_NOT_ALLOWED.response()
 
         try:
             credentials = await LoginRequest.from_request(request)

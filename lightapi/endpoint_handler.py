@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import Enum, auto
 from functools import cached_property
@@ -344,7 +344,16 @@ class EndpointHandler:
         return body
 
     def _method_not_allowed(self) -> Response:
-        allowed = ", ".join(sorted(self.methods))
+        return self.method_not_allowed(self.methods)
+
+    @staticmethod
+    def method_not_allowed(methods: Iterable[str]) -> JSONResponse:
+        """The documented JSON 405: ``Allow`` lists the CRUD verbs, sorted.
+
+        HEAD is left out: Starlette serves it on every GET route, and the README
+        documents the Allow value as the verbs the endpoint declares.
+        """
+        allowed = ", ".join(sorted(m for m in methods if m != "HEAD"))
         return JSONResponse(
             {ResponseKey.DETAIL: f"Method Not Allowed. Allowed: {allowed}"},
             status_code=HTTPStatus.METHOD_NOT_ALLOWED,

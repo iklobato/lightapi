@@ -10,13 +10,17 @@ import logging
 import os
 import warnings
 from collections.abc import AsyncIterator, Callable
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Final
 
 import uvicorn
 from sqlalchemy import Engine, MetaData, create_engine
 from sqlalchemy.exc import InvalidRequestError, SQLAlchemyError
 from starlette.applications import Starlette
+from starlette.exceptions import HTTPException
 from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 from starlette.routing import Route
 
 from lightapi._dict_config_loader import DictConfig
@@ -27,7 +31,7 @@ from lightapi.authentication import (
     JWTAuthentication,
 )
 from lightapi.cache import RedisCacheBackend
-from lightapi.constants import CRUD_VERBS, ExecutionMode
+from lightapi.constants import CRUD_VERBS, ExecutionMode, HttpVerb
 from lightapi.endpoint_handler import AppContext, EndpointHandler, MiddlewareChain
 from lightapi.exceptions import ConfigurationError
 from lightapi.health import HEALTH_PATH, HealthCheckEndpoint
@@ -66,7 +70,6 @@ class LightApi:
         "requests_per_day": 100000,
     }
     # An `async def` of any of these on an endpoint switches the app to async mode.
-    _ROUTE_METHODS: Final = [verb.value for verb in CRUD_VERBS]
     _ASYNC_HANDLER_NAMES: Final = (
         "queryset",
         *(verb.value.lower() for verb in CRUD_VERBS),
@@ -142,14 +145,14 @@ class LightApi:
 
         collection = EndpointHandler.for_collection(cls, app_context)
         detail = EndpointHandler.for_detail(cls, app_context)
-        # Every CRUD verb reaches the handler: a route that listed only the allowed
-        # ones made Starlette answer the others with its text/plain 405, and the
-        # JSON reply the README documents (with the Allow header) was never sent.
+        # Only the allowed verbs, so Starlette keeps routing by method (two classes
+        # may share a path) and a disallowed verb never reaches the guard or the
+        # middlewares: its JSON 405 comes from the app's handler in build_app().
         self._routes.append(
             Route(
                 path,
                 endpoint=collection.handle,
-                methods=self._ROUTE_METHODS,
+                methods=collection.methods,
                 name=f"{cls.__name__}_collection",
             )
         )
@@ -157,7 +160,7 @@ class LightApi:
             Route(
                 path.rstrip("/") + "/{id:int}",
                 endpoint=detail.handle,
-                methods=self._ROUTE_METHODS,
+                methods=detail.methods,
                 name=f"{cls.__name__}_detail",
             )
         )
@@ -175,8 +178,7 @@ class LightApi:
         login = LoginEndpoint(backend, self._login_validator, rate_limiter)
         auth_path = self._auth_path.rstrip("/")
         return [
-            # LoginEndpoint answers its own JSON 405 (Allow: POST) to other methods.
-            Route(f"{auth_path}/{name}", login.handle, methods=self._ROUTE_METHODS)
+            Route(f"{auth_path}/{name}", login.handle, methods=[HttpVerb.POST.value])
             for name in ("login", "token")
         ]
 
@@ -228,7 +230,13 @@ class LightApi:
         self._create_tables()
         self._check_cache_connections()
         lifespan = self._lifespan if self._mode is ExecutionMode.ASYNC else None
-        app = Starlette(debug=debug, routes=self._asgi_routes(), lifespan=lifespan)
+        app = Starlette(
+            debug=debug,
+            routes=self._asgi_routes(),
+            lifespan=lifespan,
+            # Starlette's own 405 is text/plain; the README documents a JSON one.
+            exception_handlers={HTTPStatus.METHOD_NOT_ALLOWED: self._json_405},
+        )
         if self._cors_origins:
             app.add_middleware(
                 StarletteCORSMiddleware,
@@ -402,6 +410,15 @@ class LightApi:
                 "mode='async' needs an async driver in the database URL "
                 f"(sqlite+aiosqlite://, postgresql+asyncpg://), got '{url}'."
             ) from exc
+
+    @staticmethod
+    async def _json_405(_request: Request, exc: Exception) -> Response:
+        """Starlette raised its 405 for a verb the route does not list."""
+        headers = exc.headers if isinstance(exc, HTTPException) else None
+        allowed = (headers or {}).get("Allow", "")
+        return EndpointHandler.method_not_allowed(
+            allowed.split(", ") if allowed else ()
+        )
 
     @classmethod
     def _as_rate_limiter(
