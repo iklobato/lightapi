@@ -75,6 +75,28 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`LIGHTAPI_REDIS_URL` was read at import time**: the Redis client behind
   `Meta.cache` was built when `lightapi` was imported, so a URL set afterwards (in
   code, or by a test) was ignored. It is built on the first cache call now.
+- **Redis failures are logged**: a cache read, write, invalidation or ping that fails
+  still falls back to the database as before, but now leaves a warning with the
+  traceback (`lightapi.cache`) instead of nothing. A `login_validator` that raises still
+  answers `401`, and the exception is logged with its traceback (`lightapi._login`), as is
+  a failed `CREATE TABLE` at `build_app()`.
+- **The Redis client has a read timeout**: `socket_timeout=1` next to the existing
+  `socket_connect_timeout=1`, so a Redis that accepts the connection and hangs costs one
+  second and a cache miss, not a stuck worker.
+- **Verb overrides and CRUD functions are resolved once, at `register()`**: a `get`/`post`
+  method assigned to the endpoint class after `register()` is no longer picked up per
+  request. Middleware classes are checked for `async def process` once per class.
+- **`Pagination(style=...)` validates without rewriting the frozen field**; an invalid style
+  raises `ConfigurationError` as before, and `Pagination.style` keeps the value as given
+  (`PaginationStyle` member or its string).
+- **`Authentication().build_backend()` without a backend raises `ConfigurationError`**
+  instead of `AttributeError`; a CRUD call on an endpoint class that was never passed to
+  `register()` raises `RuntimeError` naming the missing call instead of SQLAlchemy's
+  `ArgumentError`.
+- **Async apps create their tables in a Starlette lifespan** instead of the deprecated
+  `on_startup` handler; same moment, no deprecation warning. `created_at`/`updated_at`
+  column defaults no longer use the deprecated `datetime.utcnow()`; the stored value is the
+  same naive UTC.
 
 ## [Unreleased] — 0.1.24
 
