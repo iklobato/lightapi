@@ -27,7 +27,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B4 lying types | 12 | 12 | 0 | 0 | 0 |
 | B5 per-request checks | 9 | 3 | 6 | 0 | 0 |
 | B6 silently disabled features | 5 | 0 | 0 | 5 | 0 |
-| B7 blocking in async | 3 | 0 | 0 | 3 | 0 |
+| B7 blocking in async | 3 | 1 | 0 | 2 | 0 |
 | B8 hidden mutation / globals | 5 | 1 | 4 | 0 | 0 |
 | B9 dispatch by name | 5 | 3 | 2 | 0 | 0 |
 | B10 time and formats | 3 | 2 | 1 | 0 | 0 |
@@ -37,7 +37,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B14 logs and warnings | 8 | 7 | 1 | 0 | 0 |
 | B15 hidden YAGNI | 5 | 3 | 1 | 1 | 0 |
 | B16 tests that do not protect | 5 | 2 | 3 | 0 | 0 |
-| **Total** | **118** | **47** | **56** | **15** | **0** |
+| **Total** | **118** | **48** | **56** | **14** | **0** |
 
 ## Phase 0: baseline
 
@@ -118,7 +118,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | A6-003 | A6 | `lightapi/repository.py:23` | `VersionedRow` Protocol | manter: a structural type for every mapped class, used for typing only, not dispatch | justificado | |
 | A7-001 | A7 | `lightapi/_dict_config_loader.py:38` | `DictConfig.build` and `LightAPIConfig.build_app` both build an app from a config | manter: two public input formats (`from_dict` is deprecated and goes in 0.2.0) | justificado | |
 | A8-001 | A8 | `lightapi/lightapi.py:174` | `_login_backend` picks the login backend with `issubclass(backend, kind)` over (JWT, Basic) | manter: single construction point stays `Authentication.build_backend`; this chooses which endpoint's backend answers `/auth/login`, by class, not by name | justificado | |
-| A10-002 | A10 | `lightapi/lightapi.py:146`, `endpoint_handler.py:224` | The routes listed only the allowed methods, so Starlette answered every other verb with its text/plain 405; the JSON 405 the README documents (`{"detail": "Method Not Allowed. Allowed: GET"}`) was reachable only by HEAD. Found by e2e scenario 03 | corrigido: every CRUD verb reaches the handler, which binds only the allowed ones and answers the JSON 405 with `Allow` for the rest; same on `/auth/login` | corrigido | `see git log: fix(A10-002)` |
+| A10-002 | A10 | `lightapi/lightapi.py:146`, `endpoint_handler.py:224` | The routes listed only the allowed methods, so Starlette answered every other verb with its text/plain 405; the JSON 405 the README documents (`{"detail": "Method Not Allowed. Allowed: GET"}`) was reachable only by HEAD. Found by e2e scenario 03 | corrigido: every CRUD verb reaches the handler, which binds only the allowed ones and answers the JSON 405 with `Allow` for the rest; same on `/auth/login` | corrigido | `6ad5247` |
 | A10-001 | A10 | `lightapi/endpoint_handler.py:299`, `rate_limiter.py:165`, `core.py:157`, `authentication/basic.py:69` | Error replies built outside `ApiError`: dynamic 405 (`Allow` lists the route's verbs), 429 (public `get_rate_limit_response`), compat 403 `{"error": "not allowed"}`, Basic 401 `{"error": ...}` (public method, no internal caller); JWT/Base 401 are FROZEN | manter: each shape is a public method or a documented body | justificado | |
 | B1-001 | B1 | `lightapi/_dict_config_loader.py:89` | Unknown `auth:` value in a dict config is ignored (no backend); v0.1.29 did the same with `if auth == "jwt" ... elif "basic"` | propor: `ConfigurationError` at `from_dict` (visible: an app that built now fails); alternative: keep, the path is deprecated | proposta | |
 | B1-002 | B1 | `lightapi/_login.py:49` | Login body that is not JSON/UTF-8 becomes `{}` and a 422 "Field required" | manter: specific exceptions; the 422 body is contract (pinned) | justificado | |
@@ -179,7 +179,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B6-005 | B6 | `lightapi/authentication/basic.py:61` | An `async def validate_credentials` on a `BasicAuthentication` subclass: `authenticate` does not await it, the coroutine is truthy, so any Basic credentials pass and `request.state.user` is a coroutine (same in v0.1.29; `LoginEndpoint` does await it). Security relevant (B11) | propor: `ConfigurationError` at startup for an async validator on Basic, or await it in the guard | proposta | |
 | B7-001 | B7 | `lightapi/endpoint_handler.py:92` | `EndpointGuard.check` runs `backend.authenticate` on the event loop; a Basic validator that queries a database blocks the loop | propor: run sync backends through `run_blocking` (invisible when the validator is thread-safe; breaks validators bound to a `StaticPool` SQLite) | proposta | |
 | B7-002 | B7 | `lightapi/_login.py:116` | A sync `login_validator` runs on the event loop | propor: same as B7-001 | proposta | |
-| B7-003 | B7 | `lightapi/lightapi.py:308-318`, `table_mapping.py:237-249` | `asyncio.run` on a worker thread while a loop is running (bug B19, both versions) | propor: refuse lazy table creation/reflection inside a running loop and document creating tables before `build_app()` | proposta | |
+| B7-003 | B7 | `lightapi/lightapi.py:308-318`, `table_mapping.py:237-249` | `asyncio.run` on a worker thread while a loop is running (bug B19, both versions); e2e scenario 02 on asyncpg failed its first POST with "Future attached to a different loop" | corrigido for a served app: the lifespan awaits `create_all` on the serving loop; `build_app()` inside an already running loop (pytest-asyncio) and async reflection keep the worker thread, documented in the CHANGELOG | corrigido | `1758f90` |
 | B8-001 | B8 | `lightapi/config.py:116` | `object.__setattr__` on the frozen `Pagination` | corrigir with B4-004: no mutation | corrigido | `07b83af` |
 | B8-002 | B8 | `lightapi/config.py:54` | Module global `config = Config()`, read per request by the FROZEN `JWTAuthentication` | manter: documented as `lightapi.config.config` | justificado | |
 | B8-003 | B8 | `lightapi/session_manager.py:66` | Module global `_state` (metadata + registry) | manter: SQLAlchemy needs one registry per process; `reset()` is the documented hook for tests | justificado | |
