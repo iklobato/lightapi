@@ -62,14 +62,15 @@ check() {
 # The build context holds only dist/ and docker/: the repository .dockerignore excludes dist.
 IMAGE=lightapi-e2e
 CONTAINER=lightapi-e2e-app
-rm -rf "$ROOT/dist" "$OUT/ctx"
-(cd "$ROOT" && uv build >"$OUT/build.log" 2>&1) || {
+rm -rf "$OUT/ctx"
+mkdir -p "$OUT/ctx/dist" "$OUT/ctx/docker"
+# Built into the scenario's own directory: the repository dist/ may hold a release build.
+(cd "$ROOT" && uv build --out-dir "$OUT/ctx/dist" >"$OUT/build.log" 2>&1) || {
 	echo "FAIL $NAME: uv build failed"
 	tail -20 "$OUT/build.log"
 	exit 1
 }
-mkdir -p "$OUT/ctx/dist" "$OUT/ctx/docker"
-cp "$ROOT"/dist/*.whl "$OUT/ctx/dist/"
+rm -f "$OUT"/ctx/dist/*.tar.gz
 cp "$ROOT/docker/entrypoint.py" "$OUT/ctx/docker/"
 docker build -q -t $IMAGE -f "$E2E/Dockerfile.local" "$OUT/ctx" >"$OUT/docker-build.log" 2>&1 || {
 	echo "FAIL $NAME: docker build failed"

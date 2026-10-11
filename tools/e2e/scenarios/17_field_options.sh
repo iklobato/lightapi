@@ -106,6 +106,10 @@ expect "row untouched after the 409" 200 '.sku=="B-2" and .version==1' -- "$BASE
 expect "writes still work after the 409" 201 '.sku=="C-3"' -- -X POST -H "$JSON" -d '{"sku":"C-3","name":"Cog","price":"3.75"}' "$BASE/products"
 expect "more decimal places than declared is 422" 422 '.detail[0].loc==["price"]' -- -X POST -H "$JSON" -d '{"sku":"D-4","name":"Dial","price":"1.999"}' "$BASE/products"
 expect "declared decimal places are kept" 201 '.price=="1.99"' -- -X POST -H "$JSON" -d '{"sku":"D-4","name":"Dial","price":"1.99"}' "$BASE/products"
+expect "patch enforces decimal places too" 422 '.detail[0].loc==["price"]' -- -X PATCH -H "$JSON" -d '{"price":"1.999","version":1}' "$BASE/products/1"
+expect "patch enforces min_length too" 422 '.detail[0].loc==["name"]' -- -X PATCH -H "$JSON" -d '{"name":"","version":1}' "$BASE/products/1"
+expect "delete of a referenced category is 409" 409 '.detail=="constraint violation"' -- -X DELETE "$BASE/categories/1"
+expect "the referenced category is still there" 200 '.id==1' -- "$BASE/categories/1"
 
 # --- end ---
 check "no traceback in server log" "$(grep -c Traceback "$OUT/server.log")" -eq 0

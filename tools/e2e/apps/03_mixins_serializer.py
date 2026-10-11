@@ -64,6 +64,20 @@ class Beta(RestEndpoint):
         serializer = NameOnly
 
 
+class InboxReader(RestEndpoint, HttpMethod.GET):
+    text: str = Field(min_length=1)
+
+    class Meta:
+        table = "e2e03_inbox_read"
+
+
+class InboxWriter(RestEndpoint, HttpMethod.POST):
+    text: str = Field(min_length=1)
+
+    class Meta:
+        table = "e2e03_inbox_write"
+
+
 def main() -> None:
     app = LightApi(engine=create_engine(os.environ["E2E_DB_URL"]))
     app.register(
@@ -76,6 +90,9 @@ def main() -> None:
             "/beta": Beta,
         }
     )
+    # Two classes on one path, split by method: Starlette routes by verb.
+    app.register({"/inbox": InboxReader})
+    app.register({"/inbox": InboxWriter})
     app.run(host="127.0.0.1", port=int(os.environ["E2E_PORT"]))
 
 

@@ -3,7 +3,7 @@
 import os
 from decimal import Decimal
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 
 from lightapi import Field, LightApi, RestEndpoint
 
@@ -27,7 +27,15 @@ class Product(RestEndpoint):
 
 
 def main() -> None:
-    app = LightApi(engine=create_engine(os.environ["E2E_DB_URL"]))
+    engine = create_engine(os.environ["E2E_DB_URL"])
+    if engine.dialect.name == "sqlite":
+        # SQLite ignores foreign keys unless each connection asks; Postgres always
+        # enforces them, so both runs refuse the DELETE of a referenced category.
+        @event.listens_for(engine, "connect")
+        def _enforce_foreign_keys(dbapi_connection, _record) -> None:
+            dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    app = LightApi(engine=engine)
     app.register({"/categories": Category, "/products": Product})
     app.run(host="127.0.0.1", port=int(os.environ["E2E_PORT"]))
 

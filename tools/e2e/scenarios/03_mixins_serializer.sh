@@ -65,7 +65,7 @@ body() { jq -r "$1" "$OUT/body"; }
 # --- pre-start: clean the database this run will use ---
 case $DB_URL in
 sqlite*) rm -f "$OUT/db.sqlite" ;;
-postgresql*) $E2E_PSQL -q -c "DROP TABLE IF EXISTS e2e03_notes, e2e03_events, e2e03_users, e2e03_orders, e2e03_alpha, e2e03_beta" ;;
+postgresql*) $E2E_PSQL -q -c "DROP TABLE IF EXISTS e2e03_notes, e2e03_events, e2e03_users, e2e03_orders, e2e03_alpha, e2e03_beta, e2e03_inbox_read, e2e03_inbox_write" ;;
 esac
 
 # --- start the server ---
@@ -94,6 +94,9 @@ expect "get+post: post" 201 '.name=="launch"' -- -X POST -H "$JSON" -d '{"name":
 expect "get+post: put is 405" 405 '.detail=="Method Not Allowed. Allowed: GET"' -- -X PUT -H "$JSON" -d '{"name":"x","version":1}' "$BASE/events/1"
 expect "get+post: patch is 405" 405 '' -- -X PATCH -H "$JSON" -d '{"name":"x","version":1}' "$BASE/events/1"
 expect "get+post: get detail" 200 '.id==1' -- "$BASE/events/1"
+expect "same path, two classes: get goes to the reader" 200 '.results==[]' -- "$BASE/inbox"
+expect "same path, two classes: post goes to the writer" 201 '.text=="hi"' -- -X POST -H "$JSON" -d '{"text":"hi"}' "$BASE/inbox"
+expect "same path, two classes: reader list is still empty" 200 '.results==[]' -- "$BASE/inbox"
 expect "fields=: post hides secret" 201 '(keys|sort)==["email","id","name"]' -- -X POST -H "$JSON" -d '{"name":"ana","email":"a@x","secret":"hunter2"}' "$BASE/users"
 expect "fields=: get hides secret" 200 '(.results[0]|keys|sort)==["email","id","name"]' -- "$BASE/users"
 expect "read/write: post shows write fields" 201 '(keys|sort)==["id","name"]' -- -X POST -H "$JSON" -d '{"name":"o1","tag":"vip"}' "$BASE/orders"
