@@ -180,7 +180,7 @@ class ProductEndpoint(RestEndpoint):
 | `unique=True` | Adds `UNIQUE` constraint |
 | `index=True` | Adds a database index |
 | `exclude=True` | Column is skipped entirely (no DB column, no schema field) |
-| `decimal_places=N` | Sets `Numeric(scale=N)` (used with `Decimal` type) |
+| `decimal_places=N` | A `Decimal` with more than N decimal places is rejected (422); the column type stays `NUMERIC` |
 
 ### Auto-injected Columns
 

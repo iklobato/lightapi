@@ -53,7 +53,7 @@ class ProductEndpoint(RestEndpoint):
 | `unique=True` | Adds `UNIQUE` constraint |
 | `index=True` | Adds a database index |
 | `exclude=True` | Field is excluded from DB and schema entirely |
-| `decimal_places=N` | Sets `Numeric(scale=N)` (for `Decimal` fields) |
+| `decimal_places=N` | A `Decimal` with more than N decimal places is rejected (422); the column type stays `NUMERIC` |
 
 ### Auto-injected Columns
 

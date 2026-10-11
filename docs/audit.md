@@ -26,7 +26,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B3 sentinel returns | 3 | 0 | 3 | 0 | 0 |
 | B4 lying types | 12 | 12 | 0 | 0 | 0 |
 | B5 per-request checks | 9 | 3 | 6 | 0 | 0 |
-| B6 silently disabled features | 5 | 1 | 0 | 4 | 0 |
+| B6 silently disabled features | 6 | 2 | 0 | 4 | 0 |
 | B7 blocking in async | 3 | 1 | 0 | 2 | 0 |
 | B8 hidden mutation / globals | 5 | 1 | 4 | 0 | 0 |
 | B9 dispatch by name | 5 | 3 | 2 | 0 | 0 |
@@ -37,7 +37,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B14 logs and warnings | 8 | 7 | 1 | 0 | 0 |
 | B15 hidden YAGNI | 5 | 3 | 1 | 1 | 0 |
 | B16 tests that do not protect | 5 | 2 | 3 | 0 | 0 |
-| **Total** | **122** | **54** | **56** | **12** | **0** |
+| **Total** | **123** | **55** | **56** | **12** | **0** |
 
 ## Phase 0: baseline
 
@@ -139,7 +139,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B1-016 | B1 | `lightapi/yaml_config.py:531` | `except ValueError: return fn` for a callable without an inspectable signature | manter: builtins; the validator is still called with two args | justificado | |
 | B1-017 | B1 | `lightapi/authentication/jwt.py:84`, `lightapi/cache.py:243,262` | Silent excepts inside FROZEN classes | manter: FROZEN | justificado | |
 | B1-018 | B1 | `lightapi/cache.py:49` | `redis.from_url` failure (bad URL) returns no client, silently, forever | corrigir with B1-005 (log once per call) | corrigido | `4171583` |
-| B1-019 | B1 | `lightapi/repository.py:85,99` | `IntegrityError` from a `unique=True` column (or any constraint) escaped `Repository.add()`/`update()`: a duplicate value was an unhandled 500 with a traceback and the session was left in the failed state. e2e scenario 17 planned the case | corrigido: the repository rolls back and raises `ConstraintViolation`; POST, PUT and PATCH answer `409 {"detail": "constraint violation"}`, sync and async (`tests/test_constraints.py`) | corrigido | `see git log: fix(B1-019)` |
+| B1-019 | B1 | `lightapi/repository.py:85,99` | `IntegrityError` from a `unique=True` column (or any constraint) escaped `Repository.add()`/`update()`: a duplicate value was an unhandled 500 with a traceback and the session was left in the failed state. e2e scenario 17 planned the case | corrigido: the repository rolls back and raises `ConstraintViolation`; POST, PUT and PATCH answer `409 {"detail": "constraint violation"}`, sync and async (`tests/test_constraints.py`) | corrigido | `732c248` |
 | B2-001 | B2 | `lightapi/filters.py:71,97,125` | `getattr(view, "_meta", {})` on a view that is always a `RestEndpoint` (has `_meta`) | corrigir: `view._meta.get("filtering")` | corrigido | `5e91407` |
 | B2-002 | B2 | `lightapi/lightapi.py:324` | `getattr(cls, "_meta", {})` on a registered endpoint (validated by `_require_rest_endpoint`) | corrigir: `cls._meta` | corrigido | `5e91407` |
 | B2-003 | B2 | `lightapi/rest.py:171` | `getattr(type(self), "_session_manager", None)` | corrigir: declare `_session_manager: ClassVar[SessionManager | corrigido | `5e91407` | |
@@ -181,6 +181,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B6-003 | B6 | `lightapi/config.py:31` | `Config.jwt_expiration` is never read: `JWTAuthentication.generate_token` (FROZEN) uses `self.expiration or 3600` | propor: remove the field in 0.2.0 or make the FROZEN class read it | proposta | |
 | B6-004 | B6 | `lightapi/lightapi.py:291` | `LightApi(engine=AsyncEngine)` without `mode="async"` and without an `async def` hook: tables are never created and every request is a 500 (now with a startup warning; v0.1.29 swallowed an `AttributeError`) | propor: detect async mode from the engine type (visible: 500s become a working app); alternative: `ConfigurationError` at register | proposta | |
 | B6-005 | B6 | `lightapi/authentication/basic.py:61` | An `async def validate_credentials` on a `BasicAuthentication` subclass: `authenticate` does not await it, the coroutine is truthy, so any Basic credentials pass and `request.state.user` is a coroutine (same in v0.1.29; `LoginEndpoint` does await it). Security relevant (B11) | propor: `ConfigurationError` at startup for an async validator on Basic, or await it in the guard | proposta | |
+| B6-006 | B6 | `lightapi/fields.py:21`, `lightapi/table_mapping.py:173` | `Field(decimal_places=N)` was stripped before pydantic saw it and the column it fed, `Numeric(scale=N)` with no precision, renders as plain `NUMERIC` on SQLite and Postgres: the option did nothing, and every doc table said it set the scale. e2e scenario 17 stored "1.999" on a `decimal_places=2` column on both DBs | corrigido: the wrapper forwards `decimal_places` to pydantic, so more places than declared is a 422 (`tests/test_audit.py::TestB6DecimalPlaces`); the five doc tables now say what happens and that the column type stays `NUMERIC` | corrigido | `see git log: fix(B6-006)` |
 | B7-001 | B7 | `lightapi/endpoint_handler.py:92` | `EndpointGuard.check` runs `backend.authenticate` on the event loop; a Basic validator that queries a database blocks the loop | propor: run sync backends through `run_blocking` (invisible when the validator is thread-safe; breaks validators bound to a `StaticPool` SQLite) | proposta | |
 | B7-002 | B7 | `lightapi/_login.py:116` | A sync `login_validator` runs on the event loop | propor: same as B7-001 | proposta | |
 | B7-003 | B7 | `lightapi/lightapi.py:308-318`, `table_mapping.py:237-249` | `asyncio.run` on a worker thread while a loop is running (bug B19, both versions); e2e scenario 02 on asyncpg failed its first POST with "Future attached to a different loop" | corrigido for a served app: the lifespan awaits `create_all` on the serving loop; `build_app()` inside an already running loop (pytest-asyncio) and async reflection keep the worker thread, documented in the CHANGELOG | corrigido | `1758f90` |

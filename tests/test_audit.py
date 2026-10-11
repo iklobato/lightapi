@@ -6,6 +6,7 @@ import datetime
 import logging
 import os
 import warnings
+from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
@@ -32,6 +33,7 @@ from lightapi import (
     Authentication,
     BasicAuthentication,
     Cache,
+    Field,
     FieldFilter,
     Filtering,
     IsAuthenticated,
@@ -577,6 +579,33 @@ class TestB6AsyncFromUrl:
         with TestClient(app.build_app()) as client:
             assert client.post("/asyncdocs", json={"title": "y"}).status_code == 201
             client.portal.call(app._engine.dispose)
+
+
+class AuditPriced(RestEndpoint):
+    price: Decimal = Field(decimal_places=2)
+
+    class Meta:
+        table = "audit_priced"
+
+
+class TestB6DecimalPlaces:
+    """B6-006: `Field(decimal_places=N)` reached neither pydantic nor the DDL
+    (`Numeric(scale=N)` without a precision renders as plain NUMERIC), so a value
+    with more places was stored as sent. e2e scenario 17 stored "1.999" on both DBs."""
+
+    def test_more_decimal_places_than_declared_is_422(self):
+        with _client({"/priced": AuditPriced}) as client:
+            response = client.post("/priced", json={"price": "1.999"})
+
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"] == ["price"]
+
+    def test_declared_decimal_places_are_accepted_and_kept(self):
+        with _client({"/priced": AuditPriced}) as client:
+            response = client.post("/priced", json={"price": "12.50"})
+
+        assert response.status_code == 201
+        assert response.json()["price"] == "12.50"
 
 
 class TestYamlUnknownKeys:

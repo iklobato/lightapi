@@ -18,6 +18,10 @@ def Field(
     before Pydantic processes the field definition.
     """
     lightapi_meta = {k: kwargs.pop(k) for k in list(kwargs) if k in _LIGHTAPI_KWARGS}
+    if "decimal_places" in lightapi_meta:
+        # Pydantic enforces the places at the edge: Numeric(scale=N) alone renders
+        # as plain NUMERIC on every dialect, so the column cannot.
+        kwargs["decimal_places"] = lightapi_meta["decimal_places"]
     existing_extra: dict[str, Any] = kwargs.pop("json_schema_extra", None) or {}
     return _pydantic_Field(
         **kwargs, json_schema_extra={**existing_extra, **lightapi_meta}
