@@ -179,5 +179,19 @@ are byte-identical (characterization tests and the HTTP snapshot pin them).
 - `_login.py:137` keeps `except Exception` on purpose: a `login_validator` that raises is a
   401 by documented contract (CHANGELOG 0.1.24).
 
-Next: Step 5a (handler: fold `auth_checker.py` and `middleware_runner.py` into
-`endpoint_handler.py`, `_CrudArgument`, `_json_body`).
+## Step 5: request path, cache, body, specific exceptions
+
+### 5a. Handler
+
+`endpoint_handler.py` now holds everything that serves one route: `MiddlewareChain`
+(frozen dataclass over the app's middleware list, `before`/`after`, replacing the two
+functions of `middleware_runner.py`), `EndpointGuard` (from `auth_checker.py`),
+`_CrudArgument` + `_Verb.call_arguments` (replacing the five argument-adapter functions) and
+`EndpointHandler._json_body` (replacing `_read_body`, now `request.json()` with
+`except (json.JSONDecodeError, UnicodeDecodeError)`: an empty or malformed body is still `{}`
+and a 422; a dropped connection propagates). `auth_checker.py` and `middleware_runner.py`
+deleted (CHANGELOG `Removed`, `[tool.mypy]` list trimmed). `endpoint_handler.py` is fully
+type-checked by mypy, so the moved code is typed.
+
+Next: 5b (cache: `EndpointCache` in `cache.py`, narrow Redis excepts, delete
+`cache_helper.py`).

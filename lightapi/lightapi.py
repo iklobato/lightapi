@@ -22,7 +22,7 @@ from lightapi.authentication import (
     JWTAuthentication,
 )
 from lightapi.constants import ExecutionMode, HttpVerb
-from lightapi.endpoint_handler import AppContext, EndpointHandler
+from lightapi.endpoint_handler import AppContext, EndpointHandler, MiddlewareChain
 from lightapi.exceptions import ConfigurationError
 from lightapi.health import HEALTH_PATH, HealthCheckEndpoint
 from lightapi.rate_limiter import RateLimiter
@@ -103,7 +103,9 @@ class LightApi:
         if self._mode is ExecutionMode.ASYNC:
             _require_async_engine(self._engine)
 
-        app_context = AppContext(self._middlewares, self._mode, self._login_validator)
+        app_context = AppContext(
+            MiddlewareChain(self._middlewares), self._mode, self._login_validator
+        )
         for path, cls in mapping.items():
             self._register_endpoint(path, cls, app_context)
 

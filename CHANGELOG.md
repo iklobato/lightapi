@@ -40,6 +40,9 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `lightapi.constants.HTTPStatus`: a copy of eleven members of the standard library's
   `http.HTTPStatus`, which the package now uses directly. Status codes in responses are
   unchanged.
+- `lightapi.auth_checker` and `lightapi.middleware_runner`: `EndpointGuard` and the
+  middleware runner (now `MiddlewareChain`) live in `lightapi.endpoint_handler`, the only
+  module that used them.
 
 ### Fixed
 - **`Meta.cache` was ignored on async engines**: cached GETs and cache invalidation
