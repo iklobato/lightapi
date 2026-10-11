@@ -108,3 +108,5 @@ cython_debug/
 .idea
 alembic
 *.db
+
+tools/e2e/.out/
