@@ -132,7 +132,7 @@ class SchemaFactory:
         a pydantic model on every PATCH request was measurable work for nothing.
         """
         optional_fields: dict[str, Any] = {
-            name: (Optional[field.annotation], None)  # type: ignore[valid-type]
+            name: (Optional[field.annotation], None)
             for name, field in schema_create.model_fields.items()
         }
         return create_model(
@@ -222,17 +222,15 @@ class SchemaFactory:
                 continue
             value = cls.__dict__.get(name) or getattr(cls, name, None)
             field_info = value if isinstance(value, FieldInfo) else None
-            extra = (
-                (field_info.json_schema_extra or {}) if field_info is not None else {}
-            )
-            if extra.get("exclude"):
+            extra = field_info.json_schema_extra if field_info is not None else None
+            if isinstance(extra, dict) and extra.get("exclude"):
                 continue
 
             # create keeps the Field() constraints; read is Optional so a
             # serializer can project any field out.
             default = field_info if field_info is not None else ...
             create_fields[name] = (annotation, default)
-            read_fields[name] = (Optional[annotation], None)  # type: ignore[valid-type]
+            read_fields[name] = (Optional[annotation], None)
 
         return SchemaFactory._schema_pair(cls.__name__, create_fields, read_fields)
 
@@ -250,8 +248,8 @@ class SchemaFactory:
         for col in table.c:
             annotation = SchemaFactory._reflected_annotation(col)
             if col.key not in AUTO_FIELDS:
-                required = Optional[annotation] if col.nullable else annotation  # type: ignore[valid-type]
+                required = Optional[annotation] if col.nullable else annotation
                 create_fields[col.key] = (required, ...)
-            read_fields[col.key] = (Optional[annotation], None)  # type: ignore[valid-type]
+            read_fields[col.key] = (Optional[annotation], None)
 
         return SchemaFactory._schema_pair(cls.__name__, create_fields, read_fields)
