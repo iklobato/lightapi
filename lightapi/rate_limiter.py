@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict
+from http import HTTPStatus
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -164,7 +165,7 @@ class RateLimiter:
                 "error": "rate_limit_exceeded",
                 "detail": "Too many requests. Please try again later.",
             },
-            status_code=429,
+            status_code=HTTPStatus.TOO_MANY_REQUESTS,
             headers={
                 "Retry-After": str(retry_after),
                 "X-RateLimit-Limit": str(limit),

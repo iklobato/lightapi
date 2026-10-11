@@ -1,6 +1,7 @@
 """Redis-backed GET response cache for one RestEndpoint class."""
 
 import json
+from http import HTTPStatus
 from typing import Awaitable, Callable
 
 from starlette.concurrency import run_in_threadpool
@@ -64,7 +65,9 @@ class ResponseCache:
         return JSONResponse(cached) if cached is not None else None
 
     def _store_response(self, request: Request, response: Response) -> None:
-        if not (isinstance(response, JSONResponse) and response.status_code == 200):
+        if not (
+            isinstance(response, JSONResponse) and response.status_code == HTTPStatus.OK
+        ):
             return
         try:
             body = response.body

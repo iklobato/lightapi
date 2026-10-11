@@ -2,23 +2,6 @@ from enum import Enum
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# HTTP Status Codes
-# ─────────────────────────────────────────────────────────────────────────
-class HTTPStatus(int, Enum):
-    OK = 200
-    CREATED = 201
-    NO_CONTENT = 204
-    BAD_REQUEST = 400
-    UNAUTHORIZED = 401
-    FORBIDDEN = 403
-    NOT_FOUND = 404
-    METHOD_NOT_ALLOWED = 405
-    CONFLICT = 409
-    UNPROCESSABLE_ENTITY = 422
-    TOO_MANY_REQUESTS = 429
-
-
-# ─────────────────────────────────────────────────────────────────────────
 # Response Keys
 # ─────────────────────────────────────────────────────────────────────────
 class ResponseKey(str, Enum):

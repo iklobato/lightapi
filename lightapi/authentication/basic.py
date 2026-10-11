@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Callable
 
 from starlette.requests import Request
@@ -67,7 +68,7 @@ class BasicAuthentication(BaseAuthentication):
     def get_auth_error_response(self, request: Request) -> JSONResponse:
         return JSONResponse(
             {"error": "authentication failed"},
-            status_code=401,
+            status_code=HTTPStatus.UNAUTHORIZED,
             headers={"WWW-Authenticate": 'Basic realm="Restricted Area"'},
         )
 

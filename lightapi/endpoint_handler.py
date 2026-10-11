@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import json
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Callable
 
 from starlette.background import BackgroundTasks
@@ -14,7 +15,7 @@ from starlette.responses import JSONResponse, Response
 
 from lightapi.auth_checker import EndpointGuard
 from lightapi.cache_helper import ResponseCache
-from lightapi.constants import HTTPStatus, ResponseKey
+from lightapi.constants import ResponseKey
 from lightapi.middleware_runner import run_post_middlewares, run_pre_middlewares
 from lightapi.rest import RestEndpoint
 from lightapi.session import run_blocking

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from lightapi.authentication import AllowAny
-from lightapi.constants import HTTPStatus
 
 if TYPE_CHECKING:
     from lightapi.authentication.base import LoginValidator

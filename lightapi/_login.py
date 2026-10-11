@@ -6,13 +6,14 @@ import base64
 import inspect
 import json
 import logging
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.constants import HTTPStatus, ResponseKey
+from lightapi.constants import ResponseKey
 
 if TYPE_CHECKING:
     from lightapi.authentication.base import BaseAuthentication, LoginValidator

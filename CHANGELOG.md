@@ -24,6 +24,9 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Removed (internal, no public name affected)
 - `RestEndpoint._meta["reflect"]`: the key was written but never read; `Meta.reflect` is
   read from the class itself.
+- `lightapi.constants.HTTPStatus`: a copy of eleven members of the standard library's
+  `http.HTTPStatus`, which the package now uses directly. Status codes in responses are
+  unchanged.
 
 ### Fixed
 - **`Meta.cache` was ignored on async engines**: cached GETs and cache invalidation

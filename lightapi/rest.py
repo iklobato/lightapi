@@ -8,6 +8,7 @@ import types
 from collections.abc import Callable
 from decimal import Decimal
 from functools import partial
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Union, get_args, get_origin, get_type_hints
 from uuid import UUID
 
@@ -32,7 +33,7 @@ from sqlalchemy import select as sa_select
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from lightapi.constants import AUTO_FIELDS, HTTPStatus, ResponseKey
+from lightapi.constants import AUTO_FIELDS, ResponseKey
 from lightapi.exceptions import ConfigurationError
 from lightapi.pagination import NoPagination
 from lightapi.repository import Repository, RowNotFound, VersionConflict

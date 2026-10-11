@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from http import HTTPStatus
 from typing import Any, Dict
 
 from starlette.responses import JSONResponse
@@ -99,7 +100,7 @@ class CORSMiddleware(Middleware):
             if request.method == "OPTIONS":
                 return JSONResponse(
                     {},
-                    status_code=200,
+                    status_code=HTTPStatus.OK,
                     headers={
                         "Access-Control-Allow-Origin": ", ".join(self.allow_origins),
                         "Access-Control-Allow-Methods": ", ".join(self.allow_methods),
@@ -143,7 +144,9 @@ class AuthenticationMiddleware(Middleware):
     def process(self, request: Any, response: Any) -> Any:
         if response is None and self.authenticator:
             if not self.authenticator.authenticate(request):
-                return JSONResponse({"error": "not allowed"}, status_code=403)
+                return JSONResponse(
+                    {"error": "not allowed"}, status_code=HTTPStatus.FORBIDDEN
+                )
             return None
 
         return response

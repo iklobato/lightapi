@@ -76,5 +76,16 @@ pydantic imports that lived inside `_is_optional`, `_field_annotations`, `_decla
 and `_parsed_meta` to the module top (no cycle existed), and with them the
 `# type: ignore[attr-defined]` on `types.UnionType`. 563 passed, ruff and mypy clean.
 
-Next: Step 3, one commit per enum: stdlib `HTTPStatus`, `HttpVerb`, `ExecutionMode`,
-`PaginationStyle`, `TableReflection`, `RateLimitWindow`, `JwtAlgorithm`, `ApiError`.
+## Step 3: enums and the standard library (one commit each)
+
+### 3a. `http.HTTPStatus`
+
+Deleted the `HTTPStatus(int, Enum)` copy in `constants.py`; `rest.py`, `endpoint_handler.py`,
+`auth_checker.py` and `_login.py` import the stdlib enum. The raw status integers in
+`authentication/basic.py` (401), `core.py` (200, 403), `rate_limiter.py` (429) and
+`cache_helper.py` (`== 200`) became members too. `Response.__init__(status_code: int = 200)`
+in `core.py` is a public signature and stays. Starlette and h11 take the `IntEnum` as an int,
+so the bytes on the wire are the same. 563 passed, ruff and mypy clean.
+
+Next: 3b `HttpVerb`, then `ExecutionMode`, `PaginationStyle`, `TableReflection`,
+`RateLimitWindow`, `JwtAlgorithm`, `ApiError`.
