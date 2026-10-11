@@ -175,7 +175,6 @@ module = [
     "lightapi.yaml_loader",
     "lightapi._dict_config_loader",
     "lightapi._login",
-    "lightapi.cache_helper",
     "lightapi.session_manager",
     "lightapi.table_mapping",
 ]

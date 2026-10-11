@@ -3,12 +3,23 @@
 from unittest.mock import patch
 
 import pytest
+import redis
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
 from lightapi import Cache, LightApi, RestEndpoint
+from lightapi.cache import RedisCacheBackend
 from lightapi.fields import Field as LField
+
+
+class _RedisDown:
+    """A redis client whose every call fails the way a dead server does."""
+
+    def _fail(self, *args, **kwargs):
+        raise redis.ConnectionError("Error 61 connecting to localhost:6379")
+
+    get = setex = delete = scan_iter = ping = _fail
 
 
 class CachedEndpoint(RestEndpoint):
@@ -40,8 +51,8 @@ def client():
 class TestCacheGetList:
     def test_cache_get_list_returns_cached_on_second_request(self, client):
         """First GET hits DB, second GET returns cached (when get_cached returns data)."""
-        with patch("lightapi.cache_helper.get_cached") as mock_get:
-            with patch("lightapi.cache_helper.set_cached") as mock_set:
+        with patch("lightapi.cache.RedisCacheBackend.get") as mock_get:
+            with patch("lightapi.cache.RedisCacheBackend.set") as mock_set:
                 mock_get.return_value = None  # First call: cache miss
                 resp1 = client.get("/cached")
                 assert resp1.status_code == 200
@@ -60,13 +71,13 @@ class TestCacheGetList:
 class TestCacheInvalidation:
     def test_cache_post_invalidates(self, client):
         """POST triggers cache invalidation."""
-        with patch("lightapi.cache_helper.invalidate_cache_prefix") as mock_inv:
+        with patch("lightapi.cache.RedisCacheBackend.invalidate_prefix") as mock_inv:
             client.post("/cached", json={"name": "new"})
             mock_inv.assert_called()
 
     def test_cache_put_invalidates(self, client):
         """PUT triggers cache invalidation."""
-        with patch("lightapi.cache_helper.invalidate_cache_prefix") as mock_inv:
+        with patch("lightapi.cache.RedisCacheBackend.invalidate_prefix") as mock_inv:
             post_resp = client.post("/cached", json={"name": "item"})
             item_id = post_resp.json()["id"]
             version = post_resp.json()["version"]
@@ -78,7 +89,7 @@ class TestCacheInvalidation:
 
     def test_cache_delete_invalidates(self, client):
         """DELETE triggers cache invalidation."""
-        with patch("lightapi.cache_helper.invalidate_cache_prefix") as mock_inv:
+        with patch("lightapi.cache.RedisCacheBackend.invalidate_prefix") as mock_inv:
             post_resp = client.post("/cached", json={"name": "to_delete"})
             item_id = post_resp.json()["id"]
             client.delete(f"/cached/{item_id}")
@@ -88,7 +99,7 @@ class TestCacheInvalidation:
 class TestCacheRedisUnreachable:
     def test_cache_redis_unreachable_startup_warning(self):
         """When Redis unreachable and cache configured, RuntimeWarning emitted at startup."""
-        with patch("lightapi.cache._ping_redis", return_value=False):
+        with patch("lightapi.cache.RedisCacheBackend.ping", return_value=False):
             with pytest.warns(RuntimeWarning, match="Redis|Cache"):
                 engine = create_engine(
                     "sqlite:///:memory:",
@@ -100,12 +111,15 @@ class TestCacheRedisUnreachable:
                 app.build_app()
 
     def test_cache_redis_unreachable_mid_request_serves_db(self, client):
-        """When get_cached raises/fails, GET still returns 200 from DB."""
-        with patch("lightapi.cache_helper.get_cached", side_effect=Exception("Redis down")):
-            with patch("lightapi.cache_helper.set_cached"):
+        """When the Redis client raises, GET still returns 200 from DB."""
+        RedisCacheBackend.shared.cache_clear()
+        try:
+            with patch("lightapi.cache.redis.from_url", return_value=_RedisDown()):
                 resp = client.get("/cached")
                 assert resp.status_code == 200
                 assert "results" in resp.json()
+        finally:
+            RedisCacheBackend.shared.cache_clear()
 
 
 class TestCacheVaryOn:
@@ -121,8 +135,8 @@ class TestCacheVaryOn:
         c = TestClient(app.build_app())
         c.post("/cached_vary", json={"label": "x"})
 
-        with patch("lightapi.cache_helper.get_cached") as mock_get:
-            with patch("lightapi.cache_helper.set_cached") as mock_set:
+        with patch("lightapi.cache.RedisCacheBackend.get") as mock_get:
+            with patch("lightapi.cache.RedisCacheBackend.set") as mock_set:
                 mock_get.return_value = None
                 c.get("/cached_vary?page=1")
                 c.get("/cached_vary?page=2")

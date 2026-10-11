@@ -47,9 +47,9 @@ def _fresh_cache_client(monkeypatch):
     from lightapi import cache as cache_module
 
     monkeypatch.setenv("LIGHTAPI_REDIS_URL", REDIS_URL)
-    cache_module._default_backend.cache_clear()
+    cache_module.RedisCacheBackend.shared.cache_clear()
     yield
-    cache_module._default_backend.cache_clear()
+    cache_module.RedisCacheBackend.shared.cache_clear()
 
 
 @pytest.fixture
@@ -135,7 +135,7 @@ def test_redis_unreachable_warns_but_requests_still_succeed(monkeypatch):
     monkeypatch.setenv("LIGHTAPI_REDIS_URL", "redis://127.0.0.1:1/0")  # nothing listens
     from lightapi import cache as cache_module
 
-    cache_module._default_backend.cache_clear()
+    cache_module.RedisCacheBackend.shared.cache_clear()
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )

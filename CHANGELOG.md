@@ -43,6 +43,10 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `lightapi.auth_checker` and `lightapi.middleware_runner`: `EndpointGuard` and the
   middleware runner (now `MiddlewareChain`) live in `lightapi.endpoint_handler`, the only
   module that used them.
+- `lightapi.cache_helper` and the module functions `lightapi.cache.get_cached`,
+  `set_cached` and `_ping_redis`: the response cache is `lightapi.cache.EndpointCache`
+  (built once per route) over `RedisCacheBackend.shared()`, the process-wide client that is
+  still created on first use. `lightapi.cache.invalidate_cache_prefix` stays.
 
 ### Fixed
 - **`Meta.cache` was ignored on async engines**: cached GETs and cache invalidation

@@ -193,5 +193,24 @@ and a 422; a dropped connection propagates). `auth_checker.py` and `middleware_r
 deleted (CHANGELOG `Removed`, `[tool.mypy]` list trimmed). `endpoint_handler.py` is fully
 type-checked by mypy, so the moved code is typed.
 
-Next: 5b (cache: `EndpointCache` in `cache.py`, narrow Redis excepts, delete
-`cache_helper.py`).
+### 5b. Cache
+
+`cache.EndpointCache(endpoint_name, config)` replaces `cache_helper.ResponseCache(cls)` and is
+built once per route in `EndpointHandler.__init__` (before: up to three instances per request).
+It reaches Redis through `RedisCacheBackend.shared()` (a `@classmethod` + `functools.cache`,
+replacing `_default_backend`; still lazy, so `LIGHTAPI_REDIS_URL` set after import counts) on
+every call, never binding the client early: tests build the app before patching. The Redis
+boundary is `RedisCacheBackend`, which now catches only `redis.RedisError` (plus
+`json.JSONDecodeError`/`UnicodeDecodeError` on `get`, `ValueError` on `from_url`) and keeps
+the "no Redis, no cache, requests still answered" contract; `EndpointCache` has no
+`try/except` (the body it stores is JSON it produced). `get_cached`, `set_cached`,
+`_ping_redis` and `cache_helper.py` are gone; `invalidate_cache_prefix` stays (documented).
+Tests that patched the old module functions now patch `RedisCacheBackend.get/set/
+invalidate_prefix/ping`; the "Redis down" tests use a fake client raising
+`redis.ConnectionError` under `patch("lightapi.cache.redis.from_url")` with
+`RedisCacheBackend.shared.cache_clear()` around them; `test_cache_backend_lazy.py` sets the
+fake client's `get` to return None (its truthy MagicMock only passed before because the
+`TypeError` from `json.loads` was swallowed). `[tool.mypy]` list trimmed; CHANGELOG `Removed`.
+
+Next: 5c (`Cursor` value object, `_current_page` as a method, narrow excepts in
+`pagination.py` and `filters.py`).

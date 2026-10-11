@@ -370,9 +370,9 @@ class _RedisDown:
 class TestCacheWithRedisDown:
     @pytest.fixture(autouse=True)
     def fresh_redis_client(self):
-        cache_module._default_backend.cache_clear()
+        cache_module.RedisCacheBackend.shared.cache_clear()
         yield
-        cache_module._default_backend.cache_clear()
+        cache_module.RedisCacheBackend.shared.cache_clear()
 
     def test_cached_get_and_write_succeed_when_redis_connection_fails(self):
         with patch("lightapi.cache.redis.from_url", return_value=_RedisDown()):

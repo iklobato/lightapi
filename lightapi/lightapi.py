@@ -21,6 +21,7 @@ from lightapi.authentication import (
     BasicAuthentication,
     JWTAuthentication,
 )
+from lightapi.cache import RedisCacheBackend
 from lightapi.constants import ExecutionMode, HttpVerb
 from lightapi.endpoint_handler import AppContext, EndpointHandler, MiddlewareChain
 from lightapi.exceptions import ConfigurationError
@@ -308,9 +309,7 @@ class LightApi:
         for cls in self._endpoint_map.values():
             cache_cfg = getattr(cls, "_meta", {}).get("cache")
             if cache_cfg:
-                from lightapi.cache import _ping_redis
-
-                if not _ping_redis():
+                if not RedisCacheBackend.shared().ping():
                     warnings.warn(
                         "Redis is configured for caching but is not reachable at startup. "
                         "Cache will be skipped for all requests.",

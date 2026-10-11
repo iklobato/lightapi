@@ -15,7 +15,7 @@ from starlette.background import BackgroundTasks
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from lightapi.cache_helper import ResponseCache
+from lightapi.cache import EndpointCache
 from lightapi.constants import ApiError, ExecutionMode, HttpVerb, ResponseKey
 from lightapi.rest import RestEndpoint
 from lightapi.session import run_blocking
@@ -189,6 +189,9 @@ class EndpointHandler:
         self._verbs = verbs
         self._middlewares = app.middlewares
         self._mode = app.mode
+        self._cache = EndpointCache(
+            endpoint_cls.__name__, endpoint_cls._meta.get("cache")
+        )
         authentication = endpoint_cls._meta.get("authentication")
         self._guard = (
             EndpointGuard(authentication, app.login_validator)
@@ -236,7 +239,7 @@ class EndpointHandler:
             result = await self._serve(verb, endpoint, request)
 
         response = JSONResponse(result) if isinstance(result, dict) else result
-        await ResponseCache(self._endpoint_cls).invalidate_after_write(request)
+        await self._cache.invalidate_after_write(request)
 
         if endpoint._background.tasks:
             response.background = endpoint._background
@@ -257,16 +260,15 @@ class EndpointHandler:
         if self._mode is ExecutionMode.ASYNC:
             crud_async = getattr(endpoint, verb.async_name)
             if verb.cached:
-                return await ResponseCache(self._endpoint_cls).serve_async(
-                    request, lambda: crud_async(*args)
-                )
+                return await self._cache.serve_async(request, lambda: crud_async(*args))
             return await crud_async(*args)
 
         crud = getattr(endpoint, verb.sync_name)
         engine = endpoint._get_engine()
         if verb.cached:
-            cache = ResponseCache(self._endpoint_cls)
-            return await run_blocking(engine, cache.serve, request, lambda: crud(*args))
+            return await run_blocking(
+                engine, self._cache.serve, request, lambda: crud(*args)
+            )
         return await run_blocking(engine, crud, *args)
 
     async def _call_override(
