@@ -71,16 +71,6 @@ class RedisCacheBackend:
         except redis.RedisError:
             return False
 
-    def delete(self, key: str) -> bool:
-        client = self._get_client()
-        if client is None:
-            return False
-        try:
-            client.delete(key)
-            return True
-        except redis.RedisError:
-            return False
-
     def invalidate_prefix(self, prefix: str) -> bool:
         client = self._get_client()
         if client is None:
