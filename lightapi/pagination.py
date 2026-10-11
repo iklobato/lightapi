@@ -9,16 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
-from lightapi.constants import (
-    CURSOR_PARAM,
-    DEFAULT_PAGE_SIZE,
-    PAGE_PARAM,
-    RESPONSE_KEY_COUNT,
-    RESPONSE_KEY_NEXT,
-    RESPONSE_KEY_PAGES,
-    RESPONSE_KEY_PREVIOUS,
-    RESPONSE_KEY_RESULTS,
-)
+from lightapi.constants import CURSOR_PARAM, DEFAULT_PAGE_SIZE, PAGE_PARAM, ResponseKey
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,7 +41,7 @@ class NoPagination:
         self, request: Request, qs: Any, session: Session, serialize: RowSerializer
     ) -> dict[str, Any]:
         rows = session.execute(qs).scalars().all()
-        return {RESPONSE_KEY_RESULTS: [serialize(row) for row in rows]}
+        return {ResponseKey.RESULTS: [serialize(row) for row in rows]}
 
 
 class PageNumberPaginator:
@@ -113,11 +104,11 @@ class PageNumberPaginator:
             params[PAGE_PARAM] = str(page - 1)
             prev_url = base + "?" + "&".join(f"{k}={v}" for k, v in params.items())
         return {
-            RESPONSE_KEY_COUNT: total,
-            RESPONSE_KEY_PAGES: pages,
-            RESPONSE_KEY_NEXT: next_url,
-            RESPONSE_KEY_PREVIOUS: prev_url,
-            RESPONSE_KEY_RESULTS: results,
+            ResponseKey.COUNT: total,
+            ResponseKey.PAGES: pages,
+            ResponseKey.NEXT: next_url,
+            ResponseKey.PREVIOUS: prev_url,
+            ResponseKey.RESULTS: results,
         }
 
 
@@ -185,9 +176,9 @@ class CursorPaginator:
         prev_cursor: str | None,
     ) -> dict[str, Any]:
         return {
-            RESPONSE_KEY_NEXT: next_cursor,
-            RESPONSE_KEY_PREVIOUS: prev_cursor,
-            RESPONSE_KEY_RESULTS: results,
+            ResponseKey.NEXT: next_cursor,
+            ResponseKey.PREVIOUS: prev_cursor,
+            ResponseKey.RESULTS: results,
         }
 
 

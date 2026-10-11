@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.constants import RESPONSE_KEY_USER
+from lightapi.constants import ResponseKey
 
 if TYPE_CHECKING:
     from lightapi.config import Authentication
@@ -36,7 +36,7 @@ class BaseAuthentication:
 
     def login_response(self, user: dict[str, Any]) -> dict[str, Any]:
         """Body of a successful ``/auth/login`` for a validated user."""
-        return {RESPONSE_KEY_USER: user}
+        return {ResponseKey.USER: user}
 
     def authenticate(self, request: Request) -> bool:
         """Authenticate a request.
