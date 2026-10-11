@@ -6,7 +6,7 @@ import inspect
 from collections.abc import Callable
 from functools import partial
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, ClassVar, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final, cast
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -60,36 +60,42 @@ class RestEndpointMeta(type):
             # RestEndpoint itself: nothing to map.
             return cls
 
+        # Anything with bases subclasses RestEndpoint; the metaclass fills in the
+        # class attributes RestEndpoint only declares.
+        endpoint_cls = cast("type[RestEndpoint]", cls)
         is_base_only = kwargs.get("base_only", False) or namespace.get(
             "_base_only", False
         )
         if is_base_only:
-            cls._allowed_methods = {verb.value for verb in CRUD_VERBS}
-            cls._meta = {}
+            endpoint_cls._allowed_methods = {verb.value for verb in CRUD_VERBS}
+            endpoint_cls._meta = {}
             return cls
 
-        mcs._process(cls, name, namespace)
+        mcs._process(endpoint_cls, name, namespace)
         return cls
 
     @classmethod
-    def _process(mcs, cls: type, name: str, namespace: dict[str, Any]) -> None:
+    def _process(
+        mcs, cls: type[RestEndpoint], name: str, namespace: dict[str, Any]
+    ) -> None:
         mcs._reject_redeclared_auto_fields(name, namespace)
 
         meta_obj = namespace.get("Meta") or getattr(cls, "Meta", None)
         reflection = TableReflection.from_meta(getattr(meta_obj, "reflect", None))
 
-        cls._meta = mcs._parsed_meta(name, meta_obj)  # type: ignore[attr-defined]
-        cls._allowed_methods = mcs._methods_from_mixins(cls)  # type: ignore[attr-defined]
+        cls._meta = mcs._parsed_meta(name, meta_obj)
+        cls._allowed_methods = mcs._methods_from_mixins(cls)
 
         if reflection is not None:
-            # ReflectedTable.map() builds the schemas once the columns are known.
-            cls.__schema_create__ = None  # type: ignore[attr-defined]
-            cls.__schema_read__ = None  # type: ignore[attr-defined]
-            cls._table_source = ReflectedTable(reflection)  # type: ignore[attr-defined]
+            # ReflectedTable.map() builds the schemas once the columns are known,
+            # at register(); until then they are None, as they always were.
+            cls.__schema_create__ = None  # type: ignore[assignment]
+            cls.__schema_read__ = None  # type: ignore[assignment]
+            cls._table_source = ReflectedTable(reflection)
             return
 
-        cls.__schema_create__, cls.__schema_read__ = SchemaFactory.build(cls)  # type: ignore[attr-defined]
-        cls._table_source = DeclaredTable.from_endpoint(cls, name, namespace)  # type: ignore[attr-defined]
+        cls.__schema_create__, cls.__schema_read__ = SchemaFactory.build(cls)
+        cls._table_source = DeclaredTable.from_endpoint(cls, name, namespace)
 
     @staticmethod
     def _reject_redeclared_auto_fields(name: str, namespace: dict[str, Any]) -> None:
@@ -122,12 +128,12 @@ class RestEndpointMeta(type):
         }
 
     @staticmethod
-    def _methods_from_mixins(cls: type) -> set[str]:
+    def _methods_from_mixins(cls: type[RestEndpoint]) -> set[str]:
         """HTTP methods named by HttpMethod mixins in the MRO; all when none is."""
         allowed = {
-            HttpVerb(base._http_method).value
+            HttpVerb(method).value
             for base in cls.__mro__[1:]
-            if getattr(base, "_http_method", None)
+            if (method := getattr(base, "_http_method", None))
         }
         return allowed or {verb.value for verb in CRUD_VERBS}
 
@@ -149,6 +155,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     _table_source: TableSource
     _meta: dict[str, Any]
     _allowed_methods: set[str]
+    # Built by the metaclass; a reflected table gets them at register().
+    __schema_create__: ClassVar[type[BaseModel]]
+    __schema_read__: ClassVar[type[BaseModel]]
     # Bound by LightApi.register(); None until then.
     _session_manager: ClassVar[SessionManager | None] = None
 
@@ -182,11 +191,21 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         """The engine for sync CRUD; an AsyncEngine is unwrapped to its sync one."""
         return self._session_manager_or_raise().sync_engine
 
+    @classmethod
+    def _model_class_or_raise(cls) -> type:
+        """The mapped class; LightApi.register() maps it."""
+        if cls._model_class is None:
+            raise RuntimeError(
+                f"{cls.__name__} is not mapped to a table. "
+                "Ensure LightApi.register() was called with it."
+            )
+        return cls._model_class
+
     def _get_queryset(self, request: Request) -> Any:
         cls = type(self)
         qs_attr = getattr(cls, "queryset", None)
         if qs_attr is None:
-            return sa_select(cls._model_class)
+            return sa_select(cls._model_class_or_raise())
         if callable(qs_attr):
             return qs_attr(self, request)
         return qs_attr
@@ -201,7 +220,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     def _fields_for(self, verb: HttpVerb) -> list[str] | None:
         """The serializer's field list for a verb, resolved once per request."""
-        projection = self._meta.get("serializer_normalised", _NO_PROJECTION)
+        projection: FieldProjection = self._meta.get(
+            "serializer_normalised", _NO_PROJECTION
+        )
         return projection.for_method(verb)
 
     def _serialize_row(self, row: Any, fields: list[str] | None) -> dict[str, Any]:
@@ -291,7 +312,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         return Response(status_code=HTTPStatus.NO_CONTENT)
 
     def _repository(self, session: Session) -> Repository:
-        return Repository(type(self)._model_class, session)
+        return Repository(type(self)._model_class_or_raise(), session)
 
     # ── Sync CRUD: the core inside a sync Session ─────────────────────────────
 

@@ -40,6 +40,7 @@ from lightapi.exceptions import ConfigurationError
 from lightapi.schema import SchemaFactory
 
 if TYPE_CHECKING:
+    from lightapi.rest import RestEndpoint
     from lightapi.session_manager import SessionManager
 
 _TYPE_MAP: Final[dict[Any, Any]] = {
@@ -57,17 +58,23 @@ class TableSource(ABC):
     """Builds the endpoint's table and maps the endpoint class onto it."""
 
     @abstractmethod
-    def map(self, endpoint_cls: type, session_manager: SessionManager) -> None: ...
+    def map(
+        self, endpoint_cls: type[RestEndpoint], session_manager: SessionManager
+    ) -> None: ...
 
     @staticmethod
-    def _table_name(endpoint_cls: type, session_manager: SessionManager) -> str:
+    def _table_name(
+        endpoint_cls: type[RestEndpoint], session_manager: SessionManager
+    ) -> str:
         base_name = (
             endpoint_cls._meta.get("table") or f"{endpoint_cls.__name__.lower()}s"
         )
         return session_manager.table_name_for(base_name)
 
     @staticmethod
-    def _strip_field_infos(endpoint_cls: type, columns: list[Column]) -> None:
+    def _strip_field_infos(
+        endpoint_cls: type[RestEndpoint], columns: list[Column[Any]]
+    ) -> None:
         for column in columns:
             existing = endpoint_cls.__dict__.get(column.name)
             # Remove FieldInfo objects AND bare Ellipsis sentinels. Both block
@@ -81,15 +88,15 @@ class TableSource(ABC):
 class DeclaredTable(TableSource):
     """A table generated from the endpoint's annotated fields."""
 
-    def __init__(self, columns: list[Column]) -> None:
+    def __init__(self, columns: list[Column[Any]]) -> None:
         self._columns = columns
 
     @classmethod
     def from_endpoint(
-        cls, endpoint_cls: type, name: str, namespace: dict[str, Any]
+        cls, endpoint_cls: type[RestEndpoint], name: str, namespace: dict[str, Any]
     ) -> DeclaredTable:
         """The automatic columns plus one per annotated field (minus exclude=True)."""
-        columns: list[Column] = []
+        columns: list[Column[Any]] = []
         for field_name, annotation in cls._field_annotations(endpoint_cls).items():
             field_val = namespace.get(field_name) or getattr(
                 endpoint_cls, field_name, None
@@ -100,7 +107,9 @@ class DeclaredTable(TableSource):
                 columns.append(column)
         return cls(cls._auto_columns() + columns)
 
-    def map(self, endpoint_cls: type, session_manager: SessionManager) -> None:
+    def map(
+        self, endpoint_cls: type[RestEndpoint], session_manager: SessionManager
+    ) -> None:
         if endpoint_cls._model_class is not None:
             return
 
@@ -117,7 +126,7 @@ class DeclaredTable(TableSource):
         endpoint_cls._model_class = endpoint_cls
 
     @staticmethod
-    def _field_annotations(endpoint_cls: type) -> dict[str, Any]:
+    def _field_annotations(endpoint_cls: type[RestEndpoint]) -> dict[str, Any]:
         """Public annotated fields of the class and its bases, with real types."""
         # get_type_hints() resolves the string annotations that
         # `from __future__ import annotations` leaves behind.
@@ -138,7 +147,7 @@ class DeclaredTable(TableSource):
     @staticmethod
     def _column_for(
         endpoint_name: str, field_name: str, annotation: Any, field_info: Any
-    ) -> Column | None:
+    ) -> Column[Any] | None:
         """The column for one annotated field; None when the field has exclude=True."""
         extra: dict[str, Any] = (
             (field_info.json_schema_extra or {}) if field_info else {}
@@ -179,7 +188,7 @@ class DeclaredTable(TableSource):
         return False, annotation
 
     @staticmethod
-    def _auto_columns() -> list[Column]:
+    def _auto_columns() -> list[Column[Any]]:
         """id, created_at, updated_at and version, present in every declared table."""
         return [
             Column("id", Integer, primary_key=True, autoincrement=True),
@@ -204,7 +213,9 @@ class ReflectedTable(TableSource):
     def __init__(self, reflection: TableReflection) -> None:
         self._reflection = reflection
 
-    def map(self, endpoint_cls: type, session_manager: SessionManager) -> None:
+    def map(
+        self, endpoint_cls: type[RestEndpoint], session_manager: SessionManager
+    ) -> None:
         if endpoint_cls._model_class is not None:
             return
 
@@ -217,9 +228,8 @@ class ReflectedTable(TableSource):
         session_manager.registry.map_imperatively(endpoint_cls, table)
         endpoint_cls._model_class = endpoint_cls
         # The schemas need the columns, which are only known after reflection.
-        mapped_table = sa_inspect(endpoint_cls).persist_selectable
         endpoint_cls.__schema_create__, endpoint_cls.__schema_read__ = (
-            SchemaFactory.build_from_reflected_table(endpoint_cls, mapped_table)
+            SchemaFactory.build_from_reflected_table(endpoint_cls, table)
         )
 
     def _reflect(self, table_name: str, session_manager: SessionManager) -> Table:
