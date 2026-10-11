@@ -156,5 +156,28 @@ the plain string PyJWT receives (`jwt.py` is FROZEN). Same error text.
 `EndpointHandler` (lists the allowed verbs) stays where it is. Texts, status codes and headers
 are byte-identical (characterization tests and the HTTP snapshot pin them).
 
-Next: Step 4 (authentication: break the config <-> authentication cycle, build the backend
-once per route, move the login helpers onto `LoginRequest`).
+## Step 4: authentication
+
+- Cycle `config.py` <-> `authentication/` broken by Tell-Don't-Ask:
+  `BasePermission.requires_authentication: ClassVar[bool] = True`,
+  `AllowAny.requires_authentication = False`. `Authentication.permission_for` returns the
+  configured class or `None`; `requires_login` asks the permission. `config.py` no longer
+  imports `lightapi.authentication` at runtime (the two in-function imports are gone).
+  Visible only to a subclass of `AllowAny` used as a permission (decision 2 of the plan):
+  CHANGELOG `Changed`, regression test added.
+- `EndpointGuard` now exists only for endpoints with an `Authentication` (`EndpointHandler`
+  keeps `None` otherwise) and builds the backend once, lazily, as a `cached_property`: eager
+  construction would break `tests/test_login_auth.py:857` (`backend=AllowAny`, no
+  `from_config`, never requested). Regression test counts `from_config` calls across two
+  requests. CHANGELOG `Changed`.
+- `_login.py`: `_parse_basic_header`, `_parse_credentials` and `_read_body` became
+  `LoginRequest.parse_basic_header` (also used by `BasicAuthentication`) and
+  `LoginRequest.from_request` (Basic header -> `model_construct`, unvalidated as before; JSON
+  body -> `request.json()` validated). The body read now catches `JSONDecodeError` and
+  `UnicodeDecodeError` (before: `JSONDecodeError, TypeError`), so a login body that is not
+  UTF-8 is a 422 instead of a 500: CHANGELOG `Changed`, regression test added.
+- `_login.py:137` keeps `except Exception` on purpose: a `login_validator` that raises is a
+  401 by documented contract (CHANGELOG 0.1.24).
+
+Next: Step 5a (handler: fold `auth_checker.py` and `middleware_runner.py` into
+`endpoint_handler.py`, `_CrudArgument`, `_json_body`).

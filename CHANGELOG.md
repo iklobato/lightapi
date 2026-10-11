@@ -14,6 +14,15 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `RestEndpoint` subclasses with `register()`, or `from_config()` with a YAML file.
 
 ### Changed
+- **The authentication backend is built once per route**, on the first request that needs
+  it, instead of once per request. A backend subclass with its own `__init__` is therefore
+  instantiated once. JWT settings and the secret are still read on every request.
+- **A permission class decides whether login is required**: `BasePermission` has
+  `requires_authentication = True` and `AllowAny` sets it to `False`. The only visible
+  difference: a subclass of `AllowAny` used as a permission no longer forces authentication
+  (before, only `AllowAny` itself, by identity, made a method public).
+- **`/auth/login` with a body that is not valid UTF-8 returns 422** (it was a 500); a body
+  that is not JSON still returns the same 422.
 - **`Meta.reflect` rejects unknown values**: anything other than `True`, `False`, `"full"`
   or `"partial"` now raises `ConfigurationError` when the class is defined. Before, a value
   such as `"yes"` was silently treated as "not reflected" and produced a table with only the

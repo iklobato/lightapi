@@ -133,6 +133,63 @@ class TestAuthenticationResponses:
         assert resp.status_code == 405
         assert resp.headers["Allow"] == "POST"
 
+    def test_login_with_invalid_utf8_body_returns_422(self):
+        """Decided in the second pass: this used to be a 500."""
+        client = _client({"/notes": JwtNote})
+
+        resp = client.post(
+            "/auth/login",
+            content=b"\xff\xfe",
+            headers={"Content-Type": "application/json"},
+        )
+
+        assert resp.status_code == 422
+        assert resp.json()["detail"][0]["loc"] == ["username"]
+
+    def test_backend_is_built_once_per_route_not_per_request(self):
+        """Decided in the second pass: before, every request built a new backend."""
+        built = []
+
+        class CountingBackend(JWTAuthentication):
+            @classmethod
+            def from_config(cls, authentication, login_validator=None):
+                built.append(cls)
+                return cls()
+
+        class Counted(RestEndpoint):
+            text: str = LField(min_length=1)
+
+            class Meta:
+                authentication = Authentication(backend=CountingBackend)
+
+        client = _client({"/counted": Counted})
+        built.clear()
+
+        client.get("/counted")
+        client.get("/counted")
+
+        assert len(built) == 1
+
+    def test_permission_subclassing_allowany_does_not_require_login(self):
+        """Decided in the second pass: the permission says whether login is needed.
+
+        Before, only AllowAny itself (by identity) made a method public."""
+
+        class Open(AllowAny):
+            pass
+
+        class OpenNote(RestEndpoint):
+            text: str = LField(min_length=1)
+
+            class Meta:
+                authentication = Authentication(
+                    backend=JWTAuthentication, permission=Open
+                )
+
+        client = _client({"/open": OpenNote})
+
+        assert client.get("/open").status_code == 200
+
 
 class TestClosedSetsAcceptedAsStrings:
     def test_mode_sync_string_is_accepted(self):

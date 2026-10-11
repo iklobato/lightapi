@@ -16,7 +16,7 @@ from lightapi.exceptions import ConfigurationError
 from lightapi.pagination import PaginationStyle, Paginator
 
 if TYPE_CHECKING:
-    from lightapi.authentication import BaseAuthentication
+    from lightapi.authentication.base import BaseAuthentication, BasePermission
     from lightapi.rate_limiter import RateLimiter
 
 
@@ -61,28 +61,25 @@ class Authentication:
     jwt_algorithm: str | None = None
     rate_limiter: "RateLimiter | None" = field(default=None, repr=False)
 
-    def permission_for(self, method: str) -> type:
-        """Permission class for an HTTP method; AllowAny when none is set for it."""
-        # lightapi.authentication imports this module, so this cannot be a top import.
-        from lightapi.authentication import AllowAny
-
+    def permission_for(self, method: str) -> type[BasePermission] | None:
+        """Permission class set for an HTTP method; None when none is set for it."""
         if isinstance(self.permission, dict):
-            return self.permission.get(method) or AllowAny
-        return self.permission or AllowAny
+            return self.permission.get(method)
+        return self.permission
 
     def requires_login(self, method: str) -> bool:
         """Whether the backend has to authenticate a request with this method.
 
-        A backend with no permission set still authenticates. An AllowAny
-        permission, for every method or for this one, makes the request public.
+        A backend with no permission set still authenticates. A permission that
+        does not require authentication (AllowAny), for every method or for this
+        one, makes the request public.
         """
-        from lightapi.authentication import AllowAny
-
         if self.backend is None:
             return False
         if self.permission is None:
             return True
-        return self.permission_for(method) is not AllowAny
+        permission = self.permission_for(method)
+        return permission is not None and permission.requires_authentication
 
     def build_backend(
         self, login_validator: Callable[[str, str], Any] | None = None

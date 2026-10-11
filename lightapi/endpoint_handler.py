@@ -99,8 +99,11 @@ class EndpointHandler:
         self._verbs = verbs
         self._middlewares = app.middlewares
         self._mode = app.mode
-        self._guard = EndpointGuard(
-            endpoint_cls._meta.get("authentication"), app.login_validator
+        authentication = endpoint_cls._meta.get("authentication")
+        self._guard = (
+            EndpointGuard(authentication, app.login_validator)
+            if authentication is not None
+            else None
         )
 
     @classmethod
@@ -130,9 +133,10 @@ class EndpointHandler:
         if pre_result is not None:
             return pre_result
 
-        auth_result = self._guard.check(request)
-        if auth_result is not None:
-            return auth_result
+        if self._guard is not None:
+            denied = self._guard.check(request)
+            if denied is not None:
+                return denied
 
         http_verb = HttpVerb.of(request.method)
         verb = self._verbs.get(http_verb) if http_verb is not None else None
