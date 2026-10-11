@@ -87,7 +87,7 @@ class LightApi:
         self._rate_limiter_global = self._as_rate_limiter(rate_limiter)
 
         self._routes: list[Route] = []
-        self._endpoint_map: dict[str, type] = {}
+        self._endpoint_map: dict[str, type[RestEndpoint]] = {}
         self._middlewares: list[type] = middlewares or []
         self._cors_origins: list[str] = cors_origins or []
         self._auth_path = auth_path
@@ -96,7 +96,7 @@ class LightApi:
     # Registration
     # ─────────────────────────────────────────────────────────────────────────
 
-    def register(self, mapping: dict[str, type]) -> None:
+    def register(self, mapping: dict[str, type[RestEndpoint]]) -> None:
         """Register endpoint classes against URL patterns.
 
         Args:
@@ -120,7 +120,9 @@ class LightApi:
         for path, cls in mapping.items():
             self._register_endpoint(path, cls, app_context)
 
-    def _register_endpoint(self, path: str, cls: type, app_context: AppContext) -> None:
+    def _register_endpoint(
+        self, path: str, cls: type[RestEndpoint], app_context: AppContext
+    ) -> None:
         cls._session_manager = self._session_manager
         cls._table_source.map(cls, self._session_manager)
         logger.info(f"Registering endpoint {path} -> {cls.__name__}")
@@ -354,7 +356,7 @@ class LightApi:
         return value if isinstance(value, RateLimiter) else None
 
     @staticmethod
-    def _require_rest_endpoint(path: str, cls: Any) -> None:
+    def _require_rest_endpoint(path: str, cls: object) -> None:
         if not (isinstance(cls, type) and issubclass(cls, RestEndpoint)):
             raise ConfigurationError(
                 f"register() value for '{path}' must be a RestEndpoint subclass, "
@@ -362,7 +364,7 @@ class LightApi:
             )
 
     @classmethod
-    def _has_async_handlers(cls, endpoint_cls: type) -> bool:
+    def _has_async_handlers(cls, endpoint_cls: type[RestEndpoint]) -> bool:
         # A queryset may be a Select, which is not callable, so check before asking.
         return any(
             callable(handler) and asyncio.iscoroutinefunction(handler)
