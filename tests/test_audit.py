@@ -546,6 +546,39 @@ class TestReflectedSchemaDefaults:
         )
 
 
+class TestB6AsyncFromUrl:
+    def test_async_mode_with_a_database_url_builds_an_async_engine(self):
+        """B6-001: mode='async' plus database_url used to raise at register()."""
+
+        class AuditUrlAsync(RestEndpoint):
+            title: str = LField()
+
+        app = LightApi(database_url="sqlite+aiosqlite:///:memory:", mode="async")
+        app.register({"/urlasync": AuditUrlAsync})
+
+        with TestClient(app.build_app()) as client:
+            assert client.post("/urlasync", json={"title": "t"}).status_code == 201
+            assert client.get("/urlasync").json()["results"][0]["title"] == "t"
+            client.portal.call(app._engine.dispose)
+
+    def test_async_mode_with_a_sync_driver_url_is_a_configuration_error(self):
+        with pytest.raises(ConfigurationError, match="async driver"):
+            LightApi(database_url="sqlite:///:memory:", mode="async")
+
+    def test_from_config_serves_an_async_document(self, tmp_path):
+        document = tmp_path / "async.yaml"
+        document.write_text(
+            'database:\n  url: "sqlite+aiosqlite:///:memory:"\nmode: async\nendpoints:\n'
+            "  - route: /asyncdocs\n    fields:\n      title: {type: str}\n"
+        )
+
+        app = LightApi.from_config(str(document))
+
+        with TestClient(app.build_app()) as client:
+            assert client.post("/asyncdocs", json={"title": "y"}).status_code == 201
+            client.portal.call(app._engine.dispose)
+
+
 class TestB19LifespanLoop:
     def test_lifespan_creates_tables_on_the_serving_loop_not_a_worker_thread(self):
         """B19/B7-003: tables created on a worker loop poison an asyncpg pool; the

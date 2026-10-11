@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 import uvicorn
 from sqlalchemy import Engine, MetaData, create_engine
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import InvalidRequestError, SQLAlchemyError
 from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
 from starlette.routing import Route
@@ -85,11 +85,13 @@ class LightApi:
         login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
         use_test_isolation: bool = False,
     ) -> None:
+        self._mode = ExecutionMode.from_user(mode)
         # Sync or async is a runtime fact (ExecutionMode), so the attribute is loose.
         self._engine: Any = (
-            engine if engine is not None else self._engine_from_url(database_url)
+            engine
+            if engine is not None
+            else self._engine_from_url(database_url, self._mode)
         )
-        self._mode = ExecutionMode.from_user(mode)
         self._session_manager = session_manager or SessionManager(
             self._engine, use_test_isolation=use_test_isolation
         )
@@ -379,14 +381,27 @@ class LightApi:
     # ─────────────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _engine_from_url(database_url: str | None) -> Engine:
+    def _engine_from_url(
+        database_url: str | None, mode: ExecutionMode
+    ) -> Engine | AsyncEngine:
         url = database_url or os.environ.get("LIGHTAPI_DATABASE_URL")
         if url is None:
             raise ConfigurationError(
                 "No database configured. Provide engine=..., database_url=..., or set "
                 "LIGHTAPI_DATABASE_URL environment variable."
             )
-        return create_engine(url)
+        if mode is not ExecutionMode.ASYNC:
+            return create_engine(url)
+        # sqlalchemy[asyncio] is the optional `async` extra.
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        try:
+            return create_async_engine(url)
+        except InvalidRequestError as exc:
+            raise ConfigurationError(
+                "mode='async' needs an async driver in the database URL "
+                f"(sqlite+aiosqlite://, postgresql+asyncpg://), got '{url}'."
+            ) from exc
 
     @classmethod
     def _as_rate_limiter(

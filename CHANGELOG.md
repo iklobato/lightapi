@@ -97,6 +97,10 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_startup` handler; same moment, no deprecation warning. `created_at`/`updated_at`
   column defaults no longer use the deprecated `datetime.utcnow()`; the stored value is the
   same naive UTC.
+- **`mode="async"` works from a database URL**: `LightApi(database_url=..., mode="async")`
+  and a YAML document with `mode: async` build an `AsyncEngine`, so `lightapi serve` can
+  start an async app. Before, both failed at `register()` with "requires AsyncEngine". A
+  URL without an async driver now raises `ConfigurationError` naming the drivers that work.
 - **Reflected tables accept what the table and the endpoint allow to be absent**: a
   nullable column of a reflected table is optional on POST (stored as null), and on
   `reflect = "partial"` a declared `Field(default=...)` or `Field(min_length=...)` is
