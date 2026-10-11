@@ -70,7 +70,11 @@ CRUD_VERBS: Final = frozenset(
 
 # The public marker mixin of each CRUD verb, by the verb's name (YAML and dict configs).
 HTTP_METHOD_MIXINS: Final[dict[str, type]] = {
-    verb.value: getattr(HttpMethod, verb.value) for verb in CRUD_VERBS
+    HttpVerb.GET.value: HttpMethod.GET,
+    HttpVerb.POST.value: HttpMethod.POST,
+    HttpVerb.PUT.value: HttpMethod.PUT,
+    HttpVerb.PATCH.value: HttpMethod.PATCH,
+    HttpVerb.DELETE.value: HttpMethod.DELETE,
 }
 
 
