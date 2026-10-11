@@ -84,6 +84,7 @@ HTTP_METHOD_MIXINS: Final[dict[str, type]] = {
 class ApiError(Enum):
     NOT_FOUND = (HTTPStatus.NOT_FOUND, "not found")
     VERSION_CONFLICT = (HTTPStatus.CONFLICT, "version conflict")
+    CONSTRAINT_VIOLATION = (HTTPStatus.CONFLICT, "constraint violation")
     INSUFFICIENT_PERMISSIONS = (HTTPStatus.FORBIDDEN, "Insufficient permissions")
     INVALID_CREDENTIALS = (HTTPStatus.UNAUTHORIZED, "Invalid credentials")
     LOGIN_METHOD_NOT_ALLOWED = (

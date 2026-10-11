@@ -97,6 +97,9 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_startup` handler; same moment, no deprecation warning. `created_at`/`updated_at`
   column defaults no longer use the deprecated `datetime.utcnow()`; the stored value is the
   same naive UTC.
+- **A database constraint violation is a 409**: a duplicate on a `unique=True` column (or
+  any `IntegrityError`) on POST, PUT or PATCH answers `409 {"detail": "constraint violation"}`
+  and leaves the session usable. It was an unhandled 500.
 - **A YAML key the format does not know fails at load time**: `defaults.filtering`,
   `meta.paginate` or a misspelt top-level key now raise `ConfigurationError` naming the
   key, as the configuration guide promises. Before, pydantic dropped the key and the app

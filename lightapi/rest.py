@@ -29,7 +29,12 @@ from lightapi.constants import (
 from lightapi.exceptions import ConfigurationError
 from lightapi.filters import FilterValueError
 from lightapi.pagination import NoPagination
-from lightapi.repository import Repository, RowNotFound, VersionConflict
+from lightapi.repository import (
+    ConstraintViolation,
+    Repository,
+    RowNotFound,
+    VersionConflict,
+)
 from lightapi.schema import FieldProjection, SchemaFactory
 from lightapi.session import get_async_session, get_sync_session
 from lightapi.session_manager import SessionManager
@@ -145,6 +150,7 @@ class RestEndpointMeta(type):
 _API_ERRORS: Final[dict[type[Exception], ApiError]] = {
     RowNotFound: ApiError.NOT_FOUND,
     VersionConflict: ApiError.VERSION_CONFLICT,
+    ConstraintViolation: ApiError.CONSTRAINT_VIOLATION,
 }
 
 
@@ -267,7 +273,10 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         except ValidationError as exc:
             return ApiError.validation_failed(exc.errors())
 
-        row = self._repository(session).add(validated.model_dump())
+        try:
+            row = self._repository(session).add(validated.model_dump())
+        except ConstraintViolation as exc:
+            return _API_ERRORS[type(exc)].response()
         return JSONResponse(
             self._serialize_row(row, self._fields_for(HttpVerb.POST)),
             status_code=HTTPStatus.CREATED,
@@ -297,7 +306,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
         try:
             row = repository.update(pk, client_version, values)
-        except (RowNotFound, VersionConflict) as exc:
+        except (RowNotFound, VersionConflict, ConstraintViolation) as exc:
             return _API_ERRORS[type(exc)].response()
         return JSONResponse(self._serialize_row(row, self._fields_for(HttpVerb.PUT)))
 

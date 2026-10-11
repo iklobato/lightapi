@@ -6,6 +6,7 @@ import datetime
 from typing import Any, Final, Protocol
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, class_mapper
 
 FIRST_VERSION: Final = 1
@@ -17,6 +18,10 @@ class RowNotFound(Exception):
 
 class VersionConflict(Exception):
     """The row exists, but at a different ``version`` than the caller sent."""
+
+
+class ConstraintViolation(Exception):
+    """The database refused the write: a unique, foreign-key or check constraint."""
 
 
 class VersionedRow(Protocol):
@@ -82,7 +87,11 @@ class Repository:
             **values, created_at=now, updated_at=now, version=FIRST_VERSION
         )
         self._session.add(row)
-        self._session.flush()  # executes INSERT, populates auto-increment id
+        try:
+            self._session.flush()  # executes INSERT, populates auto-increment id
+        except IntegrityError as exc:
+            self._session.rollback()
+            raise ConstraintViolation(str(exc.orig)) from exc
         self._session.refresh(row)  # re-loads DB-generated columns
         return row
 
@@ -93,11 +102,17 @@ class Repository:
         if not self._in_pk_range(pk):
             raise RowNotFound(pk)
         model = self._model
-        result = self._session.execute(
-            update(model)
-            .where(model.id == pk, model.version == expected_version)
-            .values(**values, version=expected_version + 1, updated_at=self.utcnow())
-        )
+        try:
+            result = self._session.execute(
+                update(model)
+                .where(model.id == pk, model.version == expected_version)
+                .values(
+                    **values, version=expected_version + 1, updated_at=self.utcnow()
+                )
+            )
+        except IntegrityError as exc:
+            self._session.rollback()
+            raise ConstraintViolation(str(exc.orig)) from exc
         if result.rowcount == 0:
             exists = self._session.execute(
                 select(model.id).where(model.id == pk)

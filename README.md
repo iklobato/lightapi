@@ -984,6 +984,7 @@ class MyEndpoint(RestEndpoint):
 | Validation failure | `422` | `{"detail": [...pydantic errors...]}` |
 | Not found | `404` | `{"detail": "not found"}` |
 | Optimistic lock conflict | `409` | `{"detail": "version conflict"}` |
+| Constraint violation (unique, foreign key) | `409` | `{"detail": "constraint violation"}` |
 | Auth failure | `401` | `{"detail": "Authentication credentials invalid."}` |
 | Permission denied | `403` | `{"detail": "Insufficient permissions"}` |
 | Method not registered | `405` | `{"detail": "Method Not Allowed. Allowed: GET, POST"}` |

@@ -21,7 +21,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | A8 backend construction | 1 | 0 | 1 | 0 | 0 |
 | A9 per-request constants | 0 | 0 | 0 | 0 | 0 |
 | A10 error replies | 3 | 2 | 1 | 0 | 0 |
-| B1 silent errors | 18 | 5 | 11 | 2 | 0 |
+| B1 silent errors | 19 | 6 | 11 | 2 | 0 |
 | B2 hiding defaults | 12 | 5 | 7 | 0 | 0 |
 | B3 sentinel returns | 3 | 0 | 3 | 0 | 0 |
 | B4 lying types | 12 | 12 | 0 | 0 | 0 |
@@ -37,7 +37,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B14 logs and warnings | 8 | 7 | 1 | 0 | 0 |
 | B15 hidden YAGNI | 5 | 3 | 1 | 1 | 0 |
 | B16 tests that do not protect | 5 | 2 | 3 | 0 | 0 |
-| **Total** | **121** | **53** | **56** | **12** | **0** |
+| **Total** | **122** | **54** | **56** | **12** | **0** |
 
 ## Phase 0: baseline
 
@@ -139,6 +139,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B1-016 | B1 | `lightapi/yaml_config.py:531` | `except ValueError: return fn` for a callable without an inspectable signature | manter: builtins; the validator is still called with two args | justificado | |
 | B1-017 | B1 | `lightapi/authentication/jwt.py:84`, `lightapi/cache.py:243,262` | Silent excepts inside FROZEN classes | manter: FROZEN | justificado | |
 | B1-018 | B1 | `lightapi/cache.py:49` | `redis.from_url` failure (bad URL) returns no client, silently, forever | corrigir with B1-005 (log once per call) | corrigido | `4171583` |
+| B1-019 | B1 | `lightapi/repository.py:85,99` | `IntegrityError` from a `unique=True` column (or any constraint) escaped `Repository.add()`/`update()`: a duplicate value was an unhandled 500 with a traceback and the session was left in the failed state. e2e scenario 17 planned the case | corrigido: the repository rolls back and raises `ConstraintViolation`; POST, PUT and PATCH answer `409 {"detail": "constraint violation"}`, sync and async (`tests/test_constraints.py`) | corrigido | `see git log: fix(B1-019)` |
 | B2-001 | B2 | `lightapi/filters.py:71,97,125` | `getattr(view, "_meta", {})` on a view that is always a `RestEndpoint` (has `_meta`) | corrigir: `view._meta.get("filtering")` | corrigido | `5e91407` |
 | B2-002 | B2 | `lightapi/lightapi.py:324` | `getattr(cls, "_meta", {})` on a registered endpoint (validated by `_require_rest_endpoint`) | corrigir: `cls._meta` | corrigido | `5e91407` |
 | B2-003 | B2 | `lightapi/rest.py:171` | `getattr(type(self), "_session_manager", None)` | corrigir: declare `_session_manager: ClassVar[SessionManager | corrigido | `5e91407` | |
