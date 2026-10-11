@@ -128,8 +128,8 @@ class LightApi:
     ) -> None:
         cls._session_manager = self._session_manager
         cls._table_source.map(cls, self._session_manager)
-        logger.info(f"Registering endpoint {path} -> {cls.__name__}")
-        logger.debug(f"  SQLAlchemy metadata: {cls._meta}")
+        logger.info("Registering endpoint %s -> %s", path, cls.__name__)
+        logger.debug("  SQLAlchemy metadata: %s", cls._meta)
 
         collection = EndpointHandler.for_collection(cls, app_context)
         detail = EndpointHandler.for_detail(cls, app_context)
