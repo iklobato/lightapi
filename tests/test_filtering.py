@@ -195,6 +195,11 @@ class TestPageNumberPagination:
         assert body["count"] >= 0
         assert "results" in body
 
+    def test_pagination_non_numeric_page_falls_back_to_page_1_not_500(self, client):
+        resp = client.get("/products?page=abc")
+        assert resp.status_code == 200
+        assert resp.json() == client.get("/products?page=1").json()
+
     def test_no_pagination_returns_results_only(self, client):
         resp = client.get("/nopag_products")
         assert resp.status_code == 200

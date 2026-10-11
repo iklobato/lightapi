@@ -10,6 +10,16 @@ from sqlalchemy.orm import Session, class_mapper
 
 FIRST_VERSION = 1
 
+# SQLite (and every backend LightAPI supports) stores an id in a signed
+# 64-bit column; a pk outside this range can never match a row, so treat it
+# as not-found instead of letting the driver raise OverflowError.
+_MIN_PK = -(2**63)
+_MAX_PK = 2**63 - 1
+
+
+def _in_pk_range(pk: int) -> bool:
+    return _MIN_PK <= pk <= _MAX_PK
+
 
 class RowNotFound(Exception):
     """No row has the requested primary key."""
@@ -48,6 +58,8 @@ class Repository:
         }
 
     def get(self, pk: int) -> Any:
+        if not _in_pk_range(pk):
+            raise RowNotFound(pk)
         model = self._model
         row = (
             self._session.execute(select(model).where(model.id == pk)).scalars().first()
@@ -68,6 +80,8 @@ class Repository:
 
     def update(self, pk: int, expected_version: int, values: dict[str, Any]) -> Any:
         """Write ``values`` only if the row is still at ``expected_version``."""
+        if not _in_pk_range(pk):
+            raise RowNotFound(pk)
         model = self._model
         result = self._session.execute(
             update(model)
@@ -84,6 +98,8 @@ class Repository:
         return self.get(pk)
 
     def delete(self, pk: int) -> None:
+        if not _in_pk_range(pk):
+            raise RowNotFound(pk)
         model = self._model
         deleted = self._session.execute(
             delete(model).where(model.id == pk).returning(model.id)

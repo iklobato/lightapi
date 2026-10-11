@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
     from starlette.background import BackgroundTasks
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import (
     Boolean,
     Column,
@@ -58,6 +58,12 @@ _TYPE_MAP: dict[Any, Any] = {
 }
 
 _ALL_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
+
+# The client's `version` arrives as a raw JSON value (int, numeric string, or
+# whole float); this coerces it the same way pydantic would validate an int
+# field, and rejects anything else with a 422 instead of a TypeError deep in
+# the repository's `expected_version + 1` arithmetic.
+_VERSION_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
 
 
 def _is_optional(annotation: Any) -> tuple[bool, Any]:
@@ -378,6 +384,10 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             return _unprocessable(
                 [{"loc": ["version"], "msg": "Field required", "type": "missing"}]
             )
+        try:
+            client_version = _VERSION_ADAPTER.validate_python(client_version)
+        except ValidationError as exc:
+            return _unprocessable(exc.errors())
 
         repository = self._repository(session)
         try:

@@ -86,6 +86,10 @@ class TestGETDetail:
         resp = client.get("/books/999999")
         assert resp.status_code == 404
 
+    def test_retrieve_id_beyond_a_64_bit_int_is_404_not_500(self, client):
+        resp = client.get(f"/books/{2**63}")
+        assert resp.status_code == 404
+
 
 class TestPUT:
     def test_update_returns_200(self, client):
@@ -129,6 +133,27 @@ class TestPUT:
             "/books/999999", json={"title": "X", "author": "Y", "version": 1}
         )
         assert resp.status_code == 404
+
+    def test_update_version_as_numeric_string_is_coerced(self, client):
+        """A client sending version as "1" instead of 1 used to crash with a
+        500 (str + int in the repository's version arithmetic)."""
+        post_resp = client.post("/books", json={"title": "V", "author": "A"})
+        book = post_resp.json()
+        resp = client.put(
+            f"/books/{book['id']}",
+            json={"title": "V2", "author": "A", "version": str(book["version"])},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["version"] == 2
+
+    def test_update_non_numeric_version_is_422_not_500(self, client):
+        post_resp = client.post("/books", json={"title": "V", "author": "A"})
+        book = post_resp.json()
+        resp = client.put(
+            f"/books/{book['id']}",
+            json={"title": "V2", "author": "A", "version": "not-a-number"},
+        )
+        assert resp.status_code == 422
 
 
 class TestPATCH:
