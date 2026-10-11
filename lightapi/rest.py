@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import datetime
+import inspect
 import types
 from collections.abc import Callable
 from decimal import Decimal
@@ -53,14 +53,7 @@ from lightapi.constants import (
 from lightapi.exceptions import ConfigurationError
 from lightapi.pagination import NoPagination
 from lightapi.repository import Repository, RowNotFound, VersionConflict
-from lightapi.schema import (
-    SchemaFactory,
-    _apply_fields,
-    _row_to_dict,
-    normalise_serializer,
-    patch_schema,
-    resolve_fields,
-)
+from lightapi.schema import FieldProjection, SchemaFactory
 from lightapi.session import get_async_session, get_sync_session
 from lightapi.table_mapping import DeclaredTable, ReflectedTable, TableSource
 
@@ -83,6 +76,7 @@ _TYPE_MAP: dict[Any, Any] = {
 _VERSION_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
 
 _NO_PAGINATION: Final = NoPagination()
+_NO_PROJECTION: Final = FieldProjection(None, None, None)
 
 
 def _is_optional(annotation: Any) -> tuple[bool, Any]:
@@ -241,7 +235,7 @@ def _parsed_meta(name: str, meta_obj: Any) -> dict[str, Any]:
         "authentication": getattr(meta_obj, "authentication", None),
         "filtering": getattr(meta_obj, "filtering", None),
         "pagination": getattr(meta_obj, "pagination", None),
-        "serializer_normalised": normalise_serializer(raw_serializer),
+        "serializer_normalised": FieldProjection.from_serializer(raw_serializer),
         "cache": getattr(meta_obj, "cache", None),
         "table": getattr(meta_obj, "table", None),
     }
@@ -324,19 +318,18 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             qs = backend_cls().filter_queryset(request, qs, self)
         return qs
 
-    def _serialize_row(self, row: Any, method: str) -> dict[str, Any]:
-        cls = type(self)
-        d = _row_to_dict(row)
-        fields = resolve_fields(cls, method)
-        d = _apply_fields(d, fields)
-        schema = cls.__schema_read__
-        validated = schema.model_validate(d)
+    def _fields_for(self, verb: HttpVerb) -> list[str] | None:
+        """The serializer's field list for a verb, resolved once per request."""
+        projection = self._meta.get("serializer_normalised", _NO_PROJECTION)
+        return projection.for_method(verb)
+
+    def _serialize_row(self, row: Any, fields: list[str] | None) -> dict[str, Any]:
+        d = FieldProjection.apply(SchemaFactory.row_to_dict(row), fields)
+        validated = type(self).__schema_read__.model_validate(d)
         result = validated.model_dump(mode="json")
         # Re-apply projection so Optional fields that aren't in the serializer
         # list don't bleed through as null in the response.
-        if fields is not None:
-            result = {k: v for k, v in result.items() if k in fields}
-        return result
+        return FieldProjection.apply(result, fields)
 
     # ── CRUD core: one implementation, always given an open sync Session ─────
 
@@ -344,7 +337,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         pagination = self._meta.get("pagination")
         paginator = pagination.paginator if pagination else _NO_PAGINATION
         qs = self._run_filter_backends(request, qs)
-        serialize = partial(self._serialize_row, method=HttpVerb.GET)
+        serialize = partial(self._serialize_row, fields=self._fields_for(HttpVerb.GET))
         return JSONResponse(paginator.render(request, qs, session, serialize))
 
     def _retrieve(self, session: Session, pk: int) -> Response:
@@ -352,7 +345,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             row = self._repository(session).get(pk)
         except RowNotFound as exc:
             return _API_ERRORS[type(exc)].response()
-        return JSONResponse(self._serialize_row(row, HttpVerb.GET))
+        return JSONResponse(self._serialize_row(row, self._fields_for(HttpVerb.GET)))
 
     def _create(self, session: Session, data: dict[str, Any]) -> Response:
         try:
@@ -362,7 +355,8 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
         row = self._repository(session).add(validated.model_dump())
         return JSONResponse(
-            self._serialize_row(row, HttpVerb.POST), status_code=HTTPStatus.CREATED
+            self._serialize_row(row, self._fields_for(HttpVerb.POST)),
+            status_code=HTTPStatus.CREATED,
         )
 
     def _update(
@@ -389,7 +383,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             row = repository.update(pk, client_version, values)
         except (RowNotFound, VersionConflict) as exc:
             return _API_ERRORS[type(exc)].response()
-        return JSONResponse(self._serialize_row(row, HttpVerb.PUT))
+        return JSONResponse(self._serialize_row(row, self._fields_for(HttpVerb.PUT)))
 
     def _update_values(
         self, data: dict[str, Any], partial: bool, nullable_columns: set[str]
@@ -400,7 +394,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             values = schema_create.model_validate(data).model_dump()
             return {k: v for k, v in values.items() if k not in _AUTO_FIELDS}
 
-        sent = patch_schema(schema_create).model_validate(data)
+        sent = SchemaFactory.patch_schema(schema_create).model_validate(data)
         # An explicit null clears a nullable column; on any other column it is ignored.
         return {
             k: v
@@ -448,19 +442,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     # ── Async CRUD: the same core, run through AsyncSession.run_sync ──────────
 
     async def _get_queryset_async(self, request: Request) -> Any:
-        """Resolve queryset; await if it is a coroutine function."""
-        cls = type(self)
-        qs_attr = cls.__dict__.get("queryset")
-        if qs_attr is None:
-            qs_attr = getattr(cls, "queryset", None)
-        if qs_attr is None:
-            return sa_select(cls._model_class)
-        if asyncio.iscoroutinefunction(qs_attr):
-            result = await qs_attr(self, request)
-            return result
-        if callable(qs_attr):
-            return qs_attr(self, request)
-        return qs_attr
+        """_get_queryset(), awaiting the result of an ``async def queryset``."""
+        qs = self._get_queryset(request)
+        return await qs if inspect.isawaitable(qs) else qs
 
     def _get_async_engine(self) -> Any:
         """Return the raw (AsyncEngine) engine for async session creation."""

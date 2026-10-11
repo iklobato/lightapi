@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 from lightapi import LightApi, RestEndpoint, get_sync_session
 from lightapi.fields import Field as LField
 from lightapi.repository import Repository, RowNotFound, VersionConflict
-from lightapi.schema import patch_schema
+from lightapi.schema import SchemaFactory
 
 MISSING_PK = 9999
 
@@ -88,8 +88,8 @@ def test_delete_of_a_pk_outside_sqlite_int64_range_raises_not_found(engine):
 
 
 def test_patch_schema_is_built_once_per_create_schema():
-    first = patch_schema(LedgerEntry.__schema_create__)
-    second = patch_schema(LedgerEntry.__schema_create__)
+    first = SchemaFactory.patch_schema(LedgerEntry.__schema_create__)
+    second = SchemaFactory.patch_schema(LedgerEntry.__schema_create__)
 
     assert first is second
     assert first.model_validate({}).model_dump(exclude_unset=True) == {}
