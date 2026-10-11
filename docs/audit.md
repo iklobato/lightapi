@@ -119,7 +119,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | A7-001 | A7 | `lightapi/_dict_config_loader.py:38` | `DictConfig.build` and `LightAPIConfig.build_app` both build an app from a config | manter: two public input formats (`from_dict` is deprecated and goes in 0.2.0) | justificado | |
 | A8-001 | A8 | `lightapi/lightapi.py:174` | `_login_backend` picks the login backend with `issubclass(backend, kind)` over (JWT, Basic) | manter: single construction point stays `Authentication.build_backend`; this chooses which endpoint's backend answers `/auth/login`, by class, not by name | justificado | |
 | A10-003 | A10 | `lightapi/endpoint_handler.py:102` | `EndpointGuard.check` answered every failed authentication with the generic `{"detail": "Authentication required"}` + `WWW-Authenticate: Bearer`; the backend's `get_auth_error_response()` (the documented hook; JWT's text is the one the README lists; Basic's carries the `Basic realm` challenge) never ran on the guard path. Same in v0.1.29. Found by e2e scenario 04 | corrigido: the guard returns `backend.get_auth_error_response(request)`; `ApiError.AUTHENTICATION_REQUIRED` removed | corrigido | `338e450` |
-| A10-002 | A10 | `lightapi/lightapi.py:146`, `endpoint_handler.py:224` | The routes listed only the allowed methods, so Starlette answered every other verb with its text/plain 405; the JSON 405 the README documents (`{"detail": "Method Not Allowed. Allowed: GET"}`) was reachable only by HEAD. Found by e2e scenario 03 | corrigido: the routes list only the verbs they serve and the app's own 405 handler renders the JSON reply from Starlette's `Allow`. The first fix (`6ad5247`) routed every verb to the handler instead: it broke two classes sharing one path and put the 405 behind the guard, the middlewares and the login rate limiter (a `GET /auth/login` used a login slot); caught by the whole-branch review and redone | corrigido | `6ad5247`, `see git log: fix(A10-002) review` |
+| A10-002 | A10 | `lightapi/lightapi.py:146`, `endpoint_handler.py:224` | The routes listed only the allowed methods, so Starlette answered every other verb with its text/plain 405; the JSON 405 the README documents (`{"detail": "Method Not Allowed. Allowed: GET"}`) was reachable only by HEAD. Found by e2e scenario 03 | corrigido: the routes list only the verbs they serve and the app's own 405 handler renders the JSON reply from Starlette's `Allow`. The first fix (`6ad5247`) routed every verb to the handler instead: it broke two classes sharing one path and put the 405 behind the guard, the middlewares and the login rate limiter (a `GET /auth/login` used a login slot); caught by the whole-branch review and redone | corrigido | `6ad5247`, `266bf86` |
 | A10-001 | A10 | `lightapi/endpoint_handler.py:299`, `rate_limiter.py:165`, `core.py:157`, `authentication/basic.py:69` | Error replies built outside `ApiError`: dynamic 405 (`Allow` lists the route's verbs), 429 (public `get_rate_limit_response`), compat 403 `{"error": "not allowed"}`, Basic 401 `{"error": ...}` (public method, no internal caller); JWT/Base 401 are FROZEN | manter: each shape is a public method or a documented body | justificado | |
 | B1-001 | B1 | `lightapi/_dict_config_loader.py:89` | Unknown `auth:` value in a dict config is ignored (no backend); v0.1.29 did the same with `if auth == "jwt" ... elif "basic"` | propor: `ConfigurationError` at `from_dict` (visible: an app that built now fails); alternative: keep, the path is deprecated | proposta | |
 | B1-002 | B1 | `lightapi/_login.py:49` | Login body that is not JSON/UTF-8 becomes `{}` and a 422 "Field required" | manter: specific exceptions; the 422 body is contract (pinned) | justificado | |
@@ -190,7 +190,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B7-001 | B7 | `lightapi/endpoint_handler.py:92` | `EndpointGuard.check` runs `backend.authenticate` on the event loop; a Basic validator that queries a database blocks the loop | propor: run sync backends through `run_blocking` (invisible when the validator is thread-safe; breaks validators bound to a `StaticPool` SQLite) | proposta | |
 | B7-002 | B7 | `lightapi/_login.py:116` | A sync `login_validator` runs on the event loop | propor: same as B7-001 | proposta | |
 | B7-003 | B7 | `lightapi/lightapi.py:308-318`, `table_mapping.py:237-249` | `asyncio.run` on a worker thread while a loop is running (bug B19, both versions); e2e scenario 02 on asyncpg failed its first POST with "Future attached to a different loop" | corrigido for a served app: the lifespan awaits `create_all` on the serving loop; `build_app()` inside an already running loop (pytest-asyncio) and async reflection keep the worker thread, documented in the CHANGELOG | corrigido | `1758f90` |
-| B7-004 | B7 | `lightapi/table_mapping.py:280` | `Meta.reflect` on an `AsyncEngine` reflects with `asyncio.run()` at `register()`, before the serving loop exists, and the connection went back to the pool bound to that closed loop: asyncpg refuses it on the first request that draws it (the B7-003 mechanism); whole-branch review minor 11, unverified there | corrigido: the engine is disposed after the reflection unless its pool is a `StaticPool` (the one in-memory SQLite connection, which holds the database); pinned by `tests/test_audit.py::TestReviewAsyncReflectionPool` (file-based aiosqlite: the pool is empty after `register()` and the app serves) | corrigido | `see git log: fix(B7-004)` |
+| B7-004 | B7 | `lightapi/table_mapping.py:280` | `Meta.reflect` on an `AsyncEngine` reflects with `asyncio.run()` at `register()`, before the serving loop exists, and the connection went back to the pool bound to that closed loop: asyncpg refuses it on the first request that draws it (the B7-003 mechanism); whole-branch review minor 11, unverified there | corrigido: the engine is disposed after the reflection unless its pool is a `StaticPool` (the one in-memory SQLite connection, which holds the database); pinned by `tests/test_audit.py::TestReviewAsyncReflectionPool` (file-based aiosqlite: the pool is empty after `register()` and the app serves) | corrigido | `c7db12c` |
 | B8-001 | B8 | `lightapi/config.py:116` | `object.__setattr__` on the frozen `Pagination` | corrigir with B4-004: no mutation | corrigido | `07b83af` |
 | B8-002 | B8 | `lightapi/config.py:54` | Module global `config = Config()`, read per request by the FROZEN `JWTAuthentication` | manter: documented as `lightapi.config.config` | justificado | |
 | B8-003 | B8 | `lightapi/session_manager.py:66` | Module global `_state` (metadata + registry) | manter: SQLAlchemy needs one registry per process; `reset()` is the documented hook for tests | justificado | |
@@ -324,8 +324,8 @@ on a throwaway `postgres:16` container. Full runs on 2026-10-11, all green and i
 
 | Run | Result |
 |---|---|
-| Python 3.13.2, twice | `21 ok, 0 failed, 1 skipped` (394 steps; the skip is the docker scenario without `E2E_DOCKER=1`) |
-| Python 3.10.19 (`UV_PYTHON=3.10 UV_PROJECT_ENVIRONMENT=.venv310`) | `21 ok, 0 failed, 1 skipped` (same 394 steps) |
+| Python 3.13.2, twice | `21 ok, 0 failed, 1 skipped` (400 steps; the skip is the docker scenario without `E2E_DOCKER=1`) |
+| Python 3.10.19 (`UV_PYTHON=3.10 UV_PROJECT_ENVIRONMENT=.venv310`) | `21 ok, 0 failed, 1 skipped` (same 400 steps) |
 | `E2E_DOCKER=1 tools/e2e/run_all.sh docker` | `1 ok` (7 steps: image built from this checkout, healthy, uid 1001) |
 | each of the 16 non-docker scripts alone | ok |
 
@@ -344,8 +344,13 @@ the 405 behind the guard), B1-019 extended (`39ab9fc`, DELETE of a referenced ro
 too, every refusal logged), B2-013 (`347e8c0`, PATCH validates field constraints),
 B6-007 (`ef1b649`, `decimal_places` on a non-Decimal field refused at class definition),
 B1-020 (`1cf48b3`, no database password in error messages), B2-014 (`e98c2bc`, a typo
-under `fields.<name>` is refused). The 7 minor findings are deferred and listed in the
-branch's final report. Known gaps: none; `tools/e2e/README.md` keeps that line.
+under `fields.<name>` is refused). Four of the minor findings were then fixed the same way:
+B6-004 (`d66eb5c`, async mode detected from the engine or the URL, which also makes the
+docs' own async testing fixture pass verbatim), B6-005 (`40d6fea`, an async validator on a
+Basic backend is refused), B1-021 (`c0113a9`, integer filter beyond 64 bits is 422), B7-004
+(`c7db12c`, async reflection disposes its pool). Still open from the review: the Basic 401
+body uses `error` (now documented as such), and `docs/refactor-log.md` is a historical log.
+Known gaps: none; `tools/e2e/README.md` keeps that line.
 
 ### Proposals (not applied: each changes visible behaviour or touches a FROZEN class)
 

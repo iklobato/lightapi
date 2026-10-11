@@ -219,7 +219,8 @@ Unregistered methods return `405 Method Not Allowed` with an `Allow` header list
 | Not found | `404` | `{"detail": "not found"}` |
 | Optimistic lock conflict | `409` | `{"detail": "version conflict"}` |
 | Constraint violation (unique, foreign key) | `409` | `{"detail": "constraint violation"}` |
-| Auth failure | `401` | `{"detail": "Authentication credentials invalid."}` |
+| Auth failure (JWT) | `401` | `{"detail": "Authentication credentials invalid."}` with `WWW-Authenticate: Bearer` |
+| Auth failure (Basic) | `401` | `{"error": "authentication failed"}` with `WWW-Authenticate: Basic realm="Restricted Area"` |
 | Permission denied | `403` | `{"detail": "Insufficient permissions"}` |
 | Method not registered | `405` | `{"detail": "Method Not Allowed. Allowed: GET, POST"}` |
 
