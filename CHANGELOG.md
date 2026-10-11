@@ -106,6 +106,10 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `decimal_places` and the rest applied to POST and PUT but not to PATCH (`{"name": ""}`
   against `min_length=3` was a 200). A PATCH now meets the same constraints as a PUT and
   answers 422 like it; only the "every field is optional" part is unchanged.
+- **`decimal_places` on a non-Decimal field is refused when the class is defined**: a
+  `ConfigurationError` names the field. Before this release the option was silently
+  ignored on `float` or `int`; once forwarded to pydantic it would have made every write a
+  500 (`TypeError: Unable to apply constraint`). Same through YAML.
 - **`Field(decimal_places=N)` is enforced**: a `Decimal` with more than N decimal places
   is a 422. Before, the option reached neither pydantic nor the DDL (`Numeric(scale=N)`
   without a precision renders as plain `NUMERIC` on every dialect), so "1.999" was stored

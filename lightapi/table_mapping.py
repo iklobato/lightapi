@@ -171,6 +171,13 @@ class DeclaredTable(TableSource):
             )
         if inner is Decimal:
             col_type = Numeric(scale=extra.get("decimal_places", 10))
+        elif "decimal_places" in extra:
+            # Forwarded to pydantic, the option would make every write a 500 on a
+            # type it cannot apply to; refuse it where the class is defined.
+            raise ConfigurationError(
+                f"RestEndpoint '{endpoint_name}': decimal_places on field "
+                f"'{field_name}' needs a Decimal annotation, got '{inner}'."
+            )
 
         col_args = (
             [ForeignKey(extra["foreign_key"])] if extra.get("foreign_key") else []

@@ -659,6 +659,34 @@ class TestReviewPatchKeepsConstraints:
         assert response.json()["price"] == "1.00"
 
 
+class TestReviewDecimalPlacesNeedsDecimal:
+    """B6-007: `decimal_places` on a non-Decimal field used to be ignored and, once
+    forwarded to pydantic (B6-006), made every write a 500 (`TypeError: Unable to
+    apply constraint`). It is refused when the class is defined, naming the field
+    (review finding 2 on the e2e branch)."""
+
+    def test_decimal_places_on_a_float_field_is_a_configuration_error(self):
+        with pytest.raises(ConfigurationError, match=r"decimal_places.*ratio"):
+
+            class AuditBadPlaces(RestEndpoint):
+                ratio: float = Field(decimal_places=2)
+
+                class Meta:
+                    table = "audit_bad_places"
+
+    def test_decimal_places_on_a_yaml_int_field_is_a_configuration_error(
+        self, tmp_path
+    ):
+        document = tmp_path / "bad.yaml"
+        document.write_text(
+            'database:\n  url: "sqlite:///:memory:"\nendpoints:\n  - route: /x\n'
+            "    fields:\n      count: {type: int, decimal_places: 2}\n"
+        )
+
+        with pytest.raises(ConfigurationError, match=r"decimal_places.*count"):
+            LightAPIConfig.from_file(document).build_app(LightApi)
+
+
 class TestYamlUnknownKeys:
     """A key the YAML format does not know is a ConfigurationError naming it, not a
     silently ignored block; found by e2e scenario 12 (`defaults.filtering`)."""
