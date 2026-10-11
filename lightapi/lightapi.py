@@ -130,6 +130,7 @@ class LightApi:
         """
         for path, cls in mapping.items():
             self._require_rest_endpoint(path, cls)
+            self._require_sync_basic_validator(path, cls)
 
         # An `async def` verb or queryset on any endpoint switches the app to async.
         if self._mode is ExecutionMode.SYNC and any(
@@ -452,6 +453,26 @@ class LightApi:
             raise ConfigurationError(
                 f"register() value for '{path}' must be a RestEndpoint subclass, "
                 f"got {cls!r}."
+            )
+
+    @staticmethod
+    def _require_sync_basic_validator(path: str, cls: type[RestEndpoint]) -> None:
+        """The guard calls a Basic backend's validate_credentials without awaiting.
+
+        An ``async def`` there returns a coroutine, which is truthy, so every Basic
+        credential would pass (B6-005). The login route awaits it, the guard cannot.
+        """
+        authentication = cls._meta.get("authentication")
+        backend = getattr(authentication, "backend", None)
+        if (
+            isinstance(backend, type)
+            and issubclass(backend, BasicAuthentication)
+            and asyncio.iscoroutinefunction(backend.validate_credentials)
+        ):
+            raise ConfigurationError(
+                f"'{path}': {backend.__name__}.validate_credentials is async, but a "
+                "BasicAuthentication backend checks every request synchronously; "
+                "make it a plain def (JWTAuthentication may keep an async one)."
             )
 
     @classmethod

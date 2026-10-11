@@ -777,6 +777,32 @@ class TestReviewAsyncFromUrlAutoDetect:
             client.portal.call(app._engine.dispose)
 
 
+class TestB6AsyncBasicValidatorRefused:
+    """B6-005: an `async def validate_credentials` on a BasicAuthentication subclass
+    was called without await by the guard, the coroutine was truthy, and ANY Basic
+    credentials passed. The login route awaits it, the guard cannot: refused at
+    register() with a ConfigurationError naming the method."""
+
+    def test_async_validator_on_basic_is_refused_at_register(self):
+        class AuditAsyncBasic(BasicAuthentication):
+            async def validate_credentials(self, username, password):
+                return {"username": username}
+
+        class AuditBasicGuardedAsync(RestEndpoint):
+            text: str = Field(min_length=1)
+
+            class Meta:
+                table = "audit_basic_guarded_async"
+                authentication = Authentication(
+                    backend=AuditAsyncBasic, permission=IsAuthenticated
+                )
+
+        app = LightApi(engine=_memory_engine())
+
+        with pytest.raises(ConfigurationError, match="validate_credentials"):
+            app.register({"/asyncbasic": AuditBasicGuardedAsync})
+
+
 class TestYamlUnknownKeys:
     """A key the YAML format does not know is a ConfigurationError naming it, not a
     silently ignored block; found by e2e scenario 12 (`defaults.filtering`)."""

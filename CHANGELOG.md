@@ -136,6 +136,10 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   default never created the tables and every request was a 500 (with a "Table creation
   skipped" warning); the docs' own async testing fixture hit it verbatim. An explicit
   `mode="sync"` with an async engine or driver is a `ConfigurationError`.
+- **An `async def validate_credentials` on a Basic backend is refused at `register()`**:
+  the request guard calls it without `await`, and a coroutine is truthy, so every Basic
+  credential used to pass. The error names the backend; `JWTAuthentication` subclasses
+  may keep an async validator (only the login route calls it, and that one awaits).
 - **`mode="async"` works from a database URL**: `LightApi(database_url=..., mode="async")`
   and a YAML document with `mode: async` build an `AsyncEngine`, so `lightapi serve` can
   start an async app. Before, both failed at `register()` with "requires AsyncEngine". A
