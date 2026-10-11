@@ -322,8 +322,8 @@ on a throwaway `postgres:16` container. Full runs on 2026-10-11, all green and i
 
 | Run | Result |
 |---|---|
-| Python 3.13.2, twice | `21 ok, 0 failed, 1 skipped` (383 steps; the skip is the docker scenario without `E2E_DOCKER=1`) |
-| Python 3.10.19 (`UV_PYTHON=3.10 UV_PROJECT_ENVIRONMENT=.venv310`) | `21 ok, 0 failed, 1 skipped` (same 383 steps) |
+| Python 3.13.2, twice | `21 ok, 0 failed, 1 skipped` (394 steps; the skip is the docker scenario without `E2E_DOCKER=1`) |
+| Python 3.10.19 (`UV_PYTHON=3.10 UV_PROJECT_ENVIRONMENT=.venv310`) | `21 ok, 0 failed, 1 skipped` (same 394 steps) |
 | `E2E_DOCKER=1 tools/e2e/run_all.sh docker` | `1 ok` (7 steps: image built from this checkout, healthy, uid 1001) |
 | each of the 16 non-docker scripts alone | ok |
 
@@ -333,7 +333,17 @@ JSON 405), A10-003 (`338e450`, backend 401), B1-008 (`64a38f3`, filter value 422
 (`0adf7b1`, reflected defaults), B6-001 (`4248fc8`, async from a URL), B2-012 (`e7e5946`,
 unknown YAML keys), B1-019 (`732c248`, constraint 409), B6-006 (`9d223db`, `decimal_places`
 enforced), B14-009 (`77b868d`, `ffaf4f7`, container health probe), plus the 403 body in
-the docs (`e4ba40c`). Known gaps: none; `tools/e2e/README.md` keeps that line.
+the docs (`e4ba40c`).
+
+A whole-branch review by a fresh reader (0 critical, 7 important, 8 minor findings) then
+forced one fix pass, each fix with a test that failed first: A10-002 redone (`266bf86`,
+the first fix routed every verb to the handler and broke two classes on one path and put
+the 405 behind the guard), B1-019 extended (`39ab9fc`, DELETE of a referenced row is 409
+too, every refusal logged), B2-013 (`347e8c0`, PATCH validates field constraints),
+B6-007 (`ef1b649`, `decimal_places` on a non-Decimal field refused at class definition),
+B1-020 (`1cf48b3`, no database password in error messages), B2-014 (`e98c2bc`, a typo
+under `fields.<name>` is refused). The 7 minor findings are deferred and listed in the
+branch's final report. Known gaps: none; `tools/e2e/README.md` keeps that line.
 
 ### Proposals (not applied: each changes visible behaviour or touches a FROZEN class)
 
