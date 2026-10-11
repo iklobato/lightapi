@@ -140,6 +140,8 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the request guard calls it without `await`, and a coroutine is truthy, so every Basic
   credential used to pass. The error names the backend; `JWTAuthentication` subclasses
   may keep an async validator (only the login route calls it, and that one awaits).
+- **An integer filter value beyond 64 bits is a 422** (`?pages=99999999999999999999`),
+  like any other value the column cannot hold. It was an `OverflowError` 500 on SQLite.
 - **`mode="async"` works from a database URL**: `LightApi(database_url=..., mode="async")`
   and a YAML document with `mode: async` build an `AsyncEngine`, so `lightapi serve` can
   start an async app. Before, both failed at `register()` with "requires AsyncEngine". A

@@ -803,6 +803,18 @@ class TestB6AsyncBasicValidatorRefused:
             app.register({"/asyncbasic": AuditBasicGuardedAsync})
 
 
+class TestReviewFilterIntegerRange:
+    """B1-021: an integer filter value beyond 64 bits reached the database and was a
+    500 (OverflowError on SQLite), the same class as B1-008 (review minor 9)."""
+
+    def test_integer_filter_beyond_64_bits_is_422(self):
+        with _client({"/filtered": AuditFiltered}) as client:
+            response = client.get("/filtered?pages=99999999999999999999")
+
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"] == ["query", "pages"]
+
+
 class TestYamlUnknownKeys:
     """A key the YAML format does not know is a ConfigurationError naming it, not a
     silently ignored block; found by e2e scenario 12 (`defaults.filtering`)."""

@@ -27,7 +27,7 @@ class Book(RestEndpoint):
         table = "e2e06_books"
         filtering = Filtering(
             backends=[FieldFilter, SearchFilter, OrderingFilter],
-            fields=["genre", "published", "pages"],
+            fields=["genre", "published", "pages", "price"],
             search=["title"],
             ordering=["price", "pages"],
         )

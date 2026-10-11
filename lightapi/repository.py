@@ -10,6 +10,8 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, class_mapper
 
+from lightapi.constants import INT64_MAX, INT64_MIN
+
 FIRST_VERSION: Final = 1
 logger = logging.getLogger(__name__)
 
@@ -45,8 +47,8 @@ class Repository:
     # SQLite (and every backend LightAPI supports) stores an id in a signed
     # 64-bit column; a pk outside this range can never match a row, so treat it
     # as not-found instead of letting the driver raise OverflowError.
-    _MIN_PK: Final = -(2**63)
-    _MAX_PK: Final = 2**63 - 1
+    _MIN_PK: Final = INT64_MIN
+    _MAX_PK: Final = INT64_MAX
 
     def __init__(self, model: type[VersionedRow], session: Session) -> None:
         self._model = model

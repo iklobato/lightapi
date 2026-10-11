@@ -81,6 +81,12 @@ HTTP_METHOD_MIXINS: Final[dict[str, type]] = {
 # ─────────────────────────────────────────────────────────────────────────
 # Error replies with a fixed text (status, detail, extra headers)
 # ─────────────────────────────────────────────────────────────────────────
+# The range of a BIGINT / SQLite INTEGER: a key or an integer filter value outside it
+# never matches a row, and the drivers raise instead of comparing.
+INT64_MIN: Final = -(2**63)
+INT64_MAX: Final = 2**63 - 1
+
+
 class ApiError(Enum):
     NOT_FOUND = (HTTPStatus.NOT_FOUND, "not found")
     VERSION_CONFLICT = (HTTPStatus.CONFLICT, "version conflict")

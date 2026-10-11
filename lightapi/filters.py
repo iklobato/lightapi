@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import Boolean, Float, Integer, Numeric, Select, asc, desc, or_
 from starlette.requests import Request
 
+from lightapi.constants import INT64_MAX, INT64_MIN
+
 if TYPE_CHECKING:
     from lightapi.rest import RestEndpoint
 
@@ -81,15 +83,21 @@ class BaseFilter:
             col_type = getattr(col, "type", None)
         if isinstance(col_type, Boolean):
             return value.lower() in ("1", "true", "yes", "on")
+        expected = "integer" if isinstance(col_type, Integer) else "number"
         try:
             if isinstance(col_type, Integer):
-                return int(value)
-            if isinstance(col_type, (Numeric, Float)):
+                number = int(value)
+            elif isinstance(col_type, (Numeric, Float)):
                 return float(value)
+            else:
+                return value
         except ValueError:
-            expected = "integer" if isinstance(col_type, Integer) else "number"
             raise FilterValueError(getattr(col, "key", "?"), value, expected) from None
-        return value
+        # Past 64 bits the driver raises (OverflowError on SQLite) instead of
+        # comparing; no column holds such a value.
+        if not INT64_MIN <= number <= INT64_MAX:
+            raise FilterValueError(getattr(col, "key", "?"), value, expected)
+        return number
 
 
 def _coerce_filter_value(
