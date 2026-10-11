@@ -36,6 +36,20 @@ def _client(mapping: dict[str, type], **app_kwargs) -> TestClient:
     return TestClient(app.build_app())
 
 
+class TestB2HidingDefaults:
+    def test_endpoint_declared_under_future_annotations_still_maps(self):
+        """B2-003: RestEndpoint's own annotations must resolve under get_type_hints,
+        or every subclass in a module with `from __future__ import annotations`
+        falls back to raw strings and fails with "not in the type map"."""
+
+        class AuditFuture(RestEndpoint):
+            title: str = LField(min_length=1)
+
+        client = _client({"/future": AuditFuture})
+
+        assert client.post("/future", json={"title": "ok"}).status_code == 201
+
+
 class TestA4DeadCode:
     def test_jwt_algorithm_env_var_is_ignored_when_config_has_the_default(
         self, monkeypatch

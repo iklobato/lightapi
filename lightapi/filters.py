@@ -68,7 +68,7 @@ class FieldFilter(BaseFilter):
     """Exact-match filter on whitelisted fields declared in Meta.filtering.fields."""
 
     def filter_queryset(self, request: Request, queryset: Any, view: Any) -> Any:
-        filtering_cfg = getattr(view, "_meta", {}).get("filtering")
+        filtering_cfg = view._meta.get("filtering")
         allowed_fields: list[str] = (
             (filtering_cfg.fields or []) if filtering_cfg else []
         )
@@ -94,7 +94,7 @@ class SearchFilter(BaseFilter):
         if not query:
             return queryset
 
-        filtering_cfg = getattr(view, "_meta", {}).get("filtering")
+        filtering_cfg = view._meta.get("filtering")
         search_fields: list[str] = (filtering_cfg.search or []) if filtering_cfg else []
         if not search_fields:
             return queryset
@@ -122,7 +122,7 @@ class OrderingFilter(BaseFilter):
         if not ordering_param:
             return queryset
 
-        filtering_cfg = getattr(view, "_meta", {}).get("filtering")
+        filtering_cfg = view._meta.get("filtering")
         allowed: list[str] = (filtering_cfg.ordering or []) if filtering_cfg else []
 
         # No whitelist configured → ordering is disabled entirely.

@@ -6,13 +6,11 @@ import inspect
 from collections.abc import Callable
 from functools import partial
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
     from starlette.background import BackgroundTasks
-
-    from lightapi.session_manager import SessionManager
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from sqlalchemy import select as sa_select
@@ -31,6 +29,7 @@ from lightapi.pagination import NoPagination
 from lightapi.repository import Repository, RowNotFound, VersionConflict
 from lightapi.schema import FieldProjection, SchemaFactory
 from lightapi.session import get_async_session, get_sync_session
+from lightapi.session_manager import SessionManager
 from lightapi.table_mapping import DeclaredTable, ReflectedTable, TableSource
 
 _AUTO_FIELDS = AUTO_FIELDS
@@ -57,7 +56,8 @@ class RestEndpointMeta(type):
     ) -> type:
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
 
-        if name == "RestEndpoint":
+        if not bases:
+            # RestEndpoint itself: nothing to map.
             return cls
 
         is_base_only = kwargs.get("base_only", False) or namespace.get(
@@ -149,6 +149,8 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     _table_source: TableSource
     _meta: dict[str, Any]
     _allowed_methods: set[str]
+    # Bound by LightApi.register(); None until then.
+    _session_manager: ClassVar[SessionManager | None] = None
 
     def __init__(self, **kwargs: Any) -> None:
         self._background: BackgroundTasks | None = None
@@ -168,7 +170,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     def _session_manager_or_raise(self) -> SessionManager:
         """The SessionManager register() bound to this endpoint class."""
-        session_manager = getattr(type(self), "_session_manager", None)
+        session_manager = type(self)._session_manager
         if session_manager is None:
             raise RuntimeError(
                 "No session_manager configured. "
