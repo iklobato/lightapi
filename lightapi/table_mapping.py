@@ -10,6 +10,7 @@ from pydantic.fields import FieldInfo
 from sqlalchemy import Column, MetaData, Table
 from sqlalchemy import inspect as sa_inspect
 
+from lightapi.constants import TableReflection
 from lightapi.exceptions import ConfigurationError
 from lightapi.schema import SchemaFactory
 
@@ -49,11 +50,12 @@ class DeclaredTable:
 class ReflectedTable:
     """A table that already exists in the database (``Meta.reflect``).
 
-    With ``partial`` the endpoint also declares some of those columns as fields.
+    With ``TableReflection.PARTIAL`` the endpoint also declares some of those
+    columns as fields.
     """
 
-    def __init__(self, partial: bool) -> None:
-        self._partial = partial
+    def __init__(self, reflection: TableReflection) -> None:
+        self._reflection = reflection
 
     def map(self, endpoint_cls: type, session_manager: SessionManager) -> None:
         if endpoint_cls._model_class is not None:
@@ -62,7 +64,7 @@ class ReflectedTable:
         table = self._reflect(
             _table_name(endpoint_cls, session_manager), session_manager
         )
-        if self._partial:
+        if self._reflection is TableReflection.PARTIAL:
             _strip_field_infos(endpoint_cls, list(table.c))
 
         session_manager.registry.map_imperatively(endpoint_cls, table)

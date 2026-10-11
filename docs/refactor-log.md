@@ -101,5 +101,35 @@ validates them through `HttpVerb(...)` and keeps `.value`. Members are never for
 (FROZEN). Left for Step 8: the name registries in `yaml_names.py` and `_dict_config_loader.py`
 that map YAML/dict method names to `HttpMethod` mixins. 563 passed, ruff and mypy clean.
 
-Next: 3c `ExecutionMode`, then `PaginationStyle`, `TableReflection`, `RateLimitWindow`,
-`JwtAlgorithm`, `ApiError`.
+### 3c. `ExecutionMode`
+
+`constants.ExecutionMode(str, Enum)` (SYNC, ASYNC) with `from_user()` keeping the exact
+`mode must be 'sync' or 'async', got '...'` text. `LightApi._mode` holds the member;
+`AppContext.mode` replaces `is_async: bool`; `EndpointHandler` compares
+`self._mode is ExecutionMode.ASYNC` in its two branches (no generic sync/async executor, as
+the prompt asks). `_checked_mode` is gone. The deprecated `_dict_config_loader.py` still reads
+`config.get("mode", "sync")`; it is reworked in Step 8.
+
+### 3d. `PaginationStyle`
+
+`pagination.PaginationStyle(str, Enum)` (PAGE_NUMBER, CURSOR) with `build(page_size)`
+replaces `VALID_PAGINATION_STYLES` and the `PAGINATORS` dict. `Pagination.style` is
+normalised to the member in `__post_init__` (frozen dataclass idiom, `object.__setattr__` in
+that one place) with the same error text, and `Pagination.paginator` is a `cached_property`:
+the paginator is built once per configuration instead of once per list request
+(`rest.py` uses a module `_NO_PAGINATION` when no pagination is configured). The YAML
+`PaginationConfig` defaults come from the enum and `DEFAULT_PAGE_SIZE`.
+
+Trap hit twice in 3b-3d: the user-level PostToolUse hook runs `ruff --fix` after every edit
+and strips an import whose use is not in the file yet. Order of work that survives it: edit
+the usages first (ruff reports F821, changes nothing), then the import line.
+
+### 3e. `TableReflection`
+
+`constants.TableReflection(str, Enum)` (FULL, PARTIAL) with `from_meta()`: `True` -> FULL,
+`False`/`None` -> no reflection, the two strings -> their member, anything else ->
+`ConfigurationError` (decision 1 of the plan; before, an unknown truthy value silently built a
+table with only the automatic columns). `ReflectedTable` takes the member instead of a
+`partial: bool`. One regression test added to the characterization file; CHANGELOG `Changed`.
+
+Next: 3f `RateLimitWindow`, 3g `JwtAlgorithm`, 3h `ApiError`.

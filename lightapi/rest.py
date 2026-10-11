@@ -41,7 +41,13 @@ from sqlalchemy import select as sa_select
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from lightapi.constants import AUTO_FIELDS, CRUD_VERBS, HttpVerb, ResponseKey
+from lightapi.constants import (
+    AUTO_FIELDS,
+    CRUD_VERBS,
+    HttpVerb,
+    ResponseKey,
+    TableReflection,
+)
 from lightapi.exceptions import ConfigurationError
 from lightapi.pagination import NoPagination
 from lightapi.repository import Repository, RowNotFound, VersionConflict
@@ -119,20 +125,19 @@ class RestEndpointMeta(type):
         _reject_redeclared_auto_fields(name, namespace)
 
         meta_obj = namespace.get("Meta") or getattr(cls, "Meta", None)
-        reflect = getattr(meta_obj, "reflect", False) if meta_obj else False
-        is_reflected = reflect is True or reflect == "full" or reflect == "partial"
+        reflection = TableReflection.from_meta(getattr(meta_obj, "reflect", None))
 
         cls._meta = _parsed_meta(name, meta_obj)  # type: ignore[attr-defined]
         cls._allowed_methods = _allowed_methods(cls)  # type: ignore[attr-defined]
 
-        if is_reflected:
+        if reflection is not None:
             # ReflectedTable.map() builds the schemas once the columns are known.
             cls.__schema_create__ = None  # type: ignore[attr-defined]
             cls.__schema_read__ = None  # type: ignore[attr-defined]
-            cls._table_source = ReflectedTable(partial=reflect == "partial")  # type: ignore[attr-defined]
+            cls._table_source = ReflectedTable(reflection)  # type: ignore[attr-defined]
             return
 
-        columns = [] if reflect else _declared_columns(cls, name, namespace)
+        columns = _declared_columns(cls, name, namespace)
         cls.__schema_create__, cls.__schema_read__ = SchemaFactory.build(cls)  # type: ignore[attr-defined]
         cls._table_source = DeclaredTable(_auto_columns() + columns)  # type: ignore[attr-defined]
 

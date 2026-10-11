@@ -14,6 +14,10 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `RestEndpoint` subclasses with `register()`, or `from_config()` with a YAML file.
 
 ### Changed
+- **`Meta.reflect` rejects unknown values**: anything other than `True`, `False`, `"full"`
+  or `"partial"` now raises `ConfigurationError` when the class is defined. Before, a value
+  such as `"yes"` was silently treated as "not reflected" and produced a table with only the
+  automatic columns.
 - **Sync CRUD runs in a worker thread**: with a sync `Engine`, `list`, `retrieve`,
   `create`, `update`, `destroy` and the response-cache calls ran on the event loop
   thread, so one slow query held up every other request on that worker. They now

@@ -66,6 +66,33 @@ CRUD_VERBS: Final = frozenset(
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Table reflection (Meta.reflect)
+# ─────────────────────────────────────────────────────────────────────────
+class TableReflection(str, Enum):
+    """Map the endpoint onto an existing table instead of generating one.
+
+    PARTIAL also keeps the fields the endpoint declares itself.
+    """
+
+    FULL = "full"
+    PARTIAL = "partial"
+
+    @classmethod
+    def from_meta(cls, value: object) -> "TableReflection | None":
+        """Meta.reflect takes True, False, "full" or "partial"; None: no reflection."""
+        if value is None or value is False:
+            return None
+        if value is True:
+            return cls.FULL
+        try:
+            return cls(value)
+        except ValueError:
+            raise ConfigurationError(
+                f"Meta.reflect must be True, False, 'full' or 'partial', got {value!r}."
+            ) from None
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Pagination
 # ─────────────────────────────────────────────────────────────────────────
 DEFAULT_PAGE_SIZE = 20

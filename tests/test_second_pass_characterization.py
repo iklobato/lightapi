@@ -199,6 +199,21 @@ class TestClosedSetsAcceptedAsStrings:
         assert created.json()["name"] == "old row"
         assert client.get("/legacy").json()["results"][0]["id"] == created.json()["id"]
 
+    def test_unknown_reflect_value_raises_configuration_error(self):
+        """Decided in the second pass: before, `reflect = "yes"` silently built a
+        table with only the automatic columns."""
+        with pytest.raises(ConfigurationError) as exc_info:
+
+            class Broken(RestEndpoint):
+                name: str = LField(min_length=1)
+
+                class Meta:
+                    reflect = "yes"
+
+        assert str(exc_info.value) == (
+            "Meta.reflect must be True, False, 'full' or 'partial', got 'yes'."
+        )
+
 
 class TestRequestBodyAndPagination:
     def test_post_with_malformed_json_body_returns_422_field_required(self):
