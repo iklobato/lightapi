@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import contextlib
 import importlib
 import logging
 import os
 import warnings
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Callable, Final
 
 import uvicorn
@@ -208,13 +210,13 @@ class LightApi:
         """Build and return the Starlette ASGI app without starting the server.
 
         Useful for testing with ``httpx.AsyncClient`` or ``starlette.testclient.TestClient``.
-        For async engines, table creation is deferred to the Starlette on_startup handler
+        For async engines, table creation is deferred to the app's lifespan startup
         so it runs inside the correct event loop (not a throwaway thread loop).
         """
         self._create_tables()
         self._check_cache_connections()
-        on_startup = [self._create_tables] if self._mode is ExecutionMode.ASYNC else []
-        app = Starlette(debug=debug, routes=self._asgi_routes(), on_startup=on_startup)
+        lifespan = self._lifespan if self._mode is ExecutionMode.ASYNC else None
+        app = Starlette(debug=debug, routes=self._asgi_routes(), lifespan=lifespan)
         if self._cors_origins:
             app.add_middleware(
                 StarletteCORSMiddleware,
@@ -308,8 +310,14 @@ class LightApi:
         except SQLAlchemyError:
             logger.warning("Table creation warning", exc_info=True)
 
+    @contextlib.asynccontextmanager
+    async def _lifespan(self, _: Starlette) -> AsyncIterator[None]:
+        """Startup of an async app: create the tables on the server's own loop."""
+        self._create_tables()
+        yield
+
     def _create_tables_inside_running_loop(self, metadata: MetaData) -> None:
-        """Async engines create their tables on uvicorn's loop (the on_startup handler
+        """Async engines create their tables on uvicorn's loop (the lifespan startup
         build_app() adds); inside a loop that is already running (pytest-asyncio) the
         work runs on a loop of its own, in a worker thread."""
         try:
