@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
-from typing import TYPE_CHECKING, AsyncGenerator, Generator
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
@@ -26,7 +27,8 @@ def get_sync_session(engine: Engine) -> Generator[Session, None, None]:
 
 @asynccontextmanager
 async def get_async_session(engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
-    """Yield AsyncSession (expire_on_commit=False); commit on exit, rollback on exception."""
+    """Yield an AsyncSession (expire_on_commit=False); commit on exit, rollback on
+    exception."""
     # sqlalchemy[asyncio] is an optional extra: only an app with an AsyncEngine has it.
     from sqlalchemy.ext.asyncio import AsyncSession
 

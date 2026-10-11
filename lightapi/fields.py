@@ -8,7 +8,7 @@ _LIGHTAPI_KWARGS: frozenset[str] = frozenset(
 
 
 def Field(
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ANN401  pydantic Field kwargs, forwarded as given
 ) -> Any:  # noqa: ANN401  typed like pydantic.Field, so `x: int = Field()` type-checks
     """LightAPI Field wrapper.
 

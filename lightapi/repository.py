@@ -25,7 +25,7 @@ class VersionedRow(Protocol):
     id: Any
     version: Any
 
-    def __init__(self, **columns: Any) -> None: ...
+    def __init__(self, **columns: Any) -> None: ...  # noqa: ANN401  column values
 
 
 class Repository:
@@ -65,7 +65,7 @@ class Repository:
             if any(column.nullable for column in attr.columns)
         }
 
-    def get(self, pk: int) -> Any:
+    def get(self, pk: int) -> VersionedRow:
         if not self._in_pk_range(pk):
             raise RowNotFound(pk)
         model = self._model
@@ -76,7 +76,7 @@ class Repository:
             raise RowNotFound(pk)
         return row
 
-    def add(self, values: dict[str, Any]) -> Any:
+    def add(self, values: dict[str, Any]) -> VersionedRow:
         now = self.utcnow()
         row = self._model(
             **values, created_at=now, updated_at=now, version=FIRST_VERSION
@@ -86,7 +86,9 @@ class Repository:
         self._session.refresh(row)  # re-loads DB-generated columns
         return row
 
-    def update(self, pk: int, expected_version: int, values: dict[str, Any]) -> Any:
+    def update(
+        self, pk: int, expected_version: int, values: dict[str, Any]
+    ) -> VersionedRow:
         """Write ``values`` only if the row is still at ``expected_version``."""
         if not self._in_pk_range(pk):
             raise RowNotFound(pk)

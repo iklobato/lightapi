@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -26,7 +27,7 @@ class BasicAuthentication(BaseAuthentication):
 
     def __init__(
         self,
-        rate_limiter: "RateLimiter | None" = None,
+        rate_limiter: RateLimiter | None = None,
         login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
     ) -> None:
         self.rate_limiter = rate_limiter
@@ -66,7 +67,10 @@ class BasicAuthentication(BaseAuthentication):
         request.state.user = payload
         return True
 
-    def get_auth_error_response(self, request: Request) -> JSONResponse:
+    def get_auth_error_response(
+        self,
+        request: Request,  # noqa: ARG002  public signature
+    ) -> JSONResponse:
         return JSONResponse(
             {"error": "authentication failed"},
             status_code=HTTPStatus.UNAUTHORIZED,

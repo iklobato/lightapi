@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, auto
 from functools import cached_property
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, Callable, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from starlette.background import BackgroundTasks
 from starlette.requests import Request
@@ -22,6 +23,7 @@ from lightapi.rest import RestEndpoint
 if TYPE_CHECKING:
     from lightapi.authentication.base import BaseAuthentication, LoginValidator
     from lightapi.config import Authentication
+    from lightapi.core import Middleware
 
 
 @dataclass(frozen=True)
@@ -32,15 +34,12 @@ class MiddlewareChain:
     been, so one with state cannot leak it across requests.
     """
 
-    classes: list[type]
+    classes: list[type[Middleware]]
 
     @cached_property
-    def _awaits(self) -> dict[type, bool]:
+    def _awaits(self) -> dict[type[Middleware], bool]:
         """Whether each class's process() is a coroutine function; decided once."""
-        return {
-            cls: asyncio.iscoroutinefunction(getattr(cls, "process"))
-            for cls in self.classes
-        }
+        return {cls: asyncio.iscoroutinefunction(cls.process) for cls in self.classes}
 
     async def before(self, request: Request) -> Response | None:
         """The first response a middleware answers with, or None to carry on."""
@@ -131,7 +130,7 @@ class _Verb:
     cached: bool = False
 
     def call_arguments(
-        self, request: Request, data: dict[str, Any], pk: Any
+        self, request: Request, data: dict[str, Any], pk: int | None
     ) -> tuple[Any, ...]:
         values: dict[_CrudArgument, Any] = {
             _CrudArgument.REQUEST: request,
@@ -213,10 +212,10 @@ class EndpointHandler:
         self._verbs = verbs
         self._middlewares = app.middlewares
         self._mode = app.mode
-        self._cache = EndpointCache(
-            endpoint_cls.__name__, endpoint_cls._meta.get("cache")
-        )
-        authentication = endpoint_cls._meta.get("authentication")
+        # _meta is the endpoint's parsed Meta; the framework reads it, users set it.
+        meta = endpoint_cls._meta  # noqa: SLF001
+        self._cache = EndpointCache(endpoint_cls.__name__, meta.get("cache"))
+        authentication = meta.get("authentication")
         self._guard = (
             EndpointGuard(authentication, app.login_validator)
             if authentication is not None
@@ -253,13 +252,14 @@ class EndpointHandler:
     @property
     def methods(self) -> list[str]:
         """HTTP methods of this route that the endpoint allows."""
-        allowed = self._endpoint_cls._allowed_methods
+        allowed = self._endpoint_cls._allowed_methods  # noqa: SLF001  metaclass-set
         return [verb.value for verb in self._verbs if verb.value in allowed]
 
     async def handle(self, request: Request) -> Response:
         endpoint = self._endpoint_cls()
-        endpoint._background = BackgroundTasks()
-        endpoint._current_request = request
+        # Per-request state the handler owns on the endpoint instance.
+        endpoint._background = BackgroundTasks()  # noqa: SLF001
+        endpoint._current_request = request  # noqa: SLF001
 
         early = await self._middlewares.before(request)
         if early is not None:
@@ -280,14 +280,15 @@ class EndpointHandler:
         response = JSONResponse(result) if isinstance(result, dict) else result
         await self._cache.invalidate_after_write(request)
 
-        if endpoint._background.tasks:
-            response.background = endpoint._background
+        background = endpoint._background  # noqa: SLF001  set above
+        if background.tasks:
+            response.background = background
 
         return await self._middlewares.after(request, response)
 
     async def _serve(
         self, bound: _BoundVerb, endpoint: RestEndpoint, request: Request
-    ) -> Any:
+    ) -> Any:  # noqa: ANN401  a Response, or the dict an override returned
         if bound.override is not None:
             return await self._call_override(bound.override, endpoint, request)
 
@@ -302,7 +303,7 @@ class EndpointHandler:
                 )
             return await bound.crud(endpoint, *args)
 
-        sessions = endpoint._session_manager_or_raise()
+        sessions = endpoint._session_manager_or_raise()  # noqa: SLF001  plumbing
         if verb.cached:
             return await sessions.run_blocking(
                 self._cache.serve, request, lambda: bound.crud(endpoint, *args)
@@ -311,18 +312,17 @@ class EndpointHandler:
 
     async def _call_override(
         self, override: _Override, endpoint: RestEndpoint, request: Request
-    ) -> Any:
+    ) -> Any:  # noqa: ANN401  whatever the override returns
         if override.awaits:
             return await override.fn(endpoint, request)
         if self._mode is ExecutionMode.ASYNC:
             # Gives a sync override the greenlet context that endpoint.list() and
             # friends need to reach an async driver.
-            return await endpoint._in_async_session(
+            return await endpoint._in_async_session(  # noqa: SLF001  endpoint plumbing
                 lambda _session: override.fn(endpoint, request)
             )
-        return await endpoint._session_manager_or_raise().run_blocking(
-            override.fn, endpoint, request
-        )
+        sessions = endpoint._session_manager_or_raise()  # noqa: SLF001  plumbing
+        return await sessions.run_blocking(override.fn, endpoint, request)
 
     @staticmethod
     async def _json_body(request: Request) -> dict[str, Any]:

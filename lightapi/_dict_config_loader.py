@@ -47,7 +47,11 @@ class DictConfig:
 
     config: dict[str, Any]
 
-    def build(self, app_cls: type[LightApi], **overrides: Any) -> LightApi:
+    def build(
+        self,
+        app_cls: type[LightApi],
+        **overrides: Any,  # noqa: ANN401  LightApi constructor kwargs, forwarded
+    ) -> LightApi:
         """A configured ``app_cls`` instance with every endpoint registered."""
         constructor_kwargs: dict[str, Any] = {
             "database_url": self.config.get("database_url"),

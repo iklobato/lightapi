@@ -9,11 +9,11 @@ import importlib
 import logging
 import os
 import warnings
-from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Any, Callable, Final
+from collections.abc import AsyncIterator, Callable
+from typing import TYPE_CHECKING, Any, Final
 
 import uvicorn
-from sqlalchemy import MetaData, create_engine
+from sqlalchemy import Engine, MetaData, create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
@@ -37,7 +37,10 @@ from lightapi.session_manager import SessionManager
 from lightapi.yaml_config import LightAPIConfig
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
+
     from lightapi.config import Authentication
+    from lightapi.core import Middleware
 
 logger = logging.getLogger(__name__)
 
@@ -70,18 +73,19 @@ class LightApi:
 
     def __init__(
         self,
-        engine: Any = None,
+        engine: Engine | AsyncEngine | None = None,
         database_url: str | None = None,
         mode: str | None = None,  # Auto-detected if not provided
         cors_origins: list[str] | None = None,
-        middlewares: list[type] | None = None,
+        middlewares: list[type[Middleware]] | None = None,
         auth_path: str = "/auth",
         session_manager: SessionManager | None = None,
-        rate_limiter: "RateLimiter | dict[str, int] | None" = None,
+        rate_limiter: RateLimiter | dict[str, int] | None = None,
         login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
         use_test_isolation: bool = False,
     ) -> None:
-        self._engine = (
+        # Sync or async is a runtime fact (ExecutionMode), so the attribute is loose.
+        self._engine: Any = (
             engine if engine is not None else self._engine_from_url(database_url)
         )
         self._mode = ExecutionMode.from_user(mode)
@@ -93,7 +97,7 @@ class LightApi:
 
         self._routes: list[Route] = []
         self._endpoint_map: dict[str, type[RestEndpoint]] = {}
-        self._middlewares: list[type] = middlewares or []
+        self._middlewares: list[type[Middleware]] = middlewares or []
         self._cors_origins: list[str] = cors_origins or []
         self._auth_path = auth_path
 
@@ -190,7 +194,7 @@ class LightApi:
 
     def run(
         self,
-        host: str = "0.0.0.0",
+        host: str = "0.0.0.0",  # noqa: S104  the documented default; pass host= to narrow it
         port: int = 8000,
         debug: bool = False,
         reload: bool = False,
@@ -209,7 +213,8 @@ class LightApi:
     def build_app(self, *, debug: bool = False) -> Starlette:
         """Build and return the Starlette ASGI app without starting the server.
 
-        Useful for testing with ``httpx.AsyncClient`` or ``starlette.testclient.TestClient``.
+        Useful for testing with ``httpx.AsyncClient`` or
+        ``starlette.testclient.TestClient``.
         For async engines, table creation is deferred to the app's lifespan startup
         so it runs inside the correct event loop (not a throwaway thread loop).
         """
@@ -240,7 +245,11 @@ class LightApi:
     # ─────────────────────────────────────────────────────────────────────────
 
     @classmethod
-    def from_config(cls, config_path: str, **kwargs: Any) -> "LightApi":
+    def from_config(
+        cls,
+        config_path: str,
+        **kwargs: Any,  # noqa: ANN401  constructor kwargs, forwarded
+    ) -> LightApi:
         """Create a LightApi instance from a ``lightapi.yaml`` file.
 
         Uses the declarative format: ``database.url``, ``endpoints[].route``,
@@ -252,7 +261,11 @@ class LightApi:
         return LightAPIConfig.from_file(config_path).build_app(cls, **kwargs)
 
     @classmethod
-    def from_dict(cls, config: dict[str, Any], **kwargs: Any) -> "LightApi":
+    def from_dict(
+        cls,
+        config: dict[str, Any],
+        **kwargs: Any,  # noqa: ANN401  constructor kwargs, forwarded
+    ) -> LightApi:
         """Create a LightApi instance from a Python dictionary.
 
         Deprecated: removed in 0.2.0. Declare RestEndpoint subclasses and call
@@ -333,13 +346,13 @@ class LightApi:
             pool.submit(asyncio.run, create_all()).result()
 
     def _check_cache_connections(self) -> None:
-        """Emit RuntimeWarning if any endpoint has cache configured but Redis is unreachable."""
+        """RuntimeWarning when an endpoint has a cache but Redis is unreachable."""
         for cls in self._endpoint_map.values():
             if cls._meta.get("cache"):
                 if not RedisCacheBackend.shared().ping():
                     warnings.warn(
-                        "Redis is configured for caching but is not reachable at startup. "
-                        "Cache will be skipped for all requests.",
+                        "Redis is configured for caching but is not reachable at "
+                        "startup. Cache will be skipped for all requests.",
                         RuntimeWarning,
                         stacklevel=3,
                     )
@@ -350,7 +363,7 @@ class LightApi:
     # ─────────────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _engine_from_url(database_url: str | None) -> Any:
+    def _engine_from_url(database_url: str | None) -> Engine:
         url = database_url or os.environ.get("LIGHTAPI_DATABASE_URL")
         if url is None:
             raise ConfigurationError(
@@ -386,7 +399,7 @@ class LightApi:
         )
 
     @staticmethod
-    def _require_async_engine(engine: Any) -> None:
+    def _require_async_engine(engine: object) -> None:
         try:
             # sqlalchemy[asyncio] is the optional `async` extra.
             from sqlalchemy.ext.asyncio import AsyncEngine
@@ -401,7 +414,7 @@ class LightApi:
             )
 
     @staticmethod
-    def _validate_async_dependencies(engine: Any) -> None:
+    def _validate_async_dependencies(engine: Engine | AsyncEngine) -> None:
         """ConfigurationError if the async SQLAlchemy extra or the driver is missing."""
         try:
             importlib.import_module("sqlalchemy.ext.asyncio")

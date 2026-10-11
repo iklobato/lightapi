@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
-from sqlalchemy import MetaData
+from sqlalchemy import Engine, MetaData
 from sqlalchemy.orm import registry
 from sqlalchemy.pool import SingletonThreadPool, StaticPool
 from starlette.concurrency import run_in_threadpool
@@ -85,7 +86,11 @@ class SessionManager:
     Supports both sync and async engines.
     """
 
-    def __init__(self, engine: Any, use_test_isolation: bool = False) -> None:
+    def __init__(
+        self,
+        engine: Any,  # noqa: ANN401  an Engine or an AsyncEngine; which is a runtime fact
+        use_test_isolation: bool = False,
+    ) -> None:
         """Initialize with an engine (sync or async).
 
         Args:
@@ -105,16 +110,21 @@ class SessionManager:
             self._registry = _state.registry
 
     @property
-    def engine(self) -> Any:
+    def engine(self) -> Any:  # noqa: ANN401  an Engine or an AsyncEngine (see is_async)
         """Get the engine."""
         return self._engine
 
     @property
-    def sync_engine(self) -> Any:
+    def sync_engine(self) -> Engine:
         """The engine sync code can use: an AsyncEngine's underlying sync one."""
-        return self._engine.sync_engine if self._is_async else self._engine
+        engine: Engine = self._engine.sync_engine if self._is_async else self._engine
+        return engine
 
-    async def run_blocking(self, fn: Callable[..., T], *args: Any) -> T:
+    async def run_blocking(
+        self,
+        fn: Callable[..., T],
+        *args: Any,  # noqa: ANN401  passed through to fn
+    ) -> T:
         """Run a blocking database call in a worker thread so the event loop stays free.
 
         An engine on a single-connection pool runs the call in place instead.

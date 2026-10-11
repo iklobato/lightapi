@@ -119,7 +119,7 @@ class LoginEndpoint:
             # The README shows `async def validate_credentials` on a subclass.
             if inspect.isawaitable(user):
                 user = await user
-        except Exception:  # noqa: BLE001  documented contract: any error is a 401
+        except Exception:
             logger.warning("validate_credentials raised", exc_info=True)
             return None
         return user

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, ClassVar
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -25,8 +26,8 @@ class BaseAuthentication:
     @classmethod
     def from_config(
         cls,
-        authentication: Authentication,
-        login_validator: LoginValidator | None = None,
+        authentication: Authentication,  # noqa: ARG003  backends read what they need
+        login_validator: LoginValidator | None = None,  # noqa: ARG003  same
     ) -> BaseAuthentication:
         """Build the backend for an endpoint's ``Authentication`` settings.
 
@@ -38,7 +39,7 @@ class BaseAuthentication:
         """Body of a successful ``/auth/login`` for a validated user."""
         return {ResponseKey.USER: user}
 
-    def authenticate(self, request: Request) -> bool:
+    def authenticate(self, request: Request) -> bool:  # noqa: ARG002  override point
         """Authenticate a request.
 
         Args:
@@ -49,7 +50,10 @@ class BaseAuthentication:
         """
         return True
 
-    def get_auth_error_response(self, request: Request) -> JSONResponse:
+    def get_auth_error_response(
+        self,
+        request: Request,  # noqa: ARG002  public signature
+    ) -> JSONResponse:
         """Get the response to return when authentication fails.
 
         Args:
@@ -64,7 +68,9 @@ class BaseAuthentication:
         )
 
     def validate_credentials(
-        self, username: str, password: str
+        self,
+        username: str,  # noqa: ARG002  override point
+        password: str,  # noqa: ARG002  override point
     ) -> dict[str, Any] | None:
         """Validate user credentials.
 
@@ -90,7 +96,7 @@ class BasePermission:
     # Whether the endpoint's backend must authenticate the request first.
     requires_authentication: ClassVar[bool] = True
 
-    def has_permission(self, request: Request) -> bool:
+    def has_permission(self, request: Request) -> bool:  # noqa: ARG002  override point
         """Check if the request has permission.
 
         Args:
@@ -107,7 +113,7 @@ class AllowAny(BasePermission):
 
     requires_authentication = False
 
-    def has_permission(self, request: Request) -> bool:
+    def has_permission(self, request: Request) -> bool:  # noqa: ARG002  every request
         return True
 
 

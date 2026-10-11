@@ -4,11 +4,12 @@ import base64
 import binascii
 import json
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
@@ -55,7 +56,11 @@ class Paginator(Protocol):
     """Turns a query into the body of a list response."""
 
     def render(
-        self, request: Request, qs: Any, session: Session, serialize: RowSerializer
+        self,
+        request: Request,
+        qs: Select[Any],
+        session: Session,
+        serialize: RowSerializer,
     ) -> dict[str, Any]: ...
 
 
@@ -75,7 +80,11 @@ class NoPagination:
     """Every row in a single response."""
 
     def render(
-        self, request: Request, qs: Any, session: Session, serialize: RowSerializer
+        self,
+        request: Request,  # noqa: ARG002  Paginator protocol
+        qs: Select[Any],
+        session: Session,
+        serialize: RowSerializer,
     ) -> dict[str, Any]:
         rows = session.execute(qs).scalars().all()
         return {ResponseKey.RESULTS: [serialize(row) for row in rows]}
@@ -88,7 +97,11 @@ class PageNumberPaginator:
         self.page_size = page_size
 
     def render(
-        self, request: Request, qs: Any, session: Session, serialize: RowSerializer
+        self,
+        request: Request,
+        qs: Select[Any],
+        session: Session,
+        serialize: RowSerializer,
     ) -> dict[str, Any]:
         rows, total = self.paginate(request, qs, session, self.page_size)
         page = self._current_page(request)
@@ -98,7 +111,7 @@ class PageNumberPaginator:
     def paginate(
         self,
         request: Request,
-        qs: Any,
+        qs: Select[Any],
         session: Session,
         page_size: int,
     ) -> tuple[list[Any], int]:
@@ -112,7 +125,7 @@ class PageNumberPaginator:
     async def paginate_async(
         self,
         request: Request,
-        qs: Any,
+        qs: Select[Any],
         session: AsyncSession,
         page_size: int,
     ) -> tuple[list[Any], int]:
@@ -165,7 +178,11 @@ class CursorPaginator:
         self.page_size = page_size
 
     def render(
-        self, request: Request, qs: Any, session: Session, serialize: RowSerializer
+        self,
+        request: Request,
+        qs: Select[Any],
+        session: Session,
+        serialize: RowSerializer,
     ) -> dict[str, Any]:
         rows, next_cursor = self.paginate(request, qs, session, self.page_size)
         return self.wrap([serialize(row) for row in rows], next_cursor, None)
@@ -173,7 +190,7 @@ class CursorPaginator:
     def paginate(
         self,
         request: Request,
-        qs: Any,
+        qs: Select[Any],
         session: Session,
         page_size: int,
     ) -> tuple[list[Any], str | None]:
@@ -199,7 +216,7 @@ class CursorPaginator:
     async def paginate_async(
         self,
         request: Request,
-        qs: Any,
+        qs: Select[Any],
         session: AsyncSession,
         page_size: int,
     ) -> tuple[list[Any], str | None]:

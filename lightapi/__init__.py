@@ -25,43 +25,34 @@ from lightapi.schema import SchemaFactory
 from lightapi.session import get_async_session, get_sync_session
 
 __all__ = [
-    # Core
-    "LightApi",
-    "RestEndpoint",
-    "Field",
-    "HttpMethod",
-    # Config
+    "AllowAny",
     "Authentication",
-    "Cache",
-    "Filtering",
-    "Pagination",
-    "Serializer",
-    # Auth
+    "AuthenticationMiddleware",
     "BaseAuthentication",
     "BasePermission",
     "BasicAuthentication",
-    "JWTAuthentication",
-    "AllowAny",
-    "IsAuthenticated",
-    "IsAdminUser",
-    # Rate Limiter
-    "RateLimiter",
-    # Filters
-    "FieldFilter",
-    "SearchFilter",
-    "OrderingFilter",
-    # Schema
-    "SchemaFactory",
-    # Middleware (backward-compat)
-    "Middleware",
     "CORSMiddleware",
-    "AuthenticationMiddleware",
-    "Response",
-    "RedisCache",
-    # Exceptions
+    "Cache",
     "ConfigurationError",
+    "Field",
+    "FieldFilter",
+    "Filtering",
+    "HttpMethod",
+    "IsAdminUser",
+    "IsAuthenticated",
+    "JWTAuthentication",
+    "LightApi",
+    "Middleware",
+    "OrderingFilter",
+    "Pagination",
+    "RateLimiter",
+    "RedisCache",
+    "Response",
+    "RestEndpoint",
+    "SchemaFactory",
+    "SearchFilter",
     "SerializationError",
-    # Session helpers
-    "get_sync_session",
+    "Serializer",
     "get_async_session",
+    "get_sync_session",
 ]

@@ -28,15 +28,17 @@ import datetime
 import importlib
 import inspect
 import os
+from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, Optional, Union
+from typing import TYPE_CHECKING, Any, Final
 
 import yaml
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
 from lightapi.authentication import (
     AllowAny,
+    BasePermission,
     BasicAuthentication,
     IsAdminUser,
     IsAuthenticated,
@@ -52,6 +54,8 @@ from lightapi.pagination import PaginationStyle
 from lightapi.rest import RestEndpoint
 
 if TYPE_CHECKING:
+    from pydantic.fields import FieldInfo
+
     from lightapi.lightapi import LightApi
 
 YAML_FIELD_TYPES: Final[dict[str, type]] = {
@@ -136,7 +140,7 @@ class AuthConfig(BaseModel):
     """Authentication block used in defaults and per-endpoint meta."""
 
     backend: str | None = None
-    permission: Union[str, dict[str, str], None] = None
+    permission: str | dict[str, str] | None = None
     jwt_expiration: int | None = None
     jwt_extra_claims: list[str] | None = None
     jwt_algorithm: str | None = None
@@ -147,7 +151,9 @@ class AuthConfig(BaseModel):
             return self
         return defaults.model_copy(update=self.model_dump(exclude_none=True))
 
-    def resolved_permission(self) -> Any:
+    def resolved_permission(
+        self,
+    ) -> type[BasePermission] | dict[str, type[BasePermission]] | None:
         """The permission class, or {method: class} for a per-method dict."""
         if isinstance(self.permission, dict):
             return {
@@ -155,10 +161,15 @@ class AuthConfig(BaseModel):
                 for method, name in self.permission.items()
             }
         if isinstance(self.permission, str):
-            return LightAPIConfig.resolve_name(self.permission)
+            permission: type[BasePermission] = LightAPIConfig.resolve_name(
+                self.permission
+            )
+            return permission
         return None
 
-    def to_authentication(self, permission: Any) -> Authentication:
+    def to_authentication(
+        self, permission: type[BasePermission] | dict[str, type[BasePermission]] | None
+    ) -> Authentication:
         return Authentication(
             backend=LightAPIConfig.resolve_name(self.backend) if self.backend else None,
             permission=permission,
@@ -239,7 +250,7 @@ class MetaConfig(BaseModel):
     """meta: block inside a declarative endpoint entry."""
 
     # methods can be a list ["GET", "POST"] or a dict {GET: {...}, DELETE: {...}}
-    methods: Union[list[str], dict[str, MethodAuthConfig | None]] = []
+    methods: list[str] | dict[str, MethodAuthConfig | None] = []
     authentication: AuthConfig | None = None
     filtering: FilteringConfig | None = None
     pagination: PaginationConfig | None = None
@@ -371,11 +382,12 @@ class FieldSpec(BaseModel):
         return v
 
     @property
-    def annotation(self) -> Any:
+    def annotation(self) -> object:
+        """The field's type, or ``type | None`` for an optional one."""
         py_type = YAML_FIELD_TYPES[self.type]
-        return Optional[py_type] if self.optional else py_type
+        return py_type | None if self.optional else py_type
 
-    def field_info(self) -> Any | None:
+    def field_info(self) -> FieldInfo | None:
         """The Field() for this spec; None for a constraint-less, default-less field.
 
         Such a field stays annotation-only on purpose: an Ellipsis placeholder
@@ -400,7 +412,7 @@ class EndpointConfig(BaseModel):
     meta: MetaConfig = MetaConfig()
 
     @model_validator(mode="after")
-    def require_route(self) -> "EndpointConfig":
+    def require_route(self) -> EndpointConfig:
         if not self.route:
             raise ValueError("Each endpoint must have a 'route'.")
         return self
@@ -457,7 +469,11 @@ class LightAPIConfig(BaseModel):
                 f"Invalid lightapi.yaml — {exc.error_count()} error(s):\n{exc}"
             ) from exc
 
-    def build_app(self, app_cls: type[LightApi], **overrides: Any) -> LightApi:
+    def build_app(
+        self,
+        app_cls: type[LightApi],
+        **overrides: Any,  # noqa: ANN401  LightApi constructor kwargs, forwarded
+    ) -> LightApi:
         """A configured ``app_cls`` instance with every endpoint registered.
 
         Kwargs override YAML-derived values (e.g. engine=..., database_url=...).
@@ -488,7 +504,9 @@ class LightAPIConfig(BaseModel):
         return instance
 
     @staticmethod
-    def resolve_name(name: str) -> Any:
+    def resolve_name(
+        name: str,
+    ) -> Any:  # noqa: ANN401  whatever class the dotted path names
         """The class a document names: a built-in by short name, else a dotted path."""
         if name in NAME_REGISTRY:
             return NAME_REGISTRY[name]
@@ -505,7 +523,7 @@ class LightAPIConfig(BaseModel):
         )
 
     @staticmethod
-    def resolve_callable(dotted_path: str) -> Any:
+    def resolve_callable(dotted_path: str) -> Callable[..., Any]:
         """The login validator at a dotted path: sync, takes (username, password)."""
         if "." not in dotted_path:
             raise ConfigurationError(
@@ -531,12 +549,13 @@ class LightAPIConfig(BaseModel):
                 "but sync function required. "
                 "Login validation must be a synchronous function."
             )
+        validator: Callable[..., Any] = fn
 
         try:
             sig = inspect.signature(fn)
         except ValueError:
             # Some callables (e.g., builtins) don't have inspectable signatures
-            return fn
+            return validator
 
         required_params = sum(
             1
@@ -553,4 +572,4 @@ class LightAPIConfig(BaseModel):
                 f"login_validator '{dotted_path}' must accept exactly 2 required "
                 f"positional parameters (username, password), got {required_params}"
             )
-        return fn
+        return validator

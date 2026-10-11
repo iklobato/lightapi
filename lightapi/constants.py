@@ -34,7 +34,7 @@ class ExecutionMode(str, Enum):
 class ResponseKey(str, Enum):
     DETAIL = "detail"
     RESULTS = "results"
-    TOKEN = "token"
+    TOKEN = "token"  # noqa: S105  a response key, not a secret
     USER = "user"
     COUNT = "count"
     PAGES = "pages"

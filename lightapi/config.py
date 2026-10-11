@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from lightapi.constants import (
     DEFAULT_CACHE_TTL,
@@ -148,7 +148,10 @@ class Serializer:
     read: list[str] | None = None
     write: list[str] | None = None
 
-    def __init_subclass__(cls, **kwargs: Any) -> None:
+    def __init_subclass__(
+        cls,
+        **kwargs: Any,  # noqa: ANN401  class kwargs, forwarded
+    ) -> None:
         super().__init_subclass__(**kwargs)
         has_fields = cls.__dict__.get("fields") is not None
         has_read = cls.__dict__.get("read") is not None

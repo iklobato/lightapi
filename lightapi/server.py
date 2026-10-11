@@ -24,7 +24,7 @@ class ServerCommand:
     serving to :meth:`LightApi.run`.
     """
 
-    DEFAULT_HOST = "0.0.0.0"
+    DEFAULT_HOST = "0.0.0.0"  # noqa: S104  the serve command's documented default
     DEFAULT_PORT = 8000
 
     def __init__(self, config_path: str, host: str, port: int) -> None:

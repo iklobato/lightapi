@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 from http import HTTPStatus
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from starlette.responses import JSONResponse
 
 from lightapi.constants import HttpVerb
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+    from starlette.responses import Response as StarletteResponse
 
 
 class Response(JSONResponse):
@@ -21,7 +25,7 @@ class Response(JSONResponse):
 
     def __init__(
         self,
-        content: Any = None,
+        content: Any = None,  # noqa: ANN401  any JSON value
         status_code: int = HTTPStatus.OK,
         headers: dict[str, str] | None = None,
         media_type: str | None = None,
@@ -55,7 +59,11 @@ class Middleware:
     and responses before they are returned to the client.
     """
 
-    def process(self, request: Any, response: Any) -> Any:
+    def process(
+        self,
+        request: Request,  # noqa: ARG002  override point
+        response: StarletteResponse | None,
+    ) -> StarletteResponse | None:
         """
         Process a request or response.
 
@@ -105,7 +113,9 @@ class CORSMiddleware(Middleware):
         self.allow_methods = allow_methods
         self.allow_headers = allow_headers
 
-    def process(self, request: Any, response: Any) -> Any:
+    def process(
+        self, request: Request, response: StarletteResponse | None
+    ) -> StarletteResponse | None:
         if response is None:
             if request.method == HttpVerb.OPTIONS:
                 return JSONResponse(
@@ -151,7 +161,9 @@ class AuthenticationMiddleware(Middleware):
         else:
             self.authenticator = None
 
-    def process(self, request: Any, response: Any) -> Any:
+    def process(
+        self, request: Request, response: StarletteResponse | None
+    ) -> StarletteResponse | None:
         if response is None and self.authenticator:
             if not self.authenticator.authenticate(request):
                 return JSONResponse(

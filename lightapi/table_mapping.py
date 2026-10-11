@@ -23,7 +23,9 @@ from pydantic.fields import FieldInfo
 from sqlalchemy import (
     Boolean,
     Column,
+    Connection,
     DateTime,
+    Engine,
     Float,
     ForeignKey,
     Integer,
@@ -41,6 +43,8 @@ from lightapi.repository import Repository
 from lightapi.schema import SchemaFactory
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
+
     from lightapi.rest import RestEndpoint
     from lightapi.session_manager import SessionManager
 
@@ -67,9 +71,8 @@ class TableSource(ABC):
     def _table_name(
         endpoint_cls: type[RestEndpoint], session_manager: SessionManager
     ) -> str:
-        base_name = (
-            endpoint_cls._meta.get("table") or f"{endpoint_cls.__name__.lower()}s"
-        )
+        meta = endpoint_cls._meta  # noqa: SLF001  the endpoint's parsed Meta
+        base_name = meta.get("table") or f"{endpoint_cls.__name__.lower()}s"
         return session_manager.table_name_for(base_name)
 
     @staticmethod
@@ -111,7 +114,7 @@ class DeclaredTable(TableSource):
     def map(
         self, endpoint_cls: type[RestEndpoint], session_manager: SessionManager
     ) -> None:
-        if endpoint_cls._model_class is not None:
+        if endpoint_cls._model_class is not None:  # noqa: SLF001  mapped already
             return
 
         self._strip_field_infos(endpoint_cls, self._columns)
@@ -124,7 +127,7 @@ class DeclaredTable(TableSource):
         )
         session_manager.create_tables_now()
         session_manager.registry.map_imperatively(endpoint_cls, table)
-        endpoint_cls._model_class = endpoint_cls
+        endpoint_cls._model_class = endpoint_cls  # noqa: SLF001  marks it mapped
 
     @staticmethod
     def _field_annotations(endpoint_cls: type[RestEndpoint]) -> dict[str, Any]:
@@ -147,12 +150,14 @@ class DeclaredTable(TableSource):
 
     @staticmethod
     def _column_for(
-        endpoint_name: str, field_name: str, annotation: Any, field_info: Any
+        endpoint_name: str,
+        field_name: str,
+        annotation: object,
+        field_info: FieldInfo | None,
     ) -> Column[Any] | None:
         """The column for one annotated field; None when the field has exclude=True."""
-        extra: dict[str, Any] = (
-            (field_info.json_schema_extra or {}) if field_info else {}
-        )
+        raw_extra = field_info.json_schema_extra if field_info is not None else None
+        extra: dict[str, Any] = raw_extra if isinstance(raw_extra, dict) else {}
         if extra.get("exclude"):
             return None
 
@@ -178,7 +183,7 @@ class DeclaredTable(TableSource):
         return Column(field_name, col_type, *col_args, **col_kwargs)
 
     @staticmethod
-    def _is_optional(annotation: Any) -> tuple[bool, Any]:
+    def _is_optional(annotation: object) -> tuple[bool, object]:
         """Return (is_optional, inner_type) for an annotation."""
         origin = get_origin(annotation)
         args = get_args(annotation)
@@ -217,7 +222,7 @@ class ReflectedTable(TableSource):
     def map(
         self, endpoint_cls: type[RestEndpoint], session_manager: SessionManager
     ) -> None:
-        if endpoint_cls._model_class is not None:
+        if endpoint_cls._model_class is not None:  # noqa: SLF001  mapped already
             return
 
         table = self._reflect(
@@ -227,7 +232,7 @@ class ReflectedTable(TableSource):
             self._strip_field_infos(endpoint_cls, list(table.c))
 
         session_manager.registry.map_imperatively(endpoint_cls, table)
-        endpoint_cls._model_class = endpoint_cls
+        endpoint_cls._model_class = endpoint_cls  # noqa: SLF001  marks it mapped
         # The schemas need the columns, which are only known after reflection.
         endpoint_cls.__schema_create__, endpoint_cls.__schema_read__ = (
             SchemaFactory.build_from_reflected_table(endpoint_cls, table)
@@ -243,7 +248,7 @@ class ReflectedTable(TableSource):
         )
 
     @staticmethod
-    def _reflect_sync(engine: Any, metadata: MetaData, table_name: str) -> Table:
+    def _reflect_sync(engine: Engine, metadata: MetaData, table_name: str) -> Table:
         if table_name not in sa_inspect(engine).get_table_names():
             raise ConfigurationError(
                 f"Table '{table_name}' does not exist in the database."
@@ -251,8 +256,10 @@ class ReflectedTable(TableSource):
         return Table(table_name, metadata, autoload_with=engine)
 
     @staticmethod
-    def _reflect_async(engine: Any, metadata: MetaData, table_name: str) -> Table:
-        def do_reflect(conn: Any) -> None:
+    def _reflect_async(
+        engine: AsyncEngine, metadata: MetaData, table_name: str
+    ) -> Table:
+        def do_reflect(conn: Connection) -> None:
             metadata.reflect(bind=conn, only=[table_name])
 
         async def async_reflect() -> None:

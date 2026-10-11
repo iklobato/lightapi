@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, Float, Integer, Numeric, asc, desc, or_
+from sqlalchemy import Boolean, Float, Integer, Numeric, Select, asc, desc, or_
 from starlette.requests import Request
+
+if TYPE_CHECKING:
+    from lightapi.rest import RestEndpoint
 
 
 class BaseFilter:
@@ -16,7 +19,12 @@ class BaseFilter:
     RESERVED_PARAMS = frozenset({"page", "page_size", "cursor", "ordering"})
     LIKE_ESCAPE_CHAR = "\\"
 
-    def filter_queryset(self, request: Request, queryset: Any, view: Any) -> Any:
+    def filter_queryset(
+        self,
+        request: Request,  # noqa: ARG002  interface method
+        queryset: Select[Any],
+        view: RestEndpoint,  # noqa: ARG002  interface method
+    ) -> Select[Any]:
         return queryset
 
     @classmethod
@@ -30,7 +38,10 @@ class BaseFilter:
         )
 
     @staticmethod
-    def _coerce_filter_value(col: Any, value: str) -> Any:
+    def _coerce_filter_value(
+        col: Any,  # noqa: ANN401  a mapped attribute, or whatever a custom backend passes
+        value: str,
+    ) -> bool | int | float | str:
         """Coerce a query-string value to match the column's Python type.
 
         A value the column type cannot parse, or an attribute that is not a
@@ -54,21 +65,26 @@ class BaseFilter:
         return value
 
 
-def _coerce_filter_value(col: Any, value: str) -> Any:
+def _coerce_filter_value(
+    col: Any,  # noqa: ANN401  see BaseFilter._coerce_filter_value
+    value: str,
+) -> bool | int | float | str:
     """Module-level alias of BaseFilter._coerce_filter_value.
 
     docs/api-reference/filters.md teaches custom backends to import this
     name directly; keep it importing here even though subclasses now get
     it for free via self._coerce_filter_value.
     """
-    return BaseFilter._coerce_filter_value(col, value)
+    return BaseFilter._coerce_filter_value(col, value)  # noqa: SLF001  the alias above
 
 
 class FieldFilter(BaseFilter):
     """Exact-match filter on whitelisted fields declared in Meta.filtering.fields."""
 
-    def filter_queryset(self, request: Request, queryset: Any, view: Any) -> Any:
-        filtering_cfg = view._meta.get("filtering")
+    def filter_queryset(
+        self, request: Request, queryset: Select[Any], view: RestEndpoint
+    ) -> Select[Any]:
+        filtering_cfg = view._meta.get("filtering")  # noqa: SLF001  the endpoint's Meta
         allowed_fields: list[str] = (
             (filtering_cfg.fields or []) if filtering_cfg else []
         )
@@ -89,12 +105,14 @@ class FieldFilter(BaseFilter):
 class SearchFilter(BaseFilter):
     """Case-insensitive LIKE search across Meta.filtering.search fields."""
 
-    def filter_queryset(self, request: Request, queryset: Any, view: Any) -> Any:
+    def filter_queryset(
+        self, request: Request, queryset: Select[Any], view: RestEndpoint
+    ) -> Select[Any]:
         query = request.query_params.get("search")
         if not query:
             return queryset
 
-        filtering_cfg = view._meta.get("filtering")
+        filtering_cfg = view._meta.get("filtering")  # noqa: SLF001  the endpoint's Meta
         search_fields: list[str] = (filtering_cfg.search or []) if filtering_cfg else []
         if not search_fields:
             return queryset
@@ -117,12 +135,14 @@ class SearchFilter(BaseFilter):
 class OrderingFilter(BaseFilter):
     """Ordering via ``?ordering=field`` or ``?ordering=-field`` (descending)."""
 
-    def filter_queryset(self, request: Request, queryset: Any, view: Any) -> Any:
+    def filter_queryset(
+        self, request: Request, queryset: Select[Any], view: RestEndpoint
+    ) -> Select[Any]:
         ordering_param = request.query_params.get("ordering")
         if not ordering_param:
             return queryset
 
-        filtering_cfg = view._meta.get("filtering")
+        filtering_cfg = view._meta.get("filtering")  # noqa: SLF001  the endpoint's Meta
         allowed: list[str] = (filtering_cfg.ordering or []) if filtering_cfg else []
 
         # No whitelist configured → ordering is disabled entirely.

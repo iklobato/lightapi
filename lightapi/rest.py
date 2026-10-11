@@ -9,6 +9,8 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, ClassVar, Final, cast
 
 if TYPE_CHECKING:
+    from sqlalchemy import Engine, Select
+    from sqlalchemy.ext.asyncio import AsyncEngine
     from sqlalchemy.orm import Session
     from starlette.background import BackgroundTasks
 
@@ -52,26 +54,27 @@ class RestEndpointMeta(type):
         name: str,
         bases: tuple[type, ...],
         namespace: dict[str, Any],
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401  class keyword arguments (base_only=...)
     ) -> type:
-        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
+        # Every class made here is RestEndpoint or a subclass; the metaclass fills
+        # in the class attributes RestEndpoint only declares.
+        cls = cast(
+            "type[RestEndpoint]", super().__new__(mcs, name, bases, namespace, **kwargs)
+        )
 
         if not bases:
             # RestEndpoint itself: nothing to map.
             return cls
 
-        # Anything with bases subclasses RestEndpoint; the metaclass fills in the
-        # class attributes RestEndpoint only declares.
-        endpoint_cls = cast("type[RestEndpoint]", cls)
         is_base_only = kwargs.get("base_only", False) or namespace.get(
             "_base_only", False
         )
         if is_base_only:
-            endpoint_cls._allowed_methods = {verb.value for verb in CRUD_VERBS}
-            endpoint_cls._meta = {}
+            cls._allowed_methods = {verb.value for verb in CRUD_VERBS}
+            cls._meta = {}
             return cls
 
-        mcs._process(endpoint_cls, name, namespace)
+        mcs._process(cls, name, namespace)
         return cls
 
     @classmethod
@@ -107,7 +110,7 @@ class RestEndpointMeta(type):
                 )
 
     @staticmethod
-    def _parsed_meta(name: str, meta_obj: Any) -> dict[str, Any]:
+    def _parsed_meta(name: str, meta_obj: type | None) -> dict[str, Any]:
         raw_serializer = getattr(meta_obj, "serializer", None) if meta_obj else None
 
         # FieldProjection rejects every non-Serializer; a pydantic model gets its
@@ -161,7 +164,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     # Bound by LightApi.register(); None until then.
     _session_manager: ClassVar[SessionManager | None] = None
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:  # noqa: ANN401  column values
         self._background: BackgroundTasks | None = None
         self._current_request: Request | None = None
         for k, v in kwargs.items():
@@ -169,7 +172,12 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     # ── Background task support ───────────────────────────────────────────────
 
-    def background(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
+    def background(
+        self,
+        fn: Callable[..., Any],
+        *args: Any,  # noqa: ANN401  passed through to fn
+        **kwargs: Any,  # noqa: ANN401  passed through to fn
+    ) -> None:
         """Schedule fn as a fire-and-forget background task for the current request."""
         if self._background is None:
             raise RuntimeError("background() called outside request handler")
@@ -179,7 +187,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     def _session_manager_or_raise(self) -> SessionManager:
         """The SessionManager register() bound to this endpoint class."""
-        session_manager = type(self)._session_manager
+        session_manager = self._session_manager
         if session_manager is None:
             raise RuntimeError(
                 "No session_manager configured. "
@@ -187,7 +195,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             )
         return session_manager
 
-    def _get_engine(self) -> Any:
+    def _get_engine(self) -> Engine:
         """The engine for sync CRUD; an AsyncEngine is unwrapped to its sync one."""
         return self._session_manager_or_raise().sync_engine
 
@@ -201,7 +209,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             )
         return cls._model_class
 
-    def _get_queryset(self, request: Request) -> Any:
+    def _get_queryset(self, request: Request) -> Any:  # noqa: ANN401  a Select, or the coroutine of an async def queryset
         cls = type(self)
         qs_attr = getattr(cls, "queryset", None)
         if qs_attr is None:
@@ -210,7 +218,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             return qs_attr(self, request)
         return qs_attr
 
-    def _run_filter_backends(self, request: Request, qs: Any) -> Any:
+    def _run_filter_backends(self, request: Request, qs: Select[Any]) -> Select[Any]:
         filtering = self._meta.get("filtering")
         if not filtering or not filtering.backends:
             return qs
@@ -225,7 +233,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         )
         return projection.for_method(verb)
 
-    def _serialize_row(self, row: Any, fields: list[str] | None) -> dict[str, Any]:
+    def _serialize_row(self, row: object, fields: list[str] | None) -> dict[str, Any]:
         d = FieldProjection.apply(SchemaFactory.row_to_dict(row), fields)
         validated = type(self).__schema_read__.model_validate(d)
         result = validated.model_dump(mode="json")
@@ -235,7 +243,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     # ── CRUD core: one implementation, always given an open sync Session ─────
 
-    def _list(self, session: Session, request: Request, qs: Any) -> Response:
+    def _list(self, session: Session, request: Request, qs: Select[Any]) -> Response:
         pagination = self._meta.get("pagination")
         paginator = pagination.paginator if pagination else _NO_PAGINATION
         qs = self._run_filter_backends(request, qs)
@@ -314,7 +322,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         return Response(status_code=HTTPStatus.NO_CONTENT)
 
     def _repository(self, session: Session) -> Repository:
-        return Repository(type(self)._model_class_or_raise(), session)
+        return Repository(self._model_class_or_raise(), session)
 
     # ── Sync CRUD: the core inside a sync Session ─────────────────────────────
 
@@ -323,7 +331,11 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         with get_sync_session(self._get_engine()) as session:
             return self._list(session, request, self._get_queryset(request))
 
-    def retrieve(self, request: Request, pk: int) -> Response:
+    def retrieve(
+        self,
+        request: Request,  # noqa: ARG002  public signature
+        pk: int,
+    ) -> Response:
         """Handle GET /{path}/{id}."""
         with get_sync_session(self._get_engine()) as session:
             return self._retrieve(session, pk)
@@ -338,21 +350,27 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         with get_sync_session(self._get_engine()) as session:
             return self._update(session, data, pk, partial=partial)
 
-    def destroy(self, request: Request, pk: int) -> Response:
+    def destroy(
+        self,
+        request: Request,  # noqa: ARG002  public signature
+        pk: int,
+    ) -> Response:
         """Handle DELETE /{path}/{id}."""
         with get_sync_session(self._get_engine()) as session:
             return self._destroy(session, pk)
 
     # ── Async CRUD: the same core, run through AsyncSession.run_sync ──────────
 
-    async def _get_queryset_async(self, request: Request) -> Any:
+    async def _get_queryset_async(self, request: Request) -> Select[Any]:
         """_get_queryset(), awaiting the result of an ``async def queryset``."""
-        qs = self._get_queryset(request)
-        return await qs if inspect.isawaitable(qs) else qs
+        raw = self._get_queryset(request)
+        qs: Select[Any] = await raw if inspect.isawaitable(raw) else raw
+        return qs
 
-    def _get_async_engine(self) -> Any:
+    def _get_async_engine(self) -> AsyncEngine:
         """Return the raw (AsyncEngine) engine for async session creation."""
-        return self._session_manager_or_raise().engine
+        engine: AsyncEngine = self._session_manager_or_raise().engine
+        return engine
 
     async def _in_async_session(self, work: Callable[[Session], Response]) -> Response:
         async with get_async_session(self._get_async_engine()) as session:
@@ -363,7 +381,11 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         qs = await self._get_queryset_async(request)
         return await self._in_async_session(lambda s: self._list(s, request, qs))
 
-    async def _retrieve_async(self, request: Request, pk: int) -> Response:
+    async def _retrieve_async(
+        self,
+        request: Request,  # noqa: ARG002  mirrors retrieve()
+        pk: int,
+    ) -> Response:
         return await self._in_async_session(lambda s: self._retrieve(s, pk))
 
     async def _create_async(self, data: dict[str, Any]) -> Response:
@@ -376,5 +398,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             lambda s: self._update(s, data, pk, partial=partial)
         )
 
-    async def _destroy_async(self, request: Request, pk: int) -> Response:
+    async def _destroy_async(
+        self,
+        request: Request,  # noqa: ARG002  mirrors destroy()
+        pk: int,
+    ) -> Response:
         return await self._in_async_session(lambda s: self._destroy(s, pk))
