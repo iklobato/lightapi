@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import datetime
 import logging
 import os
+import warnings
 from unittest.mock import patch
 
 import pytest
 import redis
-from sqlalchemy import MetaData, create_engine
+from sqlalchemy import MetaData, create_engine, insert
 from sqlalchemy import select as sa_select
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
@@ -27,6 +30,7 @@ from lightapi.cache import RedisCacheBackend
 from lightapi.config import Config
 from lightapi.exceptions import ConfigurationError
 from lightapi.fields import Field as LField
+from lightapi.yaml_config import LightAPIConfig
 
 os.environ.setdefault("LIGHTAPI_JWT_SECRET", "audit-secret")
 
@@ -261,3 +265,94 @@ class TestB4HonestTypes:
 
         with pytest.raises(RuntimeError, match="register"):
             AuditUnregistered._model_class_or_raise()
+
+
+class TestB12Timeouts:
+    def test_redis_client_gets_a_read_timeout_as_well_as_a_connect_timeout(self):
+        """B12-001: a Redis that accepts the connection and hangs cannot hold a worker."""
+        with patch("lightapi.cache.redis.from_url") as from_url:
+            RedisCacheBackend("redis://localhost:1")._get_client()
+
+        from_url.assert_called_once_with(
+            "redis://localhost:1", socket_connect_timeout=1, socket_timeout=1
+        )
+
+
+class TestB10TimeAndPaths:
+    def test_rows_inserted_outside_the_repository_get_naive_utc_timestamps(self):
+        """B10-001: the column defaults give the same naive UTC Repository stores,
+        without the deprecated utcnow()."""
+
+        class AuditStamped(RestEndpoint):
+            title: str = LField()
+
+        engine = _memory_engine()
+        app = LightApi(engine=engine)
+        app.register({"/stamped": AuditStamped})
+        app.build_app()
+        table = AuditStamped.__table__
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            with engine.begin() as conn:
+                conn.execute(insert(table).values(title="outside"))
+                created_at = conn.execute(sa_select(table.c.created_at)).scalar_one()
+
+        assert created_at.tzinfo is None
+        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        assert abs((now - created_at).total_seconds()) < 60
+
+    def test_from_file_accepts_a_path_object(self, tmp_path):
+        """B10-003: the YAML document is opened through pathlib."""
+        document = tmp_path / "audit.yaml"
+        document.write_text(
+            'database:\n  url: "sqlite:///:memory:"\nendpoints:\n'
+            "  - route: /auditpaths\n    fields:\n      title: {type: str}\n"
+        )
+
+        config = LightAPIConfig.from_file(document)
+
+        assert [entry.effective_route for entry in config.endpoints] == ["/auditpaths"]
+
+
+class TestB14WarningsAndLogs:
+    def test_registration_is_logged_with_path_and_class_name(self, caplog):
+        """B14-001: the same message as before, built by logging instead of f-strings."""
+
+        class AuditLogged(RestEndpoint):
+            title: str = LField()
+
+        app = LightApi(engine=_memory_engine())
+        with caplog.at_level(logging.INFO, logger="lightapi.lightapi"):
+            app.register({"/logged": AuditLogged})
+
+        assert "Registering endpoint /logged -> AuditLogged" in caplog.messages
+
+    def test_async_app_creates_its_tables_at_lifespan_startup(self):
+        """B14-004: lifespan replaces the deprecated on_startup handler; the tables
+        of an async app are still created when the server starts."""
+
+        class AuditLifespan(RestEndpoint):
+            title: str = LField()
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        app = LightApi(engine=engine, mode="async")
+        app.register({"/lifespan": AuditLifespan})
+        starlette_app = app.build_app()
+
+        assert starlette_app.router.on_startup == []
+        with TestClient(starlette_app) as client:
+            assert client.get("/lifespan").status_code == 200
+
+    def test_registering_an_endpoint_raises_no_deprecation_warning(self):
+        """B14-005: the declared columns go straight into the Table; nothing copies them."""
+
+        class AuditFresh(RestEndpoint):
+            title: str = LField()
+
+        app = LightApi(engine=_memory_engine())
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            app.register({"/fresh": AuditFresh})
+
+        assert AuditFresh.__table__.c.title is not None

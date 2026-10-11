@@ -46,7 +46,13 @@ class RedisCacheBackend:
     def _get_client(self) -> redis.Redis | None:
         if self._client is None:
             try:
-                self._client = redis.from_url(self._redis_url, socket_connect_timeout=1)
+                # A Redis that accepts the connection and then hangs would hold a
+                # worker thread per cached request; a slow reply is a cache miss.
+                # 1s is the connect timeout the code base already uses, not a
+                # measured value.
+                self._client = redis.from_url(
+                    self._redis_url, socket_connect_timeout=1, socket_timeout=1
+                )
             except (ValueError, redis.RedisError):
                 logger.warning(
                     "Cache disabled: cannot build a Redis client from LIGHTAPI_REDIS_URL",
