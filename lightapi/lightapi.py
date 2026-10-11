@@ -325,14 +325,25 @@ class LightApi:
 
     @contextlib.asynccontextmanager
     async def _lifespan(self, _: Starlette) -> AsyncIterator[None]:
-        """Startup of an async app: create the tables on the server's own loop."""
-        self._create_tables()
+        """Startup of an async app: create the tables on the loop that serves it.
+
+        The DDL must run on this loop: a connection opened on another loop (a
+        worker thread running asyncio.run) goes back to the pool and fails the next
+        request with "attached to a different loop" (asyncpg).
+        """
+        metadata = self._session_manager.metadata
+        try:
+            async with self._engine.begin() as conn:
+                await conn.run_sync(metadata.create_all)
+            logger.info("Tables created/verified against %s", self._engine.url)
+        except SQLAlchemyError:
+            logger.warning("Table creation warning", exc_info=True)
         yield
 
     def _create_tables_inside_running_loop(self, metadata: MetaData) -> None:
-        """Async engines create their tables on uvicorn's loop (the lifespan startup
-        build_app() adds); inside a loop that is already running (pytest-asyncio) the
-        work runs on a loop of its own, in a worker thread."""
+        """build_app() called inside a loop that is already running (pytest-asyncio)
+        creates the tables on a loop of its own, in a worker thread; a served app
+        gets them from the lifespan instead."""
         try:
             asyncio.get_running_loop()
         except RuntimeError:

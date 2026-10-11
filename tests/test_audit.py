@@ -356,3 +356,27 @@ class TestB14WarningsAndLogs:
             app.register({"/fresh": AuditFresh})
 
         assert AuditFresh.__table__.c.title is not None
+
+
+class TestB19LifespanLoop:
+    def test_lifespan_creates_tables_on_the_serving_loop_not_a_worker_thread(self):
+        """B19/B7-003: tables created on a worker loop poison an asyncpg pool; the
+        lifespan must await create_all on the loop that serves the requests."""
+
+        class AuditLoopBound(RestEndpoint):
+            title: str = LField()
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        app = LightApi(engine=engine, mode="async")
+        app.register({"/loopbound": AuditLoopBound})
+        starlette_app = app.build_app()
+
+        with (
+            patch(
+                "lightapi.lightapi.concurrent.futures.ThreadPoolExecutor",
+                side_effect=AssertionError("table creation left the serving loop"),
+            ),
+            TestClient(starlette_app) as client,
+        ):
+            assert client.post("/loopbound", json={"title": "t"}).status_code == 201
+            assert client.get("/loopbound").json()["results"][0]["title"] == "t"

@@ -97,6 +97,12 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_startup` handler; same moment, no deprecation warning. `created_at`/`updated_at`
   column defaults no longer use the deprecated `datetime.utcnow()`; the stored value is the
   same naive UTC.
+- **An async app on asyncpg no longer fails its first request after startup** ("Future
+  attached to a different loop"). The startup created the tables on a worker thread with
+  its own event loop, and the connection that did it went back to the pool bound to that
+  loop. The lifespan now runs the DDL on the loop that serves the requests. `build_app()`
+  called from inside an already running loop (a pytest-asyncio test) still uses the worker
+  thread; create the tables yourself in that case.
 
 ## [Unreleased] — 0.1.24
 
