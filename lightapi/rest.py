@@ -182,9 +182,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     def _get_queryset(self, request: Request) -> Any:
         cls = type(self)
-        qs_attr = cls.__dict__.get("queryset")
-        if qs_attr is None:
-            qs_attr = getattr(cls, "queryset", None)
+        qs_attr = getattr(cls, "queryset", None)
         if qs_attr is None:
             return sa_select(cls._model_class)
         if callable(qs_attr):
