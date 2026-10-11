@@ -264,4 +264,32 @@ Remaining `except Exception` in the package, all deliberate: `_login.py` (valida
   `_reject_redeclared_auto_fields`, `_parsed_meta` and `_allowed_methods` as its own
   methods. `rest.py` has no module-level function left.
 
-Next: Step 8 (`LightApi` helpers, YAML loader onto the pydantic models, `DictConfig`).
+## Step 8: `LightApi` and the configuration loaders
+
+- `lightapi.py`: the seven module-level helpers are `LightApi` methods
+  (`_engine_from_url`, `_as_rate_limiter`, `_require_rest_endpoint`, `_has_async_handlers`,
+  `_require_async_engine`, `_validate_async_dependencies`; `_checked_mode` had already become
+  `ExecutionMode.from_user`). `_LOGIN_RATE_LIMITS` and `_ASYNC_HANDLER_NAMES` (derived from
+  `CRUD_VERBS`) are class constants; the dialect-to-driver map is a module `Final`.
+  `RateLimiter.from_limits(limits, defaults)` builds a limiter from a dict.
+  `tests/test_async_session.py` calls `LightApi._validate_async_dependencies`.
+- `yaml_config.py` replaces `yaml_loader.py` + `yaml_names.py` + `yaml_schema.py`: the eleven
+  loader functions are methods of the pydantic models that hold the data
+  (`AuthConfig.to_authentication`/`resolved_permission`, `FilteringConfig.to_filtering`,
+  `PaginationConfig.to_pagination`, `MetaConfig.build_meta_class`/`endpoint_bases`,
+  `FieldSpec.annotation`/`field_info`, `EndpointConfig.build_endpoint_class`,
+  `LightAPIConfig.from_file`/`build_app`/`resolve_name`/`resolve_callable`); the name registry
+  is a module `Final` built with top-level imports (no cycle: none of those modules import
+  `yaml_config` or `lightapi.lightapi`); `HTTP_METHOD_MIXINS` in `constants.py` maps verb
+  names to the public `HttpMethod` mixins for both config loaders. Every error text is
+  unchanged. `tests/test_yaml_config.py` imports from `yaml_config` and calls
+  `entry.build_endpoint_class(...)` / `LightAPIConfig.resolve_name(...)`.
+- `_dict_config_loader.py` (deprecated path, Henry asked to include it): `DictConfig`
+  (frozen dataclass over the dict, `build`) and `DictAuthKind(str, Enum)` replace
+  `load_from_dict`, `_route_to_class_name` and the `"jwt"/"basic"` literals; an unknown
+  `auth:` value is still ignored. Imports come from submodules, never from the `lightapi`
+  package, because `lightapi.py` now imports this module at the top.
+- `[tool.mypy]`: `yaml_loader` -> `yaml_config`. CHANGELOG `Removed`.
+
+Next: Phase 3 (gates on 3.10/3.11/3.12/3.13, HTTP snapshot diff, differential harness,
+final diagram, `.cursorrules`, metrics).

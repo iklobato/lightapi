@@ -8,7 +8,7 @@ import importlib
 import logging
 import os
 import warnings
-from typing import Any, Callable
+from typing import Any, Callable, Final
 
 import uvicorn
 from sqlalchemy import MetaData, create_engine
@@ -17,6 +17,7 @@ from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
 from starlette.routing import Route
 
+from lightapi._dict_config_loader import DictConfig
 from lightapi._login import LoginEndpoint
 from lightapi.authentication import (
     BaseAuthentication,
@@ -24,23 +25,16 @@ from lightapi.authentication import (
     JWTAuthentication,
 )
 from lightapi.cache import RedisCacheBackend
-from lightapi.constants import ExecutionMode, HttpVerb
+from lightapi.constants import CRUD_VERBS, ExecutionMode, HttpVerb
 from lightapi.endpoint_handler import AppContext, EndpointHandler, MiddlewareChain
 from lightapi.exceptions import ConfigurationError
 from lightapi.health import HEALTH_PATH, HealthCheckEndpoint
 from lightapi.rate_limiter import RateLimiter
 from lightapi.rest import RestEndpoint
 from lightapi.session_manager import SessionManager
-from lightapi.yaml_loader import load_config
+from lightapi.yaml_config import LightAPIConfig
 
 logger = logging.getLogger(__name__)
-
-# Limits of the login routes when the app sets none.
-_LOGIN_RATE_LIMITS = {
-    "requests_per_minute": 1000,
-    "requests_per_hour": 10000,
-    "requests_per_day": 100000,
-}
 
 
 class LightApi:
@@ -57,6 +51,18 @@ class LightApi:
         app = LightApi.from_config("lightapi.yaml")
     """
 
+    # Limits of the login routes when the app sets none.
+    _LOGIN_RATE_LIMITS: Final[dict[str, int]] = {
+        "requests_per_minute": 1000,
+        "requests_per_hour": 10000,
+        "requests_per_day": 100000,
+    }
+    # An `async def` of any of these on an endpoint switches the app to async mode.
+    _ASYNC_HANDLER_NAMES: Final = (
+        "queryset",
+        *(verb.value.lower() for verb in CRUD_VERBS),
+    )
+
     def __init__(
         self,
         engine: Any = None,
@@ -70,13 +76,15 @@ class LightApi:
         login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
         use_test_isolation: bool = False,
     ) -> None:
-        self._engine = engine if engine is not None else _engine_from_url(database_url)
+        self._engine = (
+            engine if engine is not None else self._engine_from_url(database_url)
+        )
         self._mode = ExecutionMode.from_user(mode)
         self._session_manager = session_manager or SessionManager(
             self._engine, use_test_isolation=use_test_isolation
         )
         self._login_validator = login_validator
-        self._rate_limiter_global = _as_rate_limiter(rate_limiter)
+        self._rate_limiter_global = self._as_rate_limiter(rate_limiter)
 
         self._routes: list[Route] = []
         self._endpoint_map: dict[str, type] = {}
@@ -96,15 +104,15 @@ class LightApi:
                 Each class must be a ``RestEndpoint`` subclass.
         """
         for path, cls in mapping.items():
-            _require_rest_endpoint(path, cls)
+            self._require_rest_endpoint(path, cls)
 
         # An `async def` verb or queryset on any endpoint switches the app to async.
         if self._mode is ExecutionMode.SYNC and any(
-            map(_has_async_handlers, mapping.values())
+            map(self._has_async_handlers, mapping.values())
         ):
             self._mode = ExecutionMode.ASYNC
         if self._mode is ExecutionMode.ASYNC:
-            _require_async_engine(self._engine)
+            self._require_async_engine(self._engine)
 
         app_context = AppContext(
             MiddlewareChain(self._middlewares), self._mode, self._login_validator
@@ -144,7 +152,9 @@ class LightApi:
         if backend is None:
             return []
 
-        rate_limiter = self._rate_limiter_global or RateLimiter(**_LOGIN_RATE_LIMITS)
+        rate_limiter = self._rate_limiter_global or RateLimiter(
+            **self._LOGIN_RATE_LIMITS
+        )
         login = LoginEndpoint(backend, self._login_validator, rate_limiter)
         auth_path = self._auth_path.rstrip("/")
         return [
@@ -179,7 +189,7 @@ class LightApi:
     ) -> None:
         """Create tables, build the Starlette ASGI app and start uvicorn."""
         if self._mode is ExecutionMode.ASYNC:
-            _validate_async_dependencies(self._engine)
+            self._validate_async_dependencies(self._engine)
         uvicorn.run(
             self.build_app(debug=debug),
             host=host,
@@ -231,8 +241,7 @@ class LightApi:
 
         Kwargs override YAML values (e.g. engine=..., database_url=...).
         """
-
-        return load_config(cls, config_path, **kwargs)
+        return LightAPIConfig.from_file(config_path).build_app(cls, **kwargs)
 
     @classmethod
     def from_dict(cls, config: dict[str, Any], **kwargs: Any) -> "LightApi":
@@ -258,8 +267,6 @@ class LightApi:
             }
             app = LightApi.from_dict(config)
         """
-        from lightapi._dict_config_loader import load_from_dict
-
         warnings.warn(
             "LightApi.from_dict is deprecated and will be removed in 0.2.0. "
             "Declare RestEndpoint subclasses and call register(), or use "
@@ -267,7 +274,7 @@ class LightApi:
             DeprecationWarning,
             stacklevel=2,
         )
-        return load_from_dict(cls, config, **kwargs)
+        return DictConfig(config).build(cls, **kwargs)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Internal helpers
@@ -317,78 +324,86 @@ class LightApi:
                     )
                 break
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # Constructor and register() checks
+    # ─────────────────────────────────────────────────────────────────────────
 
-_ASYNC_HANDLER_NAMES = ("queryset", "get", "post", "put", "patch", "delete")
+    @staticmethod
+    def _engine_from_url(database_url: str | None) -> Any:
+        url = database_url or os.environ.get("LIGHTAPI_DATABASE_URL")
+        if url is None:
+            raise ConfigurationError(
+                "No database configured. Provide engine=..., database_url=..., or set "
+                "LIGHTAPI_DATABASE_URL environment variable."
+            )
+        return create_engine(url)
 
+    @classmethod
+    def _as_rate_limiter(
+        cls, value: RateLimiter | dict[str, int] | None
+    ) -> RateLimiter | None:
+        if isinstance(value, dict):
+            return RateLimiter.from_limits(value, cls._LOGIN_RATE_LIMITS)
+        return value if isinstance(value, RateLimiter) else None
 
-def _engine_from_url(database_url: str | None) -> Any:
-    url = database_url or os.environ.get("LIGHTAPI_DATABASE_URL")
-    if url is None:
-        raise ConfigurationError(
-            "No database configured. Provide engine=..., database_url=..., or set "
-            "LIGHTAPI_DATABASE_URL environment variable."
-        )
-    return create_engine(url)
+    @staticmethod
+    def _require_rest_endpoint(path: str, cls: Any) -> None:
+        if not (isinstance(cls, type) and issubclass(cls, RestEndpoint)):
+            raise ConfigurationError(
+                f"register() value for '{path}' must be a RestEndpoint subclass, "
+                f"got {cls!r}."
+            )
 
-
-def _as_rate_limiter(value: RateLimiter | dict[str, int] | None) -> RateLimiter | None:
-    if isinstance(value, dict):
-        return RateLimiter(
-            **{
-                limit: value.get(limit, default)
-                for limit, default in _LOGIN_RATE_LIMITS.items()
-            }
-        )
-    return value if isinstance(value, RateLimiter) else None
-
-
-def _require_rest_endpoint(path: str, cls: Any) -> None:
-    if not (isinstance(cls, type) and issubclass(cls, RestEndpoint)):
-        raise ConfigurationError(
-            f"register() value for '{path}' must be a RestEndpoint subclass, "
-            f"got {cls!r}."
-        )
-
-
-def _has_async_handlers(cls: type) -> bool:
-    # A queryset may be a Select, which is not callable, so check before asking.
-    return any(
-        callable(handler) and asyncio.iscoroutinefunction(handler)
-        for handler in (getattr(cls, name, None) for name in _ASYNC_HANDLER_NAMES)
-    )
-
-
-def _require_async_engine(engine: Any) -> None:
-    try:
-        from sqlalchemy.ext.asyncio import AsyncEngine
-    except ImportError:
-        raise ConfigurationError(
-            "mode='async' requires async dependencies. "
-            "Install: uv add 'lightapi[async]'"
-        )
-    if not isinstance(engine, AsyncEngine):
-        raise ConfigurationError(
-            f"mode='async' requires AsyncEngine, got {type(engine).__name__}"
+    @classmethod
+    def _has_async_handlers(cls, endpoint_cls: type) -> bool:
+        # A queryset may be a Select, which is not callable, so check before asking.
+        return any(
+            callable(handler) and asyncio.iscoroutinefunction(handler)
+            for handler in (
+                getattr(endpoint_cls, name, None) for name in cls._ASYNC_HANDLER_NAMES
+            )
         )
 
-
-def _validate_async_dependencies(engine: Any) -> None:
-    """Raise ConfigurationError if async SQLAlchemy extras or dialect driver are missing."""
-    try:
-        importlib.import_module("sqlalchemy.ext.asyncio")
-    except ImportError:
-        raise ConfigurationError(
-            "AsyncEngine supplied but 'sqlalchemy[asyncio]' is not installed. "
-            "Install with: uv add 'sqlalchemy[asyncio]'"
-        )
-    dialect = engine.url.get_dialect().name
-    driver_map = {"postgresql": "asyncpg", "sqlite": "aiosqlite", "mysql": "aiomysql"}
-    driver = driver_map.get(dialect)
-    if driver:
+    @staticmethod
+    def _require_async_engine(engine: Any) -> None:
         try:
-            importlib.import_module(driver)
+            # sqlalchemy[asyncio] is the optional `async` extra.
+            from sqlalchemy.ext.asyncio import AsyncEngine
         except ImportError:
             raise ConfigurationError(
-                f"Async driver for '{dialect}' is not installed. "
-                f"Install with: uv add {driver}"
+                "mode='async' requires async dependencies. "
+                "Install: uv add 'lightapi[async]'"
+            ) from None
+        if not isinstance(engine, AsyncEngine):
+            raise ConfigurationError(
+                f"mode='async' requires AsyncEngine, got {type(engine).__name__}"
             )
+
+    @staticmethod
+    def _validate_async_dependencies(engine: Any) -> None:
+        """ConfigurationError if the async SQLAlchemy extra or the driver is missing."""
+        try:
+            importlib.import_module("sqlalchemy.ext.asyncio")
+        except ImportError:
+            raise ConfigurationError(
+                "AsyncEngine supplied but 'sqlalchemy[asyncio]' is not installed. "
+                "Install with: uv add 'sqlalchemy[asyncio]'"
+            ) from None
+        dialect = engine.url.get_dialect().name
+        driver = _ASYNC_DRIVERS.get(dialect)
+        if driver:
+            try:
+                importlib.import_module(driver)
+            except ImportError:
+                raise ConfigurationError(
+                    f"Async driver for '{dialect}' is not installed. "
+                    f"Install with: uv add {driver}"
+                ) from None
+
+
+# The async driver each dialect needs; a dialect missing here is not checked.
+_ASYNC_DRIVERS: Final[dict[str, str]] = {
+    "postgresql": "asyncpg",
+    "sqlite": "aiosqlite",
+    "mysql": "aiomysql",
+}

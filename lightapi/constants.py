@@ -5,6 +5,7 @@ from typing import Final
 from starlette.responses import JSONResponse
 
 from lightapi.exceptions import ConfigurationError
+from lightapi.methods import HttpMethod
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -66,6 +67,11 @@ class HttpVerb(str, Enum):
 CRUD_VERBS: Final = frozenset(
     {HttpVerb.GET, HttpVerb.POST, HttpVerb.PUT, HttpVerb.PATCH, HttpVerb.DELETE}
 )
+
+# The public marker mixin of each CRUD verb, by the verb's name (YAML and dict configs).
+HTTP_METHOD_MIXINS: Final[dict[str, type]] = {
+    verb.value: getattr(HttpMethod, verb.value) for verb in CRUD_VERBS
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────

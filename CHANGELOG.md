@@ -47,6 +47,12 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `set_cached` and `_ping_redis`: the response cache is `lightapi.cache.EndpointCache`
   (built once per route) over `RedisCacheBackend.shared()`, the process-wide client that is
   still created on first use. `lightapi.cache.invalidate_cache_prefix` stays.
+- `lightapi.yaml_loader`, `lightapi.yaml_names` and `lightapi.yaml_schema`: the YAML
+  document's models and the code that turns them into endpoints now live together in
+  `lightapi.yaml_config` (`LightAPIConfig.from_file(...).build_app(...)`,
+  `LightAPIConfig.resolve_name`). The YAML format is unchanged.
+- `lightapi._dict_config_loader.load_from_dict`: `LightApi.from_dict` (deprecated) now goes
+  through `DictConfig` in the same module.
 
 ### Fixed
 - **`Meta.cache` was ignored on async engines**: cached GETs and cache invalidation

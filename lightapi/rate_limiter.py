@@ -56,6 +56,15 @@ class RateLimiter:
         self._cleanup_interval = 300  # Cleanup every 5 minutes
         self._last_cleanup = time.time()
 
+    @classmethod
+    def from_limits(
+        cls, limits: dict[str, int], defaults: dict[str, int]
+    ) -> RateLimiter:
+        """A limiter from ``requests_per_*`` keys; a missing key takes its default."""
+        return cls(
+            **{name: limits.get(name, default) for name, default in defaults.items()}
+        )
+
     def reset(self) -> None:
         """Reset all rate limit tracking. Useful for testing."""
         self._store.clear()
