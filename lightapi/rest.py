@@ -2,23 +2,11 @@
 
 from __future__ import annotations
 
-import datetime
 import inspect
-import types
 from collections.abc import Callable
-from decimal import Decimal
 from functools import partial
 from http import HTTPStatus
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Final,
-    Union,
-    get_args,
-    get_origin,
-    get_type_hints,
-)
-from uuid import UUID
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -27,18 +15,6 @@ if TYPE_CHECKING:
     from lightapi.session_manager import SessionManager
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
-from pydantic.fields import FieldInfo
-from sqlalchemy import (
-    Boolean,
-    Column,
-    DateTime,
-    Float,
-    ForeignKey,
-    Integer,
-    Numeric,
-    String,
-    Uuid,
-)
 from sqlalchemy import select as sa_select
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -59,16 +35,6 @@ from lightapi.table_mapping import DeclaredTable, ReflectedTable, TableSource
 
 _AUTO_FIELDS = AUTO_FIELDS
 
-_TYPE_MAP: dict[Any, Any] = {
-    str: String,
-    int: Integer,
-    float: Float,
-    bool: Boolean,
-    datetime.datetime: DateTime,
-    Decimal: Numeric,
-    UUID: Uuid,
-}
-
 # The client's `version` arrives as a raw JSON value (int, numeric string, or
 # whole float); this coerces it the same way pydantic would validate an int
 # field, and rejects anything else with a 422 instead of a TypeError deep in
@@ -77,17 +43,6 @@ _VERSION_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
 
 _NO_PAGINATION: Final = NoPagination()
 _NO_PROJECTION: Final = FieldProjection(None, None, None)
-
-
-def _is_optional(annotation: Any) -> tuple[bool, Any]:
-    """Return (is_optional, inner_type) for an annotation."""
-    origin = get_origin(annotation)
-    args = get_args(annotation)
-    if origin is Union or origin is types.UnionType:
-        non_none = [a for a in args if a is not type(None)]
-        if len(non_none) == 1 and type(None) in args:
-            return True, non_none[0]
-    return False, annotation
 
 
 class RestEndpointMeta(type):
@@ -116,15 +71,15 @@ class RestEndpointMeta(type):
         mcs._process(cls, name, namespace)
         return cls
 
-    @staticmethod
-    def _process(cls: type, name: str, namespace: dict[str, Any]) -> None:
-        _reject_redeclared_auto_fields(name, namespace)
+    @classmethod
+    def _process(mcs, cls: type, name: str, namespace: dict[str, Any]) -> None:
+        mcs._reject_redeclared_auto_fields(name, namespace)
 
         meta_obj = namespace.get("Meta") or getattr(cls, "Meta", None)
         reflection = TableReflection.from_meta(getattr(meta_obj, "reflect", None))
 
-        cls._meta = _parsed_meta(name, meta_obj)  # type: ignore[attr-defined]
-        cls._allowed_methods = _allowed_methods(cls)  # type: ignore[attr-defined]
+        cls._meta = mcs._parsed_meta(name, meta_obj)  # type: ignore[attr-defined]
+        cls._allowed_methods = mcs._methods_from_mixins(cls)  # type: ignore[attr-defined]
 
         if reflection is not None:
             # ReflectedTable.map() builds the schemas once the columns are known.
@@ -133,122 +88,48 @@ class RestEndpointMeta(type):
             cls._table_source = ReflectedTable(reflection)  # type: ignore[attr-defined]
             return
 
-        columns = _declared_columns(cls, name, namespace)
         cls.__schema_create__, cls.__schema_read__ = SchemaFactory.build(cls)  # type: ignore[attr-defined]
-        cls._table_source = DeclaredTable(_auto_columns() + columns)  # type: ignore[attr-defined]
+        cls._table_source = DeclaredTable.from_endpoint(cls, name, namespace)  # type: ignore[attr-defined]
 
+    @staticmethod
+    def _reject_redeclared_auto_fields(name: str, namespace: dict[str, Any]) -> None:
+        for auto in AUTO_FIELDS:
+            if auto in namespace.get("__annotations__", {}):
+                raise ConfigurationError(
+                    f"RestEndpoint '{name}': '{auto}' is auto-injected "
+                    "and must not be redeclared."
+                )
 
-def _reject_redeclared_auto_fields(name: str, namespace: dict[str, Any]) -> None:
-    for auto in _AUTO_FIELDS:
-        if auto in namespace.get("__annotations__", {}):
+    @staticmethod
+    def _parsed_meta(name: str, meta_obj: Any) -> dict[str, Any]:
+        raw_serializer = getattr(meta_obj, "serializer", None) if meta_obj else None
+
+        # FieldProjection rejects every non-Serializer; a pydantic model gets its
+        # own message because it is the mistake people actually make.
+        if isinstance(raw_serializer, type) and issubclass(raw_serializer, BaseModel):
             raise ConfigurationError(
-                f"RestEndpoint '{name}': '{auto}' is auto-injected "
-                "and must not be redeclared."
+                f"Meta.serializer on '{name}' must be a Serializer "
+                "instance or subclass, not a BaseModel subclass."
             )
 
+        return {
+            "authentication": getattr(meta_obj, "authentication", None),
+            "filtering": getattr(meta_obj, "filtering", None),
+            "pagination": getattr(meta_obj, "pagination", None),
+            "serializer_normalised": FieldProjection.from_serializer(raw_serializer),
+            "cache": getattr(meta_obj, "cache", None),
+            "table": getattr(meta_obj, "table", None),
+        }
 
-def _field_annotations(cls: type) -> dict[str, Any]:
-    """Public annotated fields of the class and its bases, with real types."""
-    # get_type_hints() resolves the string annotations that
-    # `from __future__ import annotations` leaves behind.
-    try:
-        resolved = get_type_hints(cls)
-    except (NameError, TypeError, SyntaxError, AttributeError):
-        # A string annotation that cannot be evaluated; _column_for then reports
-        # the raw annotation as not being in the type map.
-        resolved = {}
-
-    annotations: dict[str, Any] = {}
-    for base in reversed(cls.__mro__):
-        for field_name, raw in getattr(base, "__annotations__", {}).items():
-            if not field_name.startswith("_") and field_name not in _AUTO_FIELDS:
-                annotations[field_name] = resolved.get(field_name, raw)
-    return annotations
-
-
-def _declared_columns(cls: type, name: str, namespace: dict[str, Any]) -> list[Column]:
-    columns: list[Column] = []
-    for field_name, annotation in _field_annotations(cls).items():
-        field_val = namespace.get(field_name) or getattr(cls, field_name, None)
-        field_info = field_val if isinstance(field_val, FieldInfo) else None
-        column = _column_for(name, field_name, annotation, field_info)
-        if column is not None:
-            columns.append(column)
-    return columns
-
-
-def _column_for(
-    endpoint_name: str, field_name: str, annotation: Any, field_info: Any
-) -> Column | None:
-    """The column for one annotated field; None when the field has exclude=True."""
-    extra: dict[str, Any] = (field_info.json_schema_extra or {}) if field_info else {}
-    if extra.get("exclude"):
-        return None
-
-    is_opt, inner = _is_optional(annotation)
-    col_type = _TYPE_MAP.get(inner)
-    if col_type is None:
-        raise ConfigurationError(
-            f"RestEndpoint '{endpoint_name}': annotation '{inner}' on field "
-            f"'{field_name}' is not in the type map. "
-            "Add exclude=True to skip column generation."
-        )
-    if inner is Decimal:
-        col_type = Numeric(scale=extra.get("decimal_places", 10))
-
-    col_args = [ForeignKey(extra["foreign_key"])] if extra.get("foreign_key") else []
-    col_kwargs: dict[str, Any] = {"nullable": is_opt}
-    if extra.get("unique"):
-        col_kwargs["unique"] = True
-    if extra.get("index"):
-        col_kwargs["index"] = True
-    return Column(field_name, col_type, *col_args, **col_kwargs)
-
-
-def _auto_columns() -> list[Column]:
-    """id, created_at, updated_at and version, injected into every declared table."""
-    return [
-        Column("id", Integer, primary_key=True, autoincrement=True),
-        Column("created_at", DateTime, default=datetime.datetime.utcnow),
-        Column(
-            "updated_at",
-            DateTime,
-            default=datetime.datetime.utcnow,
-            onupdate=datetime.datetime.utcnow,
-        ),
-        Column("version", Integer, default=1, nullable=False),
-    ]
-
-
-def _parsed_meta(name: str, meta_obj: Any) -> dict[str, Any]:
-    raw_serializer = getattr(meta_obj, "serializer", None) if meta_obj else None
-
-    # normalise_serializer() rejects every non-Serializer; a pydantic model gets
-    # its own message because it is the mistake people actually make.
-    if isinstance(raw_serializer, type) and issubclass(raw_serializer, BaseModel):
-        raise ConfigurationError(
-            f"Meta.serializer on '{name}' must be a Serializer "
-            "instance or subclass, not a BaseModel subclass."
-        )
-
-    return {
-        "authentication": getattr(meta_obj, "authentication", None),
-        "filtering": getattr(meta_obj, "filtering", None),
-        "pagination": getattr(meta_obj, "pagination", None),
-        "serializer_normalised": FieldProjection.from_serializer(raw_serializer),
-        "cache": getattr(meta_obj, "cache", None),
-        "table": getattr(meta_obj, "table", None),
-    }
-
-
-def _allowed_methods(cls: type) -> set[str]:
-    """HTTP methods named by HttpMethod mixins in the MRO; all of them when none is."""
-    allowed = {
-        HttpVerb(base._http_method).value
-        for base in cls.__mro__[1:]
-        if getattr(base, "_http_method", None)
-    }
-    return allowed or {verb.value for verb in CRUD_VERBS}
+    @staticmethod
+    def _methods_from_mixins(cls: type) -> set[str]:
+        """HTTP methods named by HttpMethod mixins in the MRO; all when none is."""
+        allowed = {
+            HttpVerb(base._http_method).value
+            for base in cls.__mro__[1:]
+            if getattr(base, "_http_method", None)
+        }
+        return allowed or {verb.value for verb in CRUD_VERBS}
 
 
 _API_ERRORS: Final[dict[type[Exception], ApiError]] = {
@@ -392,14 +273,14 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         schema_create = type(self).__schema_create__
         if not partial:
             values = schema_create.model_validate(data).model_dump()
-            return {k: v for k, v in values.items() if k not in _AUTO_FIELDS}
+            return {k: v for k, v in values.items() if k not in AUTO_FIELDS}
 
         sent = SchemaFactory.patch_schema(schema_create).model_validate(data)
         # An explicit null clears a nullable column; on any other column it is ignored.
         return {
             k: v
             for k, v in sent.model_dump(exclude_unset=True).items()
-            if k not in _AUTO_FIELDS and (v is not None or k in nullable_columns)
+            if k not in AUTO_FIELDS and (v is not None or k in nullable_columns)
         }
 
     def _destroy(self, session: Session, pk: int) -> Response:

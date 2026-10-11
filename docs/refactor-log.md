@@ -244,5 +244,24 @@ that returns early when no loop is running instead of wrapping the whole thread 
 Remaining `except Exception` in the package, all deliberate: `_login.py` (validator raised ->
 401, documented), `session.py` (rollback + re-raise), FROZEN `RedisCache` body.
 
-Next: Step 7 (`rest.py`: `_get_queryset` dedupe, projection resolved once per request, loose
-functions onto `RestEndpointMeta`/`DeclaredTable`/`SchemaFactory`/`FieldProjection`).
+## Step 7: `rest.py`
+
+- `_get_queryset_async` reuses `_get_queryset` and awaits an awaitable result (the two
+  copies differed only by that `await`).
+- `schema.FieldProjection(NamedTuple)` (fields, read, write) with `from_serializer`,
+  `for_method`, `apply` replaces `normalise_serializer`, `resolve_fields` and
+  `_apply_fields`; `_meta["serializer_normalised"]` is still the same tuple.
+  `SchemaFactory.row_to_dict`, `SchemaFactory.patch_schema` (same `lru_cache`),
+  `_schema_pair` and `_reflected_annotation` are methods. `RestEndpoint._fields_for(verb)`
+  resolves the projection once per request instead of once per serialized row. Tests
+  `test_pipeline.py`, `test_serializer.py`, `test_repository.py` call the methods (same
+  assertions).
+- Column building moved to its owner: `DeclaredTable.from_endpoint(cls, name, namespace)`
+  with `_field_annotations`, `_column_for`, `_is_optional`, `_auto_columns` and the
+  annotation-to-column `_TYPE_MAP` in `table_mapping.py`. `TableSource` is now an ABC holding
+  the two helpers both sources share (`_table_name`, `_strip_field_infos`); `_reflect_sync`
+  and `_reflect_async` are `ReflectedTable` static methods. `RestEndpointMeta` keeps
+  `_reject_redeclared_auto_fields`, `_parsed_meta` and `_allowed_methods` as its own
+  methods. `rest.py` has no module-level function left.
+
+Next: Step 8 (`LightApi` helpers, YAML loader onto the pydantic models, `DictConfig`).
