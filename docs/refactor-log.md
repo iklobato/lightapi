@@ -212,5 +212,16 @@ invalidate_prefix/ping`; the "Redis down" tests use a fake client raising
 fake client's `get` to return None (its truthy MagicMock only passed before because the
 `TypeError` from `json.loads` was swallowed). `[tool.mypy]` list trimmed; CHANGELOG `Removed`.
 
-Next: 5c (`Cursor` value object, `_current_page` as a method, narrow excepts in
-`pagination.py` and `filters.py`).
+### 5c. Pagination and filters
+
+`pagination.Cursor` (`@dataclass(frozen=True, slots=True)`, `last_id: int`, `encode()`,
+`Cursor.decode(text)`) replaces `encode_cursor`/`decode_cursor`; `Cursor.INVALID` names the
+exceptions a client-supplied cursor can fail with, and `CursorPaginator.paginate` catches only
+those (before: `except Exception: pass` around decode and the column lookup, which is now a
+plain `getattr(qs, "columns_clause_froms", ())`). `_current_page` (PR #46) is a static method
+of `PageNumberPaginator`. `filters.py`: SQLAlchemy imports at the top;
+`_coerce_filter_value` catches `(ValueError, AttributeError, IndexError)`. `test_paginate_async`
+reads the cursor through `Cursor.decode(...).last_id`.
+
+Next: 5d (`SessionManager.run_blocking`/`sync_engine`, repository statics), 5e (remaining
+broad excepts in `lightapi.py` and `rest.py`).

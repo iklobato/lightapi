@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from starlette.requests import Request
 
 from lightapi import LightApi, RestEndpoint, get_async_session
-from lightapi.pagination import CursorPaginator, PageNumberPaginator, decode_cursor
+from lightapi.pagination import Cursor, CursorPaginator, PageNumberPaginator
 
 ROWS = 5
 PAGE_SIZE = 2
@@ -68,4 +68,4 @@ async def test_cursor_paginate_async_full_page_returns_next_cursor(seeded_engine
         )
 
     assert [row.name for row in rows] == ["gadget-0", "gadget-1"]
-    assert decode_cursor(next_cursor) == rows[-1].id
+    assert Cursor.decode(next_cursor).last_id == rows[-1].id
