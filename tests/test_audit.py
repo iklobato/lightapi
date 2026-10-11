@@ -245,3 +245,19 @@ class TestB1SilentErrors:
         record = next(r for r in caplog.records if r.name == "lightapi.lightapi")
         assert "Table creation warning" in record.getMessage()
         assert record.exc_info and "disk full" in str(record.exc_info[1])
+
+
+class TestB4HonestTypes:
+    def test_authentication_without_backend_cannot_build_one(self):
+        """B4-005: `backend` is Optional; building from None is a configuration error."""
+        with pytest.raises(ConfigurationError, match="no backend"):
+            Authentication().build_backend()
+
+    def test_crud_on_an_unregistered_endpoint_names_the_missing_register_call(self):
+        """B4-011: `_model_class` is None until register(); the error says so."""
+
+        class AuditUnregistered(RestEndpoint):
+            title: str = LField()
+
+        with pytest.raises(RuntimeError, match="register"):
+            AuditUnregistered._model_class_or_raise()

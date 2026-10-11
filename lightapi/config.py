@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Callable
@@ -17,6 +18,7 @@ from lightapi.pagination import PaginationStyle, Paginator
 
 if TYPE_CHECKING:
     from lightapi.authentication.base import BaseAuthentication, BasePermission
+    from lightapi.filters import BaseFilter
     from lightapi.rate_limiter import RateLimiter
 
 
@@ -50,13 +52,13 @@ config = Config()
 class Authentication:
     """Authentication configuration for a RestEndpoint."""
 
-    backend: type | None = None
+    backend: type[BaseAuthentication] | None = None
     # One permission class for every method, or {"GET": ..., "DELETE": ...}.
-    permission: type | dict[str, type] | None = None
+    permission: type[BasePermission] | dict[str, type[BasePermission]] | None = None
     jwt_expiration: int | None = None
-    jwt_extra_claims: tuple[str, ...] = field(default_factory=tuple)
+    jwt_extra_claims: Sequence[str] | None = ()
     jwt_algorithm: str | None = None
-    rate_limiter: "RateLimiter | None" = field(default=None, repr=False)
+    rate_limiter: RateLimiter | None = field(default=None, repr=False)
 
     def permission_for(self, method: str) -> type[BasePermission] | None:
         """Permission class set for an HTTP method; None when none is set for it."""
@@ -81,6 +83,8 @@ class Authentication:
     def build_backend(
         self, login_validator: Callable[[str, str], Any] | None = None
     ) -> BaseAuthentication:
+        if self.backend is None:
+            raise ConfigurationError("Authentication has no backend to build.")
         return self.backend.from_config(self, login_validator)
 
 
@@ -88,10 +92,10 @@ class Authentication:
 class Filtering:
     """Filtering configuration for a RestEndpoint."""
 
-    backends: tuple[type, ...] = field(default_factory=tuple)
-    fields: tuple[str, ...] = field(default_factory=tuple)
-    search: tuple[str, ...] = field(default_factory=tuple)
-    ordering: tuple[str, ...] = field(default_factory=tuple)
+    backends: Sequence[type[BaseFilter]] | None = ()
+    fields: Sequence[str] | None = ()
+    search: Sequence[str] | None = ()
+    ordering: Sequence[str] | None = ()
 
 
 @dataclass(frozen=True)
@@ -124,7 +128,7 @@ class Cache:
     ttl: int = DEFAULT_CACHE_TTL
     vary_on: tuple[str, ...] = field(default_factory=tuple)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.ttl < 1:
             raise ConfigurationError("Cache ttl must be a positive integer (seconds).")
 
