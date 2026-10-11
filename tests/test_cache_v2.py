@@ -141,5 +141,5 @@ class TestCacheVaryOn:
                 c.get("/cached_vary?page=1")
                 c.get("/cached_vary?page=2")
                 keys = [c[0][0] for c in mock_set.call_args_list]
-                if len(keys) >= 2:
-                    assert keys[0] != keys[1]
+                assert len(keys) == 2
+                assert keys[0] != keys[1]
