@@ -37,6 +37,7 @@ from sqlalchemy import inspect as sa_inspect
 
 from lightapi.constants import AUTO_FIELDS, TableReflection
 from lightapi.exceptions import ConfigurationError
+from lightapi.repository import Repository
 from lightapi.schema import SchemaFactory
 
 if TYPE_CHECKING:
@@ -192,12 +193,12 @@ class DeclaredTable(TableSource):
         """id, created_at, updated_at and version, present in every declared table."""
         return [
             Column("id", Integer, primary_key=True, autoincrement=True),
-            Column("created_at", DateTime, default=datetime.datetime.utcnow),
+            Column("created_at", DateTime, default=Repository.utcnow),
             Column(
                 "updated_at",
                 DateTime,
-                default=datetime.datetime.utcnow,
-                onupdate=datetime.datetime.utcnow,
+                default=Repository.utcnow,
+                onupdate=Repository.utcnow,
             ),
             Column("version", Integer, default=1, nullable=False),
         ]

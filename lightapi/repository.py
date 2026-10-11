@@ -50,8 +50,8 @@ class Repository:
         return cls._MIN_PK <= pk <= cls._MAX_PK
 
     @staticmethod
-    def _utcnow() -> datetime.datetime:
-        """Naive UTC, which is what the DateTime columns store."""
+    def utcnow() -> datetime.datetime:
+        """Naive UTC, which is what the DateTime columns store and default to."""
         return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
     @property
@@ -77,7 +77,7 @@ class Repository:
         return row
 
     def add(self, values: dict[str, Any]) -> Any:
-        now = self._utcnow()
+        now = self.utcnow()
         row = self._model(
             **values, created_at=now, updated_at=now, version=FIRST_VERSION
         )
@@ -94,7 +94,7 @@ class Repository:
         result = self._session.execute(
             update(model)
             .where(model.id == pk, model.version == expected_version)
-            .values(**values, version=expected_version + 1, updated_at=self._utcnow())
+            .values(**values, version=expected_version + 1, updated_at=self.utcnow())
         )
         if result.rowcount == 0:
             exists = self._session.execute(
