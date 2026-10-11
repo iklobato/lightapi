@@ -247,7 +247,7 @@ class MetaConfig(BaseModel):
     serializer: SerializerConfig | None = None
     table: str | None = None  # custom table name (required when reflect: true)
 
-    def build_meta_class(self, defaults: DefaultsConfig, reflect: bool) -> type:
+    def build_meta_class(self, defaults: DefaultsConfig, *, reflect: bool) -> type:
         """The ``Meta`` inner class of the endpoint this block describes."""
         attrs: dict[str, Any] = {}
 

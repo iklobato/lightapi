@@ -262,7 +262,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         )
 
     def _update(
-        self, session: Session, data: dict[str, Any], pk: int, partial: bool
+        self, session: Session, data: dict[str, Any], pk: int, *, partial: bool
     ) -> Response:
         """PUT/PATCH; the client must send the ``version`` it last read."""
         client_version = data.get("version")
@@ -277,7 +277,9 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
         repository = self._repository(session)
         try:
-            values = self._update_values(data, partial, repository.nullable_columns)
+            values = self._update_values(
+                data, repository.nullable_columns, partial=partial
+            )
         except ValidationError as exc:
             return ApiError.validation_failed(exc.errors())
 
@@ -288,7 +290,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         return JSONResponse(self._serialize_row(row, self._fields_for(HttpVerb.PUT)))
 
     def _update_values(
-        self, data: dict[str, Any], partial: bool, nullable_columns: set[str]
+        self, data: dict[str, Any], nullable_columns: set[str], *, partial: bool
     ) -> dict[str, Any]:
         """Validated column values for an update, without the auto-managed fields."""
         schema_create = type(self).__schema_create__
@@ -334,7 +336,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     def update(self, data: dict[str, Any], pk: int, partial: bool = False) -> Response:
         """Handle PUT/PATCH /{path}/{id} with optimistic locking."""
         with get_sync_session(self._get_engine()) as session:
-            return self._update(session, data, pk, partial)
+            return self._update(session, data, pk, partial=partial)
 
     def destroy(self, request: Request, pk: int) -> Response:
         """Handle DELETE /{path}/{id}."""
@@ -371,7 +373,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         self, data: dict[str, Any], pk: int, partial: bool = False
     ) -> Response:
         return await self._in_async_session(
-            lambda s: self._update(s, data, pk, partial)
+            lambda s: self._update(s, data, pk, partial=partial)
         )
 
     async def _destroy_async(self, request: Request, pk: int) -> Response:
