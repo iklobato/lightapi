@@ -97,8 +97,10 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_startup` handler; same moment, no deprecation warning. `created_at`/`updated_at`
   column defaults no longer use the deprecated `datetime.utcnow()`; the stored value is the
   same naive UTC.
-- **The container HEALTHCHECK probes `/healthz`**: it hit `/`, which is a 404 on every
-  LightAPI app, so `docker inspect` reported every healthy container as unhealthy.
+- **The container HEALTHCHECK probes `/healthz` over a raw socket**: it hit `/`, which is a
+  404 on every LightAPI app, so `docker inspect` reported every healthy container as
+  unhealthy. The probe also stops importing `urllib.request`, which alone took 1.8 to 2.9 s
+  inside the image on Docker Desktop and blew the 3 s timeout; the socket probe takes 0.7 s.
 - **`Field(decimal_places=N)` is enforced**: a `Decimal` with more than N decimal places
   is a 422. Before, the option reached neither pydantic nor the DDL (`Numeric(scale=N)`
   without a precision renders as plain `NUMERIC` on every dialect), so "1.999" was stored
