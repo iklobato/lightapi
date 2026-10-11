@@ -21,7 +21,7 @@ from lightapi.authentication import (
     BasicAuthentication,
     JWTAuthentication,
 )
-from lightapi.constants import HttpVerb
+from lightapi.constants import ExecutionMode, HttpVerb
 from lightapi.endpoint_handler import AppContext, EndpointHandler
 from lightapi.exceptions import ConfigurationError
 from lightapi.health import HEALTH_PATH, HealthCheckEndpoint
@@ -68,7 +68,7 @@ class LightApi:
         use_test_isolation: bool = False,
     ) -> None:
         self._engine = engine if engine is not None else _engine_from_url(database_url)
-        self._mode = _checked_mode(mode)
+        self._mode = ExecutionMode.from_user(mode)
         self._session_manager = session_manager or SessionManager(
             self._engine, use_test_isolation=use_test_isolation
         )
@@ -96,14 +96,14 @@ class LightApi:
             _require_rest_endpoint(path, cls)
 
         # An `async def` verb or queryset on any endpoint switches the app to async.
-        if self._mode == "sync" and any(map(_has_async_handlers, mapping.values())):
-            self._mode = "async"
-        if self._mode == "async":
+        if self._mode is ExecutionMode.SYNC and any(
+            map(_has_async_handlers, mapping.values())
+        ):
+            self._mode = ExecutionMode.ASYNC
+        if self._mode is ExecutionMode.ASYNC:
             _require_async_engine(self._engine)
 
-        app_context = AppContext(
-            self._middlewares, self._mode == "async", self._login_validator
-        )
+        app_context = AppContext(self._middlewares, self._mode, self._login_validator)
         for path, cls in mapping.items():
             self._register_endpoint(path, cls, app_context)
 
@@ -173,7 +173,7 @@ class LightApi:
         reload: bool = False,
     ) -> None:
         """Create tables, build the Starlette ASGI app and start uvicorn."""
-        if self._mode == "async":
+        if self._mode is ExecutionMode.ASYNC:
             _validate_async_dependencies(self._engine)
         uvicorn.run(
             self.build_app(debug=debug),
@@ -192,7 +192,7 @@ class LightApi:
         """
         self._create_tables()
         self._check_cache_connections()
-        on_startup = [self._create_tables] if self._mode == "async" else []
+        on_startup = [self._create_tables] if self._mode is ExecutionMode.ASYNC else []
         app = Starlette(debug=debug, routes=self._asgi_routes(), on_startup=on_startup)
         if self._cors_origins:
             app.add_middleware(
@@ -274,7 +274,7 @@ class LightApi:
         logger.debug("_create_tables called with metadata: %s", metadata)
         logger.debug("Available tables in metadata: %s", list(metadata.tables.keys()))
         try:
-            if self._mode == "async":
+            if self._mode is ExecutionMode.ASYNC:
                 # For async engines, table creation must run inside the same event loop
                 # that will serve requests (uvicorn's loop), so we defer it to on_startup
                 # unless we are already inside a running loop (pytest-asyncio).
@@ -329,15 +329,6 @@ def _engine_from_url(database_url: str | None) -> Any:
             "LIGHTAPI_DATABASE_URL environment variable."
         )
     return create_engine(url)
-
-
-def _checked_mode(mode: str | None) -> str:
-    """'sync' unless told otherwise; register() may still switch it to 'async'."""
-    if mode is None:
-        return "sync"
-    if mode not in ("sync", "async"):
-        raise ConfigurationError(f"mode must be 'sync' or 'async', got '{mode}'")
-    return mode
 
 
 def _as_rate_limiter(value: RateLimiter | dict[str, int] | None) -> RateLimiter | None:

@@ -15,7 +15,7 @@ from starlette.responses import JSONResponse, Response
 
 from lightapi.auth_checker import EndpointGuard
 from lightapi.cache_helper import ResponseCache
-from lightapi.constants import HttpVerb, ResponseKey
+from lightapi.constants import ExecutionMode, HttpVerb, ResponseKey
 from lightapi.middleware_runner import run_post_middlewares, run_pre_middlewares
 from lightapi.rest import RestEndpoint
 from lightapi.session import run_blocking
@@ -29,7 +29,7 @@ class AppContext:
     """What every handler of one LightApi app shares."""
 
     middlewares: list[type]
-    is_async: bool
+    mode: ExecutionMode
     login_validator: LoginValidator | None = None
 
 
@@ -98,7 +98,7 @@ class EndpointHandler:
         self._endpoint_cls = endpoint_cls
         self._verbs = verbs
         self._middlewares = app.middlewares
-        self._is_async = app.is_async
+        self._mode = app.mode
         self._guard = EndpointGuard(
             endpoint_cls._meta.get("authentication"), app.login_validator
         )
@@ -160,7 +160,7 @@ class EndpointHandler:
         if inspect.isfunction(override):
             return await self._call_override(override, endpoint, request)
 
-        if self._is_async:
+        if self._mode is ExecutionMode.ASYNC:
             crud_async = getattr(endpoint, verb.async_name)
             if verb.cached:
                 return await ResponseCache(self._endpoint_cls).serve_async(
@@ -180,7 +180,7 @@ class EndpointHandler:
     ) -> Any:
         if asyncio.iscoroutinefunction(override):
             return await override(endpoint, request)
-        if self._is_async:
+        if self._mode is ExecutionMode.ASYNC:
             # Gives a sync override the greenlet context that endpoint.list() and
             # friends need to reach an async driver.
             return await endpoint._in_async_session(

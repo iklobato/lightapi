@@ -1,6 +1,28 @@
 from enum import Enum
 from typing import Final
 
+from lightapi.exceptions import ConfigurationError
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Execution mode (sync Engine or AsyncEngine)
+# ─────────────────────────────────────────────────────────────────────────
+class ExecutionMode(str, Enum):
+    SYNC = "sync"
+    ASYNC = "async"
+
+    @classmethod
+    def from_user(cls, mode: "str | None") -> "ExecutionMode":
+        """The mode named by LightApi(mode=...); 'sync' when none is given."""
+        if mode is None:
+            return cls.SYNC
+        try:
+            return cls(mode)
+        except ValueError:
+            raise ConfigurationError(
+                f"mode must be 'sync' or 'async', got '{mode}'"
+            ) from None
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # Response Keys
