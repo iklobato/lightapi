@@ -142,6 +142,10 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   may keep an async validator (only the login route calls it, and that one awaits).
 - **An integer filter value beyond 64 bits is a 422** (`?pages=99999999999999999999`),
   like any other value the column cannot hold. It was an `OverflowError` 500 on SQLite.
+- **Async reflection no longer leaves a connection bound to a dead loop in the pool**:
+  `Meta.reflect` on an `AsyncEngine` reflects on a loop of its own at `register()` and now
+  disposes the pool afterwards (not for an in-memory SQLite `StaticPool`, which holds the
+  database), so asyncpg's first request no longer finds a connection from another loop.
 - **`mode="async"` works from a database URL**: `LightApi(database_url=..., mode="async")`
   and a YAML document with `mode: async` build an `AsyncEngine`, so `lightapi serve` can
   start an async app. Before, both failed at `register()` with "requires AsyncEngine". A

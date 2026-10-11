@@ -36,6 +36,7 @@ from sqlalchemy import (
     Uuid,
 )
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.pool import StaticPool
 
 from lightapi.constants import AUTO_FIELDS, TableReflection
 from lightapi.exceptions import ConfigurationError
@@ -280,6 +281,12 @@ class ReflectedTable(TableSource):
         async def async_reflect() -> None:
             async with engine.connect() as conn:
                 await conn.run_sync(do_reflect)
+            # This runs on a loop of its own, so the connection would go back to
+            # the pool bound to a loop that is about to close and asyncpg refuses
+            # it on the first request (the B7-003 mechanism). A StaticPool is the
+            # one in-memory connection: disposing it would drop the database.
+            if not isinstance(engine.pool, StaticPool):
+                await engine.dispose()
 
         try:
             asyncio.get_running_loop()

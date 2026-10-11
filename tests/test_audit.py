@@ -815,6 +815,43 @@ class TestReviewFilterIntegerRange:
         assert response.json()["detail"][0]["loc"] == ["query", "pages"]
 
 
+class TestReviewAsyncReflectionPool:
+    """B7-004: async reflection at register() ran on a throwaway loop and left that
+    connection in the pool, bound to a loop that no longer exists; asyncpg refuses
+    it on the first request that draws it (same mechanism as B7-003; review minor 11).
+    """
+
+    def test_async_reflection_leaves_no_connection_in_the_pool(self, tmp_path):
+        path = tmp_path / "reflected.sqlite"
+        metadata = MetaData()
+        Table(
+            "audit_async_reflected",
+            metadata,
+            Column("id", Integer, primary_key=True, autoincrement=True),
+            Column("title", String, nullable=False),
+            Column("created_at", DateTime),
+            Column("updated_at", DateTime),
+            Column("version", Integer, nullable=False, default=1),
+        )
+        sync_engine = create_engine(f"sqlite:///{path}")
+        metadata.create_all(sync_engine)
+        sync_engine.dispose()
+        engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
+
+        class AuditAsyncReflected(RestEndpoint):
+            class Meta:
+                table = "audit_async_reflected"
+                reflect = True
+
+        app = LightApi(engine=engine, mode="async")
+        app.register({"/asyncreflected": AuditAsyncReflected})
+
+        assert engine.pool.checkedin() == 0
+        with TestClient(app.build_app()) as client:
+            assert client.get("/asyncreflected").status_code == 200
+            client.portal.call(engine.dispose)
+
+
 class TestYamlUnknownKeys:
     """A key the YAML format does not know is a ConfigurationError naming it, not a
     silently ignored block; found by e2e scenario 12 (`defaults.filtering`)."""

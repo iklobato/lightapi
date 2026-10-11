@@ -27,7 +27,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B4 lying types | 12 | 12 | 0 | 0 | 0 |
 | B5 per-request checks | 9 | 3 | 6 | 0 | 0 |
 | B6 silently disabled features | 7 | 5 | 0 | 2 | 0 |
-| B7 blocking in async | 3 | 1 | 0 | 2 | 0 |
+| B7 blocking in async | 4 | 2 | 0 | 2 | 0 |
 | B8 hidden mutation / globals | 5 | 1 | 4 | 0 | 0 |
 | B9 dispatch by name | 5 | 3 | 2 | 0 | 0 |
 | B10 time and formats | 3 | 2 | 1 | 0 | 0 |
@@ -37,7 +37,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B14 logs and warnings | 9 | 8 | 1 | 0 | 0 |
 | B15 hidden YAGNI | 5 | 3 | 1 | 1 | 0 |
 | B16 tests that do not protect | 5 | 2 | 3 | 0 | 0 |
-| **Total** | **129** | **63** | **56** | **10** | **0** |
+| **Total** | **130** | **64** | **56** | **10** | **0** |
 
 ## Phase 0: baseline
 
@@ -141,7 +141,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B1-018 | B1 | `lightapi/cache.py:49` | `redis.from_url` failure (bad URL) returns no client, silently, forever | corrigir with B1-005 (log once per call) | corrigido | `4171583` |
 | B1-019 | B1 | `lightapi/repository.py:85,99` | `IntegrityError` from a `unique=True` column (or any constraint) escaped `Repository.add()`/`update()`: a duplicate value was an unhandled 500 with a traceback and the session was left in the failed state. e2e scenario 17 planned the case | corrigido: the repository rolls back and raises `ConstraintViolation`; POST, PUT and PATCH answer `409 {"detail": "constraint violation"}`, sync and async (`tests/test_constraints.py`). The whole-branch review found `delete()` still unwrapped (a DELETE of a referenced row was a 500 while the docs already promised the 409) and the refusal swallowed without a trace: `delete()` is wrapped too and every refusal is logged at INFO with the table and the driver's text | corrigido | `732c248`, `39ab9fc` |
 | B1-020 | B1 | `lightapi/lightapi.py:403`, `lightapi/yaml_config.py:485` | Two error paths this branch added printed the database password: the async-driver `ConfigurationError` (B6-001) echoed the raw URL, and the YAML load error (B2-012) printed pydantic's text, whose `input_value=` holds the rejected block, so `databse:` or `database: {password: ...}` leaked into container and CI logs; found by the whole-branch review | corrigido: the URL is rendered with `make_url(url).render_as_string(hide_password=True)` and the YAML error is built from `exc.errors(include_input=False, include_url=False)` as location and message only (`tests/test_audit.py::TestReviewSecretsStayOutOfErrors`) | corrigido | `1cf48b3` |
-| B1-021 | B1 | `lightapi/filters.py:86` | An integer filter value beyond 64 bits (`?pages=99999999999999999999`) passed `int()` and reached the driver: `OverflowError` 500 on SQLite, the same class as B1-008; whole-branch review minor 9 | corrigido: the coerced value must sit in the `INT64_MIN..INT64_MAX` range (`lightapi/constants.py`, shared with the repository's pk check) or it is the same 422 (`tests/test_audit.py::TestReviewFilterIntegerRange`, e2e scenario 06) | corrigido | `see git log: fix(B1-021)` |
+| B1-021 | B1 | `lightapi/filters.py:86` | An integer filter value beyond 64 bits (`?pages=99999999999999999999`) passed `int()` and reached the driver: `OverflowError` 500 on SQLite, the same class as B1-008; whole-branch review minor 9 | corrigido: the coerced value must sit in the `INT64_MIN..INT64_MAX` range (`lightapi/constants.py`, shared with the repository's pk check) or it is the same 422 (`tests/test_audit.py::TestReviewFilterIntegerRange`, e2e scenario 06) | corrigido | `c0113a9` |
 | B2-001 | B2 | `lightapi/filters.py:71,97,125` | `getattr(view, "_meta", {})` on a view that is always a `RestEndpoint` (has `_meta`) | corrigir: `view._meta.get("filtering")` | corrigido | `5e91407` |
 | B2-002 | B2 | `lightapi/lightapi.py:324` | `getattr(cls, "_meta", {})` on a registered endpoint (validated by `_require_rest_endpoint`) | corrigir: `cls._meta` | corrigido | `5e91407` |
 | B2-003 | B2 | `lightapi/rest.py:171` | `getattr(type(self), "_session_manager", None)` | corrigir: declare `_session_manager: ClassVar[SessionManager | corrigido | `5e91407` | |
@@ -190,6 +190,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B7-001 | B7 | `lightapi/endpoint_handler.py:92` | `EndpointGuard.check` runs `backend.authenticate` on the event loop; a Basic validator that queries a database blocks the loop | propor: run sync backends through `run_blocking` (invisible when the validator is thread-safe; breaks validators bound to a `StaticPool` SQLite) | proposta | |
 | B7-002 | B7 | `lightapi/_login.py:116` | A sync `login_validator` runs on the event loop | propor: same as B7-001 | proposta | |
 | B7-003 | B7 | `lightapi/lightapi.py:308-318`, `table_mapping.py:237-249` | `asyncio.run` on a worker thread while a loop is running (bug B19, both versions); e2e scenario 02 on asyncpg failed its first POST with "Future attached to a different loop" | corrigido for a served app: the lifespan awaits `create_all` on the serving loop; `build_app()` inside an already running loop (pytest-asyncio) and async reflection keep the worker thread, documented in the CHANGELOG | corrigido | `1758f90` |
+| B7-004 | B7 | `lightapi/table_mapping.py:280` | `Meta.reflect` on an `AsyncEngine` reflects with `asyncio.run()` at `register()`, before the serving loop exists, and the connection went back to the pool bound to that closed loop: asyncpg refuses it on the first request that draws it (the B7-003 mechanism); whole-branch review minor 11, unverified there | corrigido: the engine is disposed after the reflection unless its pool is a `StaticPool` (the one in-memory SQLite connection, which holds the database); pinned by `tests/test_audit.py::TestReviewAsyncReflectionPool` (file-based aiosqlite: the pool is empty after `register()` and the app serves) | corrigido | `see git log: fix(B7-004)` |
 | B8-001 | B8 | `lightapi/config.py:116` | `object.__setattr__` on the frozen `Pagination` | corrigir with B4-004: no mutation | corrigido | `07b83af` |
 | B8-002 | B8 | `lightapi/config.py:54` | Module global `config = Config()`, read per request by the FROZEN `JWTAuthentication` | manter: documented as `lightapi.config.config` | justificado | |
 | B8-003 | B8 | `lightapi/session_manager.py:66` | Module global `_state` (metadata + registry) | manter: SQLAlchemy needs one registry per process; `reset()` is the documented hook for tests | justificado | |
