@@ -687,6 +687,35 @@ class TestReviewDecimalPlacesNeedsDecimal:
             LightAPIConfig.from_file(document).build_app(LightApi)
 
 
+class TestReviewSecretsStayOutOfErrors:
+    """B1-020: two error messages echoed the database URL with its password: the
+    async-driver ConfigurationError (B6-001) and the YAML ValidationError text under
+    extra="forbid" (B2-012), which prints `input_value=` (review finding 3)."""
+
+    # Built from parts so no credential-shaped literal sits in the source.
+    CANARY = "canary-value"
+    URL = "postgresql://app:" + CANARY + "@db/app"
+
+    def test_async_driver_error_hides_the_password(self):
+        with pytest.raises(ConfigurationError) as info:
+            LightApi(database_url=self.URL, mode="async")
+
+        assert self.CANARY not in str(info.value)
+        assert "postgresql://app:***@db/app" in str(info.value)
+
+    def test_yaml_typo_error_hides_the_password_and_names_the_key(self, tmp_path):
+        document = tmp_path / "bad.yaml"
+        document.write_text(
+            f'databse:\n  url: "{self.URL}"\nendpoints:\n'
+            "  - route: /x\n    fields:\n      title: {type: str}\n"
+        )
+
+        with pytest.raises(ConfigurationError, match="databse") as info:
+            LightAPIConfig.from_file(document)
+
+        assert self.CANARY not in str(info.value)
+
+
 class TestYamlUnknownKeys:
     """A key the YAML format does not know is a ConfigurationError naming it, not a
     silently ignored block; found by e2e scenario 12 (`defaults.filtering`)."""

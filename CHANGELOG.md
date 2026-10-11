@@ -120,6 +120,11 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   session usable. It was an unhandled 500. The server logs the table and the driver's
   text at INFO, because a NOT NULL or CHECK failure usually means the schema and the
   table disagree.
+- **Error messages never echo the database password**: the `ConfigurationError` for a
+  URL without an async driver renders the URL with the password masked, and the YAML
+  load error lists each problem as location and message only, so a typo like `databse:`
+  no longer prints the block it rejected (which held the URL, or `password:`) into the
+  logs.
 - **A YAML key the format does not know fails at load time**: `defaults.filtering`,
   `meta.paginate` or a misspelt top-level key now raise `ConfigurationError` naming the
   key, as the configuration guide promises. Before, pydantic dropped the key and the app

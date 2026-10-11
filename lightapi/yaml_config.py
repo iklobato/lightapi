@@ -481,8 +481,15 @@ class LightAPIConfig(_Document):
         try:
             return cls.model_validate(raw)
         except ValidationError as exc:
+            # Location and message only: pydantic's own text prints the input,
+            # and under a typo like `databse:` that input is the database URL.
+            problems = "\n".join(
+                f"  {'.'.join(str(part) for part in error['loc']) or '<root>'}: "
+                f"{error['msg']}"
+                for error in exc.errors(include_input=False, include_url=False)
+            )
             raise ConfigurationError(
-                f"Invalid lightapi.yaml — {exc.error_count()} error(s):\n{exc}"
+                f"Invalid lightapi.yaml — {exc.error_count()} error(s):\n{problems}"
             ) from exc
 
     def build_app(

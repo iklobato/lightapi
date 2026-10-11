@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 import uvicorn
 from sqlalchemy import Engine, MetaData, create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import InvalidRequestError, SQLAlchemyError
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
@@ -406,9 +407,10 @@ class LightApi:
         try:
             return create_async_engine(url)
         except InvalidRequestError as exc:
+            shown = make_url(url).render_as_string(hide_password=True)
             raise ConfigurationError(
                 "mode='async' needs an async driver in the database URL "
-                f"(sqlite+aiosqlite://, postgresql+asyncpg://), got '{url}'."
+                f"(sqlite+aiosqlite://, postgresql+asyncpg://), got '{shown}'."
             ) from exc
 
     @staticmethod
