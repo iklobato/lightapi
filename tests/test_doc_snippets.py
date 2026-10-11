@@ -74,14 +74,14 @@ def test_every_python_fence_parses_or_is_a_known_fragment(page):
     for index, block in enumerate(_python_fences(page)):
         try:
             ast.parse(block)
-        except SyntaxError as exc:
+        except SyntaxError as exc:  # noqa: PERF203  one parse per fence
             if (page, index) not in KNOWN_FRAGMENTS:
                 failures.append(f"fence #{index}: {exc}")
     assert not failures, f"{page}: unexpected syntax errors: {failures}"
 
 
 def _run_script(script_path: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
+    return subprocess.run(  # noqa: S603  the snippet under test, fixed argv
         [sys.executable, str(script_path)], capture_output=True, text=True, timeout=15
     )
 
@@ -97,7 +97,7 @@ def _run_as_pytest(
     )
     script = tmp_path / script_name
     script.write_text(source, encoding="utf-8")
-    return subprocess.run(
+    return subprocess.run(  # noqa: S603  the snippet under test, fixed argv
         [sys.executable, "-m", "pytest", str(script), "-q"],
         capture_output=True,
         text=True,

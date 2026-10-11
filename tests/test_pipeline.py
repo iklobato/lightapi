@@ -1,5 +1,7 @@
 """Tests for the serialization pipeline helpers."""
 
+from typing import ClassVar
+
 import pytest
 
 from lightapi.exceptions import SerializationError
@@ -13,7 +15,7 @@ class TestRowToDict:
 
     def test_row_mapping(self):
         class FakeRow:
-            _mapping = {"id": 1, "name": "test"}
+            _mapping: ClassVar[dict] = {"id": 1, "name": "test"}
 
         result = SchemaFactory.row_to_dict(FakeRow())
         assert result == {"id": 1, "name": "test"}

@@ -12,7 +12,6 @@ not a regression; this file works around it instead of triggering it.
 
 import asyncio
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID
 
 import pytest
@@ -31,9 +30,9 @@ class PgaBook(RestEndpoint):
     title: str = Field(min_length=1, max_length=50)
     pages: int = Field(ge=1)
     price: Decimal = Field(decimal_places=2)
-    rating: Optional[float] = Field(default=None)
+    rating: float | None = Field(default=None)
     in_print: bool = Field(default=True)
-    uid: Optional[UUID] = Field(default=None)
+    uid: UUID | None = Field(default=None)
 
 
 @pytest.fixture

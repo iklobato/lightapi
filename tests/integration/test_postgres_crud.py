@@ -1,7 +1,6 @@
 """T3-01: sync CRUD against a real Postgres engine, real connection pool."""
 
 from decimal import Decimal
-from typing import Optional
 
 import pytest
 from sqlalchemy import text
@@ -19,7 +18,7 @@ class PgBook(RestEndpoint):
     title: str = Field(min_length=1, max_length=50)
     pages: int = Field(ge=1)
     price: Decimal = Field(decimal_places=2)
-    rating: Optional[float] = Field(default=None)
+    rating: float | None = Field(default=None)
     in_print: bool = Field(default=True)
 
 

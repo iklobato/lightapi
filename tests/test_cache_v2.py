@@ -51,21 +51,23 @@ def client():
 class TestCacheGetList:
     def test_cache_get_list_returns_cached_on_second_request(self, client):
         """First GET hits DB, second GET returns cached (when get_cached returns data)."""
-        with patch("lightapi.cache.RedisCacheBackend.get") as mock_get:
-            with patch("lightapi.cache.RedisCacheBackend.set") as mock_set:
-                mock_get.return_value = None  # First call: cache miss
-                resp1 = client.get("/cached")
-                assert resp1.status_code == 200
-                mock_set.assert_called_once()
+        with (
+            patch("lightapi.cache.RedisCacheBackend.get") as mock_get,
+            patch("lightapi.cache.RedisCacheBackend.set") as mock_set,
+        ):
+            mock_get.return_value = None  # First call: cache miss
+            resp1 = client.get("/cached")
+            assert resp1.status_code == 200
+            mock_set.assert_called_once()
 
-                mock_get.return_value = {"results": [{"id": 1, "name": "cached"}]}
-                mock_get.reset_mock()
-                mock_set.reset_mock()
-                resp2 = client.get("/cached")
-                assert resp2.status_code == 200
-                assert resp2.json()["results"][0]["name"] == "cached"
-                mock_get.assert_called()
-                mock_set.assert_not_called()
+            mock_get.return_value = {"results": [{"id": 1, "name": "cached"}]}
+            mock_get.reset_mock()
+            mock_set.reset_mock()
+            resp2 = client.get("/cached")
+            assert resp2.status_code == 200
+            assert resp2.json()["results"][0]["name"] == "cached"
+            mock_get.assert_called()
+            mock_set.assert_not_called()
 
 
 class TestCacheInvalidation:
@@ -99,16 +101,18 @@ class TestCacheInvalidation:
 class TestCacheRedisUnreachable:
     def test_cache_redis_unreachable_startup_warning(self):
         """When Redis unreachable and cache configured, RuntimeWarning emitted at startup."""
-        with patch("lightapi.cache.RedisCacheBackend.ping", return_value=False):
-            with pytest.warns(RuntimeWarning, match="Redis|Cache"):
-                engine = create_engine(
-                    "sqlite:///:memory:",
-                    connect_args={"check_same_thread": False},
-                    poolclass=StaticPool,
-                )
-                app = LightApi(engine=engine)
-                app.register({"/cached": CachedEndpoint})
-                app.build_app()
+        with (
+            patch("lightapi.cache.RedisCacheBackend.ping", return_value=False),
+            pytest.warns(RuntimeWarning, match="Redis|Cache"),
+        ):
+            engine = create_engine(
+                "sqlite:///:memory:",
+                connect_args={"check_same_thread": False},
+                poolclass=StaticPool,
+            )
+            app = LightApi(engine=engine)
+            app.register({"/cached": CachedEndpoint})
+            app.build_app()
 
     def test_cache_redis_unreachable_mid_request_serves_db(self, client):
         """When the Redis client raises, GET still returns 200 from DB."""
@@ -135,11 +139,13 @@ class TestCacheVaryOn:
         c = TestClient(app.build_app())
         c.post("/cached_vary", json={"label": "x"})
 
-        with patch("lightapi.cache.RedisCacheBackend.get") as mock_get:
-            with patch("lightapi.cache.RedisCacheBackend.set") as mock_set:
-                mock_get.return_value = None
-                c.get("/cached_vary?page=1")
-                c.get("/cached_vary?page=2")
-                keys = [c[0][0] for c in mock_set.call_args_list]
-                assert len(keys) == 2
-                assert keys[0] != keys[1]
+        with (
+            patch("lightapi.cache.RedisCacheBackend.get") as mock_get,
+            patch("lightapi.cache.RedisCacheBackend.set") as mock_set,
+        ):
+            mock_get.return_value = None
+            c.get("/cached_vary?page=1")
+            c.get("/cached_vary?page=2")
+            keys = [c[0][0] for c in mock_set.call_args_list]
+            assert len(keys) == 2
+            assert keys[0] != keys[1]

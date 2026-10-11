@@ -501,7 +501,7 @@ class TestBasicHeaderEdgeCases:
         app = LightApi(engine=engine, login_validator=validator_unicode)
         app.register({"/x": JWTProtectedEndpoint})
         client = TestClient(app.build_app())
-        creds = base64.b64encode("josé:contraseña".encode("utf-8")).decode()
+        creds = base64.b64encode("josé:contraseña".encode()).decode()
         resp = client.post(
             "/auth/login",
             headers={"Authorization": f"Basic {creds}"},

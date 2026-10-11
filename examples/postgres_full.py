@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 from pydantic import Field
 from sqlalchemy import select
@@ -42,6 +41,8 @@ DATABASE_URL = os.getenv(
     "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres",
 )
 
+logger = logging.getLogger(__name__)
+
 # ── Tracking list for background tasks (demo) ────────────────────────────────
 _audit_log: list[dict] = []
 
@@ -49,7 +50,7 @@ _audit_log: list[dict] = []
 async def _audit(action: str, table: str, row_id: int) -> None:
     """Simulated async background audit logger."""
     _audit_log.append({"action": action, "table": table, "id": row_id})
-    logging.info("AUDIT: %s %s id=%s", action, table, row_id)
+    logger.info("AUDIT: %s %s id=%s", action, table, row_id)
 
 
 # ── Middleware ────────────────────────────────────────────────────────────────
@@ -60,8 +61,8 @@ class RequestLogMiddleware(Middleware):
 
     def process(self, request: Request, response: Response | None) -> None:
         if response is None:
-            logging.info("→ %s %s", request.method, request.url.path)
-        return None
+            logger.info("→ %s %s", request.method, request.url.path)
+        return
 
 
 class TimingMiddleware(Middleware):
@@ -70,7 +71,7 @@ class TimingMiddleware(Middleware):
     async def process(self, request: Request, response: Response | None) -> None:
         if response is not None:
             response.headers["X-Powered-By"] = "LightAPI-async"
-        return None
+        return
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -80,7 +81,7 @@ class Author(RestEndpoint):
     """Public author resource — AllowAny, paginated, filterable, serialized."""
 
     name: str = Field(min_length=1, max_length=200)
-    bio: Optional[str] = Field(default=None)
+    bio: str | None = Field(default=None)
     active: bool = Field(default=True)
 
     class Meta:
@@ -117,7 +118,7 @@ class Book(RestEndpoint):
 
     title: str = Field(min_length=1, max_length=300)
     author_id: int = Field(gt=0)
-    isbn: Optional[str] = Field(default=None, max_length=20)
+    isbn: str | None = Field(default=None, max_length=20)
     published: bool = Field(default=False)
     page_count: int = Field(default=0, ge=0)
 

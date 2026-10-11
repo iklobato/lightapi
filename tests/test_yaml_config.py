@@ -3,6 +3,7 @@
 import os
 import tempfile
 import textwrap
+from pathlib import Path
 
 import pytest
 import yaml
@@ -47,7 +48,7 @@ def _from_str(content: str, login_validator=None) -> LightApi:
             kwargs["login_validator"] = _default_login_validator
         return LightApi.from_config(path, **kwargs)
     finally:
-        os.unlink(path)
+        Path(path).unlink()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -59,10 +60,10 @@ class TestSchemaValidation:
     def test_invalid_yaml_syntax_raises(self):
         path = _write_yaml("invalid: yaml: content: [")
         try:
-            with pytest.raises(Exception):
+            with pytest.raises(yaml.YAMLError):
                 LightApi.from_config(path)
         finally:
-            os.unlink(path)
+            Path(path).unlink()
 
     def test_endpoint_without_route_raises(self):
         # Direct model_validate raises pydantic ValidationError;
@@ -85,7 +86,7 @@ class TestSchemaValidation:
             with pytest.raises(ConfigurationError, match="LIGHTAPI_DB_MISSING_XTEST"):
                 LightApi.from_config(path)
         finally:
-            os.unlink(path)
+            Path(path).unlink()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -305,7 +306,7 @@ class TestDeclarativeFormat:
             app = LightApi.from_config(path, engine=custom_engine)
             assert app._engine is custom_engine
         finally:
-            os.unlink(path)
+            Path(path).unlink()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -455,7 +456,7 @@ class TestYamlAuthConfig:
             with pytest.raises(ConfigurationError, match="login_validator"):
                 LightApi.from_config(path)
         finally:
-            os.unlink(path)
+            Path(path).unlink()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

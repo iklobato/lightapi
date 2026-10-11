@@ -38,7 +38,6 @@ Generate an admin JWT (for IsAdminUser endpoints):
 import json
 import os
 import time
-from typing import Optional
 
 from sqlalchemy import create_engine
 from sqlalchemy import select as sa_select
@@ -89,7 +88,7 @@ class AuditMiddleware(Middleware):
         )
         try:
             body = json.loads(response.body)
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
             # 204 No Content or non-JSON — passthrough
             return response
         return JSONResponse(
@@ -169,7 +168,7 @@ class AuthorEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
     All requests require a valid JWT (IsAuthenticated)."""
 
     name: str = Field(min_length=1, max_length=150)
-    bio: Optional[str] = None
+    bio: str | None = None
 
     class Meta:
         authentication = Authentication(

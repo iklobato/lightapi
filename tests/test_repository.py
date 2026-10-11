@@ -56,35 +56,30 @@ def test_update_at_stale_version_raises_conflict_and_keeps_the_row(engine):
 
 
 def test_update_of_missing_row_raises_not_found(engine):
-    with get_sync_session(engine) as session:
-        with pytest.raises(RowNotFound):
-            Repository(LedgerEntry, session).update(MISSING_PK, 1, {"memo": "x"})
+    with get_sync_session(engine) as session, pytest.raises(RowNotFound):
+        Repository(LedgerEntry, session).update(MISSING_PK, 1, {"memo": "x"})
 
 
 def test_delete_of_missing_row_raises_not_found(engine):
-    with get_sync_session(engine) as session:
-        with pytest.raises(RowNotFound):
-            Repository(LedgerEntry, session).delete(MISSING_PK)
+    with get_sync_session(engine) as session, pytest.raises(RowNotFound):
+        Repository(LedgerEntry, session).delete(MISSING_PK)
 
 
 @pytest.mark.parametrize("pk", [2**63, -(2**63) - 1, 10**30])
 def test_get_of_a_pk_outside_sqlite_int64_range_raises_not_found(engine, pk):
     """A pk this large can never match a row; used to raise OverflowError."""
-    with get_sync_session(engine) as session:
-        with pytest.raises(RowNotFound):
-            Repository(LedgerEntry, session).get(pk)
+    with get_sync_session(engine) as session, pytest.raises(RowNotFound):
+        Repository(LedgerEntry, session).get(pk)
 
 
 def test_update_of_a_pk_outside_sqlite_int64_range_raises_not_found(engine):
-    with get_sync_session(engine) as session:
-        with pytest.raises(RowNotFound):
-            Repository(LedgerEntry, session).update(2**63, 1, {"memo": "x"})
+    with get_sync_session(engine) as session, pytest.raises(RowNotFound):
+        Repository(LedgerEntry, session).update(2**63, 1, {"memo": "x"})
 
 
 def test_delete_of_a_pk_outside_sqlite_int64_range_raises_not_found(engine):
-    with get_sync_session(engine) as session:
-        with pytest.raises(RowNotFound):
-            Repository(LedgerEntry, session).delete(2**63)
+    with get_sync_session(engine) as session, pytest.raises(RowNotFound):
+        Repository(LedgerEntry, session).delete(2**63)
 
 
 def test_patch_schema_is_built_once_per_create_schema():

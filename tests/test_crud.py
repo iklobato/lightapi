@@ -1,7 +1,5 @@
 """Integration tests for US1: CRUD auto-generation."""
 
-from typing import Optional
-
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
@@ -18,7 +16,7 @@ class BookEndpoint(RestEndpoint):
 
 class NoteEndpoint(RestEndpoint):
     title: str = LField(min_length=1)
-    subtitle: Optional[str] = LField(default=None)
+    subtitle: str | None = LField(default=None)
 
 
 @pytest.fixture

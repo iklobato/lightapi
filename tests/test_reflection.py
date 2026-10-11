@@ -446,5 +446,5 @@ class TestPartialReflection:
                 table = "type_conflict"
 
         app_instance = LightApi(engine=engine)
-        with pytest.raises(ConfigurationError, match="conflict|type"):
+        with pytest.raises(ConfigurationError, match=r"conflict|type"):
             app_instance.register({"/type_conflict": TypeConflictEndpoint})

@@ -55,7 +55,7 @@ def test_get_sync_session_rollback_on_exception(sync_engine):
     try:
         with get_sync_session(sync_engine) as session:
             session.add(_Note(body="should_rollback"))
-            raise ValueError("forced")
+            raise ValueError("forced")  # noqa: TRY301  forces the rollback path
     except ValueError:
         pass
 
@@ -83,7 +83,7 @@ async def test_get_async_session_rollback_on_exception(async_engine):
     try:
         async with get_async_session(async_engine) as session:
             session.add(_Note(body="async_rollback"))
-            raise ValueError("forced")
+            raise ValueError("forced")  # noqa: TRY301  forces the rollback path
     except ValueError:
         pass
 

@@ -24,16 +24,18 @@ def _wait_up(base_url: str, timeout: float = 15.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            urllib.request.urlopen(f"{base_url}/healthz", timeout=1).read()
-            return True
-        except Exception:
+            health = f"{base_url}/healthz"
+            urllib.request.urlopen(health, timeout=1).read()  # noqa: S310  test server
+        except Exception:  # noqa: BLE001,PERF203  poll until the server answers
             time.sleep(0.2)
+        else:
+            return True
     return False
 
 
 def _get(url: str) -> tuple[int, bytes]:
     try:
-        with urllib.request.urlopen(url, timeout=5) as resp:
+        with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310  test server
             return resp.status, resp.read()
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read()
@@ -53,7 +55,7 @@ def real_server(tmp_path):
             "DATABASE_URL": f"sqlite:///{tmp_path}/t401.db",
             **env_overrides,
         }
-        proc = subprocess.Popen(
+        proc = subprocess.Popen(  # noqa: S603  the CLI under test, fixed argv
             argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
         procs.append(proc)
@@ -99,7 +101,7 @@ def test_python_dash_m_lightapi_defaults_to_serve(real_server):
 def test_missing_lightapi_config_exits_nonzero_with_a_clear_message():
     env = {k: v for k, v in os.environ.items() if k != "LIGHTAPI_CONFIG"}
 
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603  the CLI under test, fixed argv
         [sys.executable, "-m", "lightapi", "serve"],
         env=env,
         capture_output=True,
@@ -119,7 +121,7 @@ def test_invalid_port_exits_nonzero_with_a_clear_message():
         "DATABASE_URL": "sqlite://",
     }
 
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603  the CLI under test, fixed argv
         [sys.executable, "-m", "lightapi", "serve"],
         env=env,
         capture_output=True,
@@ -132,7 +134,7 @@ def test_invalid_port_exits_nonzero_with_a_clear_message():
 
 
 def test_unknown_subcommand_exits_nonzero():
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603  the CLI under test, fixed argv
         [sys.executable, "-m", "lightapi", "dance"],
         capture_output=True,
         text=True,

@@ -219,7 +219,7 @@ class TestClosedSetsAcceptedAsStrings:
         config = Config(jwt_algorithm="none")
 
         with pytest.raises(ConfigurationError) as exc_info:
-            config.jwt_algorithm_value
+            _ = config.jwt_algorithm_value
 
         assert str(exc_info.value) == (
             "Invalid JWT algorithm 'none'. Valid algorithms are: "
