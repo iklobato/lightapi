@@ -49,7 +49,7 @@ class RateLimiter:
         self.requests_per_hour = requests_per_hour
         self.requests_per_day = requests_per_day
 
-        # Storage: {ip: {window: {timestamp: count}}}
+        # Request counts per client IP, per window name, keyed by timestamp.
         self._store: dict[str, dict[str, dict[float, int]]] = defaultdict(
             lambda: defaultdict(lambda: defaultdict(int))
         )
