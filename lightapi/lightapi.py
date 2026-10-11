@@ -21,6 +21,7 @@ from lightapi.authentication import (
     BasicAuthentication,
     JWTAuthentication,
 )
+from lightapi.constants import HttpVerb
 from lightapi.endpoint_handler import AppContext, EndpointHandler
 from lightapi.exceptions import ConfigurationError
 from lightapi.health import HEALTH_PATH, HealthCheckEndpoint
@@ -142,7 +143,7 @@ class LightApi:
         login = LoginEndpoint(backend, self._login_validator, rate_limiter)
         auth_path = self._auth_path.rstrip("/")
         return [
-            Route(f"{auth_path}/{name}", login.handle, methods=["POST"])
+            Route(f"{auth_path}/{name}", login.handle, methods=[HttpVerb.POST.value])
             for name in ("login", "token")
         ]
 

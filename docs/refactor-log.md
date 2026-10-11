@@ -87,5 +87,19 @@ Deleted the `HTTPStatus(int, Enum)` copy in `constants.py`; `rest.py`, `endpoint
 in `core.py` is a public signature and stays. Starlette and h11 take the `IntEnum` as an int,
 so the bytes on the wire are the same. 563 passed, ruff and mypy clean.
 
-Next: 3b `HttpVerb`, then `ExecutionMode`, `PaginationStyle`, `TableReflection`,
-`RateLimitWindow`, `JwtAlgorithm`, `ApiError`.
+### 3b. `HttpVerb`
+
+`constants.HttpVerb(str, Enum)` (GET, POST, PUT, PATCH, DELETE, OPTIONS) with `HttpVerb.of()`
+for request methods the API never serves (HEAD), and `CRUD_VERBS` replacing
+`rest._ALL_METHODS`. Verb dictionaries in `endpoint_handler.py` are keyed by the enum; the
+`request.method == "..."` comparisons in `cache_helper.py`, `_login.py`, `core.py` and
+`authentication/basic.py` compare against members; `CORSMiddleware` keeps its default list as
+a class constant. `RestEndpoint._allowed_methods` stays a set of plain strings (documented
+that way) and `HttpMethod.GET._http_method` stays `"GET"` (public marker): the metaclass
+validates them through `HttpVerb(...)` and keeps `.value`. Members are never formatted
+(`f"{member}"` differs between Python 3.10 and 3.11+). `jwt.py:65` keeps its literal
+(FROZEN). Left for Step 8: the name registries in `yaml_names.py` and `_dict_config_loader.py`
+that map YAML/dict method names to `HttpMethod` mixins. 563 passed, ruff and mypy clean.
+
+Next: 3c `ExecutionMode`, then `PaginationStyle`, `TableReflection`, `RateLimitWindow`,
+`JwtAlgorithm`, `ApiError`.

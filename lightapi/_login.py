@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.constants import ResponseKey
+from lightapi.constants import HttpVerb, ResponseKey
 
 if TYPE_CHECKING:
     from lightapi.authentication.base import BaseAuthentication, LoginValidator
@@ -102,11 +102,11 @@ class LoginEndpoint:
         if is_limited:
             return self._rate_limiter.get_rate_limit_response(request, window)
 
-        if request.method != "POST":
+        if request.method != HttpVerb.POST:
             return JSONResponse(
                 {ResponseKey.DETAIL: "method not allowed"},
                 status_code=HTTPStatus.METHOD_NOT_ALLOWED,
-                headers={"Allow": "POST"},
+                headers={"Allow": HttpVerb.POST.value},
             )
 
         try:

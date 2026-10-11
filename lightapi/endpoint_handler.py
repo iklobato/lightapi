@@ -15,7 +15,7 @@ from starlette.responses import JSONResponse, Response
 
 from lightapi.auth_checker import EndpointGuard
 from lightapi.cache_helper import ResponseCache
-from lightapi.constants import ResponseKey
+from lightapi.constants import HttpVerb, ResponseKey
 from lightapi.middleware_runner import run_post_middlewares, run_pre_middlewares
 from lightapi.rest import RestEndpoint
 from lightapi.session import run_blocking
@@ -66,17 +66,23 @@ def _partial_update(request: Request, data: dict[str, Any], pk: Any) -> tuple[An
 
 
 _COLLECTION_VERBS = {
-    "GET": _Verb("get", "list", "_list_async", _request_only, cached=True),
-    "POST": _Verb("post", "create", "_create_async", _data_only, reads_body=True),
+    HttpVerb.GET: _Verb("get", "list", "_list_async", _request_only, cached=True),
+    HttpVerb.POST: _Verb(
+        "post", "create", "_create_async", _data_only, reads_body=True
+    ),
 }
 
 _DETAIL_VERBS = {
-    "GET": _Verb("get", "retrieve", "_retrieve_async", _request_and_pk, cached=True),
-    "PUT": _Verb("put", "update", "_update_async", _full_update, reads_body=True),
-    "PATCH": _Verb(
+    HttpVerb.GET: _Verb(
+        "get", "retrieve", "_retrieve_async", _request_and_pk, cached=True
+    ),
+    HttpVerb.PUT: _Verb(
+        "put", "update", "_update_async", _full_update, reads_body=True
+    ),
+    HttpVerb.PATCH: _Verb(
         "patch", "update", "_update_async", _partial_update, reads_body=True
     ),
-    "DELETE": _Verb("delete", "destroy", "_destroy_async", _request_and_pk),
+    HttpVerb.DELETE: _Verb("delete", "destroy", "_destroy_async", _request_and_pk),
 }
 
 
@@ -86,7 +92,7 @@ class EndpointHandler:
     def __init__(
         self,
         endpoint_cls: type[RestEndpoint],
-        verbs: dict[str, _Verb],
+        verbs: dict[HttpVerb, _Verb],
         app: AppContext,
     ) -> None:
         self._endpoint_cls = endpoint_cls
@@ -112,7 +118,8 @@ class EndpointHandler:
     @property
     def methods(self) -> list[str]:
         """HTTP methods of this route that the endpoint allows."""
-        return [m for m in self._endpoint_cls._allowed_methods if m in self._verbs]
+        allowed = self._endpoint_cls._allowed_methods
+        return [verb.value for verb in self._verbs if verb.value in allowed]
 
     async def handle(self, request: Request) -> Response:
         endpoint = self._endpoint_cls()
@@ -127,7 +134,8 @@ class EndpointHandler:
         if auth_result is not None:
             return auth_result
 
-        verb = self._verbs.get(request.method)
+        http_verb = HttpVerb.of(request.method)
+        verb = self._verbs.get(http_verb) if http_verb is not None else None
         if verb is None:
             result = self._method_not_allowed()
         else:

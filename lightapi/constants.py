@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Final
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -13,6 +14,33 @@ class ResponseKey(str, Enum):
     PAGES = "pages"
     NEXT = "next"
     PREVIOUS = "previous"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# HTTP verbs (lightapi.HttpMethod is the public marker namespace, not this)
+# ─────────────────────────────────────────────────────────────────────────
+class HttpVerb(str, Enum):
+    """A request method. Compare `request.method == HttpVerb.GET`; never format it."""
+
+    GET = "GET"
+    POST = "POST"
+    PUT = "PUT"
+    PATCH = "PATCH"
+    DELETE = "DELETE"
+    OPTIONS = "OPTIONS"
+
+    @classmethod
+    def of(cls, method: str) -> "HttpVerb | None":
+        """The verb for a request method; None for one the API never serves (HEAD)."""
+        try:
+            return cls(method)
+        except ValueError:
+            return None
+
+
+CRUD_VERBS: Final = frozenset(
+    {HttpVerb.GET, HttpVerb.POST, HttpVerb.PUT, HttpVerb.PATCH, HttpVerb.DELETE}
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────

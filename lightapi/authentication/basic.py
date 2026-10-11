@@ -10,6 +10,7 @@ from starlette.responses import JSONResponse
 
 from lightapi._login import _parse_basic_header
 from lightapi.authentication.base import BaseAuthentication, LoginValidator
+from lightapi.constants import HttpVerb
 
 if TYPE_CHECKING:
     from lightapi.config import Authentication
@@ -45,7 +46,7 @@ class BasicAuthentication(BaseAuthentication):
         )
 
     def authenticate(self, request: Request) -> bool:
-        if request.method == "OPTIONS":
+        if request.method == HttpVerb.OPTIONS:
             return True
 
         auth_header = request.headers.get("Authorization")

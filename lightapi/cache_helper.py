@@ -9,6 +9,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from lightapi.cache import get_cached, invalidate_cache_prefix, set_cached
+from lightapi.constants import HttpVerb
 
 
 class ResponseCache:
@@ -48,7 +49,7 @@ class ResponseCache:
 
     async def invalidate_after_write(self, request: Request) -> None:
         """Drop this endpoint's cached GETs after a request that may change data."""
-        if request.method == "GET" or self._cache_cfg is None:
+        if request.method == HttpVerb.GET or self._cache_cfg is None:
             return
         await run_in_threadpool(invalidate_cache_prefix, self._key_prefix())
 

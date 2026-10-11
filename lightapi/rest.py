@@ -33,7 +33,7 @@ from sqlalchemy import select as sa_select
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from lightapi.constants import AUTO_FIELDS, ResponseKey
+from lightapi.constants import AUTO_FIELDS, CRUD_VERBS, HttpVerb, ResponseKey
 from lightapi.exceptions import ConfigurationError
 from lightapi.pagination import NoPagination
 from lightapi.repository import Repository, RowNotFound, VersionConflict
@@ -59,8 +59,6 @@ _TYPE_MAP: dict[Any, Any] = {
     Decimal: Numeric,
     UUID: Uuid,
 }
-
-_ALL_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
 
 # The client's `version` arrives as a raw JSON value (int, numeric string, or
 # whole float); this coerces it the same way pydantic would validate an int
@@ -99,7 +97,7 @@ class RestEndpointMeta(type):
             "_base_only", False
         )
         if is_base_only:
-            cls._allowed_methods = set(_ALL_METHODS)
+            cls._allowed_methods = {verb.value for verb in CRUD_VERBS}
             cls._meta = {}
             return cls
 
@@ -233,11 +231,11 @@ def _parsed_meta(name: str, meta_obj: Any) -> dict[str, Any]:
 def _allowed_methods(cls: type) -> set[str]:
     """HTTP methods named by HttpMethod mixins in the MRO; all of them when none is."""
     allowed = {
-        base._http_method
+        HttpVerb(base._http_method).value
         for base in cls.__mro__[1:]
         if getattr(base, "_http_method", None)
     }
-    return allowed or set(_ALL_METHODS)
+    return allowed or {verb.value for verb in CRUD_VERBS}
 
 
 _ERROR_RESPONSES: dict[type[Exception], tuple[HTTPStatus, str]] = {
@@ -346,7 +344,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         pagination = self._meta.get("pagination")
         paginator = pagination.build_paginator() if pagination else NoPagination()
         qs = self._run_filter_backends(request, qs)
-        serialize = partial(self._serialize_row, method="GET")
+        serialize = partial(self._serialize_row, method=HttpVerb.GET)
         return JSONResponse(paginator.render(request, qs, session, serialize))
 
     def _retrieve(self, session: Session, pk: int) -> Response:
@@ -354,7 +352,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             row = self._repository(session).get(pk)
         except RowNotFound as exc:
             return _error_response(exc)
-        return JSONResponse(self._serialize_row(row, "GET"))
+        return JSONResponse(self._serialize_row(row, HttpVerb.GET))
 
     def _create(self, session: Session, data: dict[str, Any]) -> Response:
         try:
@@ -364,7 +362,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
         row = self._repository(session).add(validated.model_dump())
         return JSONResponse(
-            self._serialize_row(row, "POST"), status_code=HTTPStatus.CREATED
+            self._serialize_row(row, HttpVerb.POST), status_code=HTTPStatus.CREATED
         )
 
     def _update(
@@ -391,7 +389,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             row = repository.update(pk, client_version, values)
         except (RowNotFound, VersionConflict) as exc:
             return _error_response(exc)
-        return JSONResponse(self._serialize_row(row, "PUT"))
+        return JSONResponse(self._serialize_row(row, HttpVerb.PUT))
 
     def _update_values(
         self, data: dict[str, Any], partial: bool, nullable_columns: set[str]

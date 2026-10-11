@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, create_model
 from pydantic.fields import FieldInfo
 from sqlalchemy import Numeric, Uuid
 
-from lightapi.constants import AUTO_FIELDS
+from lightapi.constants import AUTO_FIELDS, HttpVerb
 from lightapi.exceptions import ConfigurationError, SerializationError
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ def resolve_fields(cls: type, method: str) -> list[str] | None:
     fields, read, write = cls._meta.get("serializer_normalised", (None, None, None))
     if fields:
         return fields
-    if method.upper() == "GET":
+    if method.upper() == HttpVerb.GET:
         return read
     return write
 
