@@ -397,6 +397,19 @@ class FieldSpec(BaseModel):
             )
         return v
 
+    @model_validator(mode="after")
+    def extra_keys_must_be_constraints(self) -> FieldSpec:
+        """A key that is not a constraint (`min_lenght`) would be dropped silently."""
+        unknown = sorted(
+            set(self.model_extra or ()) - FIELD_CONSTRAINT_KEYS - {"default"}
+        )
+        if unknown:
+            raise ValueError(
+                f"Unknown field option(s) {unknown}. "
+                f"Valid: {sorted(FIELD_CONSTRAINT_KEYS | {'default'})}"
+            )
+        return self
+
     @property
     def annotation(self) -> object:
         """The field's type, or ``type | None`` for an optional one."""

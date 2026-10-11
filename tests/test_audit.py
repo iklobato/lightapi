@@ -716,6 +716,33 @@ class TestReviewSecretsStayOutOfErrors:
         assert self.CANARY not in str(info.value)
 
 
+class TestReviewFieldSpecUnknownKey:
+    """B2-014: a typo under `fields.<name>` (`min_lenght`) was dropped by FieldSpec's
+    extra="allow", so the constraint silently vanished while the configuration
+    guide promises a ConfigurationError (review finding 7)."""
+
+    def test_unknown_constraint_key_is_rejected(self, tmp_path):
+        document = tmp_path / "bad.yaml"
+        document.write_text(
+            'database:\n  url: "sqlite:///:memory:"\nendpoints:\n  - route: /x\n'
+            "    fields:\n      title: {type: str, min_lenght: 3}\n"
+        )
+
+        with pytest.raises(ConfigurationError, match="min_lenght"):
+            LightAPIConfig.from_file(document)
+
+    def test_known_constraint_keys_and_default_still_load(self, tmp_path):
+        document = tmp_path / "ok.yaml"
+        document.write_text(
+            'database:\n  url: "sqlite:///:memory:"\nendpoints:\n  - route: /x\n'
+            "    fields:\n      title: {type: str, min_length: 3, default: abc}\n"
+        )
+
+        spec = LightAPIConfig.from_file(document).endpoints[0].fields["title"]
+
+        assert spec.field_info() is not None
+
+
 class TestYamlUnknownKeys:
     """A key the YAML format does not know is a ConfigurationError naming it, not a
     silently ignored block; found by e2e scenario 12 (`defaults.filtering`)."""
