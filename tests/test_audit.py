@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import os
+from unittest.mock import patch
 
+import pytest
+import redis
 from sqlalchemy import create_engine
 from sqlalchemy import select as sa_select
 from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
-from lightapi import LightApi, RestEndpoint
+from lightapi import Cache, LightApi, RestEndpoint
+from lightapi.cache import RedisCacheBackend
 from lightapi.config import Config
 from lightapi.fields import Field as LField
 
@@ -60,3 +65,41 @@ class TestA4DeadCode:
         titles = [row["title"] for row in client.get("/posts").json()["results"]]
 
         assert titles == ["live"]
+
+
+class _RedisDown:
+    """A redis client whose every call fails the way a dead server does."""
+
+    def _fail(self, *args, **kwargs):
+        raise redis.ConnectionError("Error 61 connecting to localhost:6379")
+
+    get = setex = delete = scan_iter = ping = _fail
+
+
+class AuditCachedItem(RestEndpoint):
+    name: str = LField(min_length=1)
+
+    class Meta:
+        cache = Cache(ttl=30)
+
+
+class TestB1SilentErrors:
+    @pytest.fixture(autouse=True)
+    def fresh_redis_client(self):
+        RedisCacheBackend.shared.cache_clear()
+        yield
+        RedisCacheBackend.shared.cache_clear()
+
+    def test_redis_failure_is_logged_with_the_traceback_and_still_served(self, caplog):
+        """B1-005: the fallback stays, the operator learns why."""
+        with patch("lightapi.cache.redis.from_url", return_value=_RedisDown()):
+            with pytest.warns(RuntimeWarning, match="not reachable"):
+                client = _client({"/cached": AuditCachedItem})
+            caplog.clear()
+            with caplog.at_level(logging.WARNING, logger="lightapi.cache"):
+                resp = client.get("/cached")
+
+        assert resp.status_code == 200
+        records = [r for r in caplog.records if r.name == "lightapi.cache"]
+        assert records and all(r.exc_info for r in records)
+        assert "Cache read failed" in records[0].getMessage()

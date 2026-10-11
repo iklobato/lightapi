@@ -48,6 +48,10 @@ class RedisCacheBackend:
             try:
                 self._client = redis.from_url(self._redis_url, socket_connect_timeout=1)
             except (ValueError, redis.RedisError):
+                logger.warning(
+                    "Cache disabled: cannot build a Redis client from LIGHTAPI_REDIS_URL",
+                    exc_info=True,
+                )
                 return None
         return self._client
 
@@ -59,6 +63,11 @@ class RedisCacheBackend:
             raw = client.get(key)
             return json.loads(raw) if raw else None
         except (redis.RedisError, json.JSONDecodeError, UnicodeDecodeError):
+            logger.warning(
+                "Cache read failed for %s; serving from the database",
+                key,
+                exc_info=True,
+            )
             return None
 
     def set(self, key: str, value: Any, timeout: int = 300) -> bool:
@@ -67,9 +76,10 @@ class RedisCacheBackend:
             return False
         try:
             client.setex(key, timeout, json.dumps(value))
-            return True
         except redis.RedisError:
+            logger.warning("Cache write failed for %s", key, exc_info=True)
             return False
+        return True
 
     def invalidate_prefix(self, prefix: str) -> bool:
         client = self._get_client()
@@ -79,9 +89,10 @@ class RedisCacheBackend:
             keys = list(client.scan_iter(f"{prefix}*"))
             if keys:
                 client.delete(*keys)
-            return True
         except redis.RedisError:
+            logger.warning("Cache invalidation failed for %s*", prefix, exc_info=True)
             return False
+        return True
 
     def ping(self) -> bool:
         client = self._get_client()
@@ -90,6 +101,7 @@ class RedisCacheBackend:
         try:
             return bool(client.ping())
         except redis.RedisError:
+            logger.warning("Redis is not reachable", exc_info=True)
             return False
 
 
