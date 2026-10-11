@@ -69,4 +69,12 @@ accepted; exact messages for an unknown mode, pagination style and JWT algorithm
 shapes; an invalid cursor is ignored; HEAD on a detail route is 405 with `Allow`; async PATCH
 409 and 422; cached GET and POST still answer when the Redis client raises `ConnectionError`.
 
-Next: Step 2 (leftover dead code), then Step 3 (enums and stdlib `HTTPStatus`).
+## Step 2: leftover dead code
+
+`rest.py` only: dropped the never-read `_meta["reflect"]` key, moved the stdlib and
+pydantic imports that lived inside `_is_optional`, `_field_annotations`, `_declared_columns`
+and `_parsed_meta` to the module top (no cycle existed), and with them the
+`# type: ignore[attr-defined]` on `types.UnionType`. 563 passed, ruff and mypy clean.
+
+Next: Step 3, one commit per enum: stdlib `HTTPStatus`, `HttpVerb`, `ExecutionMode`,
+`PaginationStyle`, `TableReflection`, `RateLimitWindow`, `JwtAlgorithm`, `ApiError`.

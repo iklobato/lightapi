@@ -4,17 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import types
 from collections.abc import Callable
 from decimal import Decimal
 from functools import partial
-from typing import TYPE_CHECKING, Any, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Union, get_args, get_origin, get_type_hints
 from uuid import UUID
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
     from starlette.background import BackgroundTasks
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic.fields import FieldInfo
 from sqlalchemy import (
     Boolean,
     Column,
@@ -68,12 +70,9 @@ _VERSION_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
 
 def _is_optional(annotation: Any) -> tuple[bool, Any]:
     """Return (is_optional, inner_type) for an annotation."""
-    import types as _types
-    import typing
-
     origin = get_origin(annotation)
     args = get_args(annotation)
-    if origin is typing.Union or origin is _types.UnionType:  # type: ignore[attr-defined]
+    if origin is Union or origin is types.UnionType:
         non_none = [a for a in args if a is not type(None)]
         if len(non_none) == 1 and type(None) in args:
             return True, non_none[0]
@@ -140,12 +139,10 @@ def _reject_redeclared_auto_fields(name: str, namespace: dict[str, Any]) -> None
 
 def _field_annotations(cls: type) -> dict[str, Any]:
     """Public annotated fields of the class and its bases, with real types."""
-    import typing
-
     # get_type_hints() resolves the string annotations that
     # `from __future__ import annotations` leaves behind.
     try:
-        resolved = typing.get_type_hints(cls)
+        resolved = get_type_hints(cls)
     except Exception:
         resolved = {}
 
@@ -158,8 +155,6 @@ def _field_annotations(cls: type) -> dict[str, Any]:
 
 
 def _declared_columns(cls: type, name: str, namespace: dict[str, Any]) -> list[Column]:
-    from pydantic.fields import FieldInfo
-
     columns: list[Column] = []
     for field_name, annotation in _field_annotations(cls).items():
         field_val = namespace.get(field_name) or getattr(cls, field_name, None)
@@ -218,14 +213,11 @@ def _parsed_meta(name: str, meta_obj: Any) -> dict[str, Any]:
 
     # normalise_serializer() rejects every non-Serializer; a pydantic model gets
     # its own message because it is the mistake people actually make.
-    if isinstance(raw_serializer, type):
-        from pydantic import BaseModel as PydanticBaseModel
-
-        if issubclass(raw_serializer, PydanticBaseModel):
-            raise ConfigurationError(
-                f"Meta.serializer on '{name}' must be a Serializer "
-                "instance or subclass, not a BaseModel subclass."
-            )
+    if isinstance(raw_serializer, type) and issubclass(raw_serializer, BaseModel):
+        raise ConfigurationError(
+            f"Meta.serializer on '{name}' must be a Serializer "
+            "instance or subclass, not a BaseModel subclass."
+        )
 
     return {
         "authentication": getattr(meta_obj, "authentication", None),
@@ -233,7 +225,6 @@ def _parsed_meta(name: str, meta_obj: Any) -> dict[str, Any]:
         "pagination": getattr(meta_obj, "pagination", None),
         "serializer_normalised": normalise_serializer(raw_serializer),
         "cache": getattr(meta_obj, "cache", None),
-        "reflect": getattr(meta_obj, "reflect", False),
         "table": getattr(meta_obj, "table", None),
     }
 

@@ -21,6 +21,10 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `SingletonThreadPool` (in-memory SQLite) still run in place, because those pools
   cannot be shared across threads.
 
+### Removed (internal, no public name affected)
+- `RestEndpoint._meta["reflect"]`: the key was written but never read; `Meta.reflect` is
+  read from the class itself.
+
 ### Fixed
 - **`Meta.cache` was ignored on async engines**: cached GETs and cache invalidation
   only ran on the sync path, so an app on an `AsyncEngine` never read or wrote the
