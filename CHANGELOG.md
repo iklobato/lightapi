@@ -130,6 +130,12 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   key, as the configuration guide promises. Before, pydantic dropped the key and the app
   started without the feature. A key under `fields.<name>` that is not a constraint
   (`min_lenght: 3`) is refused the same way; before, the constraint silently vanished.
+- **Async mode is detected from the engine or the URL**: `LightApi(engine=AsyncEngine)`
+  and `LightApi(database_url="sqlite+aiosqlite://...")` (or a YAML document with such a
+  URL) run async without `mode="async"`, as the README always said. Before, the sync
+  default never created the tables and every request was a 500 (with a "Table creation
+  skipped" warning); the docs' own async testing fixture hit it verbatim. An explicit
+  `mode="sync"` with an async engine or driver is a `ConfigurationError`.
 - **`mode="async"` works from a database URL**: `LightApi(database_url=..., mode="async")`
   and a YAML document with `mode: async` build an `AsyncEngine`, so `lightapi serve` can
   start an async app. Before, both failed at `register()` with "requires AsyncEngine". A

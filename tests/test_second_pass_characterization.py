@@ -320,20 +320,33 @@ class TestRequestBodyAndPagination:
 
 
 class TestAsyncEngineWithoutMode:
-    async def test_build_app_warns_instead_of_failing(self, caplog):
-        """An AsyncEngine on a sync app never could create its tables; the app must
-        still build (the differential harness records this as two 500s)."""
+    def test_the_engine_type_selects_async_mode(self):
+        """B6-004: an AsyncEngine with no `mode` used to leave the app in sync mode,
+        so its tables were never created and every request was a 500 (two 500s in
+        the differential harness, a "Table creation skipped" warning). The engine
+        type now selects async mode, as the README promises."""
 
         class Plain(RestEndpoint):
             name: str = LField(min_length=1)
 
-        app = LightApi(engine=create_async_engine("sqlite+aiosqlite:///:memory:"))
+            class Meta:
+                table = "characterization_plain_async"
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        app = LightApi(engine=engine)
         app.register({"/plain": Plain})
+        with TestClient(app.build_app()) as client:
+            response = client.post("/plain", json={"name": "n"})
 
-        with caplog.at_level("WARNING", logger="lightapi.lightapi"):
-            app.build_app()
+            assert response.status_code == 201
+            client.portal.call(engine.dispose)
 
-        assert "Table creation skipped" in caplog.text
+    def test_explicit_sync_mode_with_an_async_engine_is_refused(self):
+        with pytest.raises(ConfigurationError, match="mode='sync'"):
+            LightApi(
+                engine=create_async_engine("sqlite+aiosqlite:///:memory:"),
+                mode="sync",
+            )
 
 
 class Widget(RestEndpoint):

@@ -743,6 +743,40 @@ class TestReviewFieldSpecUnknownKey:
         assert spec.field_info() is not None
 
 
+class AuditAsyncUrl(RestEndpoint):
+    title: str = Field(min_length=1)
+
+    class Meta:
+        table = "audit_async_url"
+
+
+class TestReviewAsyncFromUrlAutoDetect:
+    """B6-004: README says the mode is auto-detected when omitted, but a database URL
+    with an async driver and no `mode="async"` built a sync Engine (review minor 8)."""
+
+    def test_async_url_without_mode_serves(self):
+        app = LightApi(database_url="sqlite+aiosqlite:///:memory:")
+        app.register({"/autodetected": AuditAsyncUrl})
+        with TestClient(app.build_app()) as client:
+            response = client.post("/autodetected", json={"title": "t"})
+
+            assert response.status_code == 201
+            client.portal.call(app._engine.dispose)
+
+    def test_yaml_async_url_without_mode_serves(self, tmp_path):
+        document = tmp_path / "async.yaml"
+        document.write_text(
+            'database:\n  url: "sqlite+aiosqlite:///:memory:"\nendpoints:\n'
+            "  - route: /autodetected\n    fields:\n      title: {type: str}\n"
+        )
+        app = LightAPIConfig.from_file(document).build_app(LightApi)
+        with TestClient(app.build_app()) as client:
+            response = client.post("/autodetected", json={"title": "t"})
+
+            assert response.status_code == 201
+            client.portal.call(app._engine.dispose)
+
+
 class TestYamlUnknownKeys:
     """A key the YAML format does not know is a ConfigurationError naming it, not a
     silently ignored block; found by e2e scenario 12 (`defaults.filtering`)."""

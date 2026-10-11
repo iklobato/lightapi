@@ -106,39 +106,31 @@ def _run_as_pytest(
     )
 
 
-def test_async_testing_fixture_pattern_hits_the_known_table_creation_bug(tmp_path):
-    """The doc's own async testing fixture (pytest_asyncio.fixture building the
-    app while a loop is already running) triggers the pre-existing table
-    creation bug: LightApi._create_tables() runs asyncio.run() in a worker
-    thread when a loop is already running (lightapi/lightapi.py:284-291),
-    which for aiosqlite checks out a connection bound to that dead thread's
-    loop into the engine's own pool. Every later async ORM call on the real
-    loop then fails with MissingGreenlet ("greenlet_spawn has not been
-    called"), and the exception during create_all is itself swallowed to a
-    warning log (lightapi.py:300-301), so the example silently serves against
-    an app whose tables were never really created. Confirmed via the same
-    root cause as tests/integration/test_postgres_async.py's B19 finding —
-    not a new bug, but this is the first place it's shown to affect the
-    docs' own recommended testing pattern verbatim, not just Postgres.
+def test_async_testing_fixture_pattern_runs_green(tmp_path):
+    """The doc's own async testing fixture (a pytest_asyncio.fixture building the
+    app on an AsyncEngine with no `mode`) used to serve an app whose tables were
+    never created: the sync default never ran the async DDL (B6-004) and, once it
+    did, the worker-thread loop poisoned the pool (B7-003). The engine type now
+    selects async mode and the lifespan creates the tables on the serving loop,
+    so the example passes verbatim.
     """
     source = _fence_under_heading("docs/advanced/async.md", "**Fixture pattern**:")
     result = _run_as_pytest(tmp_path, "test_async_full_example.py", source)
 
-    assert result.returncode != 0
-    assert "MissingGreenlet" in result.stdout or "_run_ddl_visitor" in result.stdout
+    assert result.returncode == 0, result.stdout
+    assert " passed" in result.stdout
 
 
-def test_middleware_example_hits_the_same_known_table_creation_bug(tmp_path):
-    """Same root cause as test_async_testing_fixture_pattern_hits_the_known_table_creation_bug
-    above: docs/advanced/middleware.md's own testing example reuses the async
-    fixture pattern from docs/advanced/async.md and hits B19 the same way."""
+def test_middleware_testing_example_runs_green(tmp_path):
+    """docs/advanced/middleware.md's own testing example reuses the async fixture
+    pattern from docs/advanced/async.md; same two fixes, same verbatim pass."""
     source = _fence_under_heading(
         "docs/advanced/middleware.md", "## Accessing Middleware Inside Tests"
     )
     result = _run_as_pytest(tmp_path, "test_middleware_example.py", source)
 
-    assert result.returncode != 0
-    assert "MissingGreenlet" in result.stdout or "_run_ddl_visitor" in result.stdout
+    assert result.returncode == 0, result.stdout
+    assert " passed" in result.stdout
 
 
 def test_authentication_complete_example_builds_and_serves(tmp_path):

@@ -26,7 +26,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B3 sentinel returns | 3 | 0 | 3 | 0 | 0 |
 | B4 lying types | 12 | 12 | 0 | 0 | 0 |
 | B5 per-request checks | 9 | 3 | 6 | 0 | 0 |
-| B6 silently disabled features | 7 | 3 | 0 | 4 | 0 |
+| B6 silently disabled features | 7 | 4 | 0 | 3 | 0 |
 | B7 blocking in async | 3 | 1 | 0 | 2 | 0 |
 | B8 hidden mutation / globals | 5 | 1 | 4 | 0 | 0 |
 | B9 dispatch by name | 5 | 3 | 2 | 0 | 0 |
@@ -37,7 +37,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B14 logs and warnings | 9 | 8 | 1 | 0 | 0 |
 | B15 hidden YAGNI | 5 | 3 | 1 | 1 | 0 |
 | B16 tests that do not protect | 5 | 2 | 3 | 0 | 0 |
-| **Total** | **128** | **60** | **56** | **12** | **0** |
+| **Total** | **128** | **61** | **56** | **11** | **0** |
 
 ## Phase 0: baseline
 
@@ -182,7 +182,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B6-001 | B6 | `lightapi/yaml_config.py:465`, `lightapi.py:115` | YAML `mode: async` with `database.url` can never start: `from_config` builds a sync `Engine`, then `register()` raises `mode='async' requires AsyncEngine, got Engine`. `lightapi serve` cannot serve an async app. Same in v0.1.29 | corrigido: `_engine_from_url(url, mode)` builds an `AsyncEngine` in async mode; a URL without an async driver is a `ConfigurationError` naming the drivers. e2e scenario 12 serves the async document | corrigido | `4248fc8` |
 | B6-002 | B6 | `lightapi/config.py:125`, `cache.py:166` | `Cache.vary_on` is documented (`docs/advanced/caching.md:57-141`: "only the listed query parameters contribute to the key") but never read; the key is always the full query string. Same in v0.1.29 | propor: implement (visible: cache keys and hits change for apps that set it) or fix the docs | proposta | |
 | B6-003 | B6 | `lightapi/config.py:31` | `Config.jwt_expiration` is never read: `JWTAuthentication.generate_token` (FROZEN) uses `self.expiration or 3600` | propor: remove the field in 0.2.0 or make the FROZEN class read it | proposta | |
-| B6-004 | B6 | `lightapi/lightapi.py:291` | `LightApi(engine=AsyncEngine)` without `mode="async"` and without an `async def` hook: tables are never created and every request is a 500 (now with a startup warning; v0.1.29 swallowed an `AttributeError`) | propor: detect async mode from the engine type (visible: 500s become a working app); alternative: `ConfigurationError` at register | proposta | |
+| B6-004 | B6 | `lightapi/lightapi.py:291` | `LightApi(engine=AsyncEngine)` without `mode="async"` and without an `async def` hook: tables are never created and every request is a 500 (now with a startup warning; v0.1.29 swallowed an `AttributeError`) | corrigido: the engine type (or an async driver in the URL, also through YAML) selects async mode, as the README promises; an explicit `mode="sync"` with an async engine is a `ConfigurationError`. The docs' own async testing fixture (`docs/advanced/async.md`, `docs/advanced/middleware.md`) now passes verbatim (`tests/test_doc_snippets.py`); applied because the README states it, raised by the whole-branch review as minor 8 | corrigido | `see git log: fix(B6-004)` |
 | B6-005 | B6 | `lightapi/authentication/basic.py:61` | An `async def validate_credentials` on a `BasicAuthentication` subclass: `authenticate` does not await it, the coroutine is truthy, so any Basic credentials pass and `request.state.user` is a coroutine (same in v0.1.29; `LoginEndpoint` does await it). Security relevant (B11) | propor: `ConfigurationError` at startup for an async validator on Basic, or await it in the guard | proposta | |
 | B6-006 | B6 | `lightapi/fields.py:21`, `lightapi/table_mapping.py:173` | `Field(decimal_places=N)` was stripped before pydantic saw it and the column it fed, `Numeric(scale=N)` with no precision, renders as plain `NUMERIC` on SQLite and Postgres: the option did nothing, and every doc table said it set the scale. e2e scenario 17 stored "1.999" on a `decimal_places=2` column on both DBs | corrigido: the wrapper forwards `decimal_places` to pydantic, so more places than declared is a 422 (`tests/test_audit.py::TestB6DecimalPlaces`); the five doc tables now say what happens and that the column type stays `NUMERIC` | corrigido | `9d223db` |
 | B6-007 | B6 | `lightapi/table_mapping.py:172` | `Field(decimal_places=N)` on a `float` or `int` field was silently ignored; after B6-006 forwarded the option to pydantic it made every write a 500 (`TypeError: Unable to apply constraint 'decimal_places'`, not a `ValidationError`), through the class and through YAML; found by the whole-branch review | corrigido: `DeclaredTable` refuses the option on a non-Decimal annotation with a `ConfigurationError` naming the field, where the class is defined (`tests/test_audit.py::TestReviewDecimalPlacesNeedsDecimal`) | corrigido | `ef1b649` |

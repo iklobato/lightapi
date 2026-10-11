@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Final
 import uvicorn
 from sqlalchemy import Engine, MetaData, create_engine
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import InvalidRequestError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
 from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
@@ -96,6 +96,15 @@ class LightApi:
             if engine is not None
             else self._engine_from_url(database_url, self._mode)
         )
+        if self._engine_is_async(self._engine):
+            # The README promises the mode is detected when omitted: an AsyncEngine,
+            # or an async driver in the URL (sqlite+aiosqlite, postgresql+asyncpg).
+            if mode is not None and self._mode is ExecutionMode.SYNC:
+                raise ConfigurationError(
+                    "mode='sync' with an async engine or driver: drop mode, or use "
+                    "a sync engine."
+                )
+            self._mode = ExecutionMode.ASYNC
         self._session_manager = session_manager or SessionManager(
             self._engine, use_test_isolation=use_test_isolation
         )
@@ -399,19 +408,26 @@ class LightApi:
                 "No database configured. Provide engine=..., database_url=..., or set "
                 "LIGHTAPI_DATABASE_URL environment variable."
             )
-        if mode is not ExecutionMode.ASYNC:
-            return create_engine(url)
-        # sqlalchemy[asyncio] is the optional `async` extra.
-        from sqlalchemy.ext.asyncio import create_async_engine
+        if make_url(url).get_dialect().is_async:
+            # sqlalchemy[asyncio] is the optional `async` extra.
+            from sqlalchemy.ext.asyncio import create_async_engine
 
-        try:
             return create_async_engine(url)
-        except InvalidRequestError as exc:
+        if mode is ExecutionMode.ASYNC:
             shown = make_url(url).render_as_string(hide_password=True)
             raise ConfigurationError(
                 "mode='async' needs an async driver in the database URL "
                 f"(sqlite+aiosqlite://, postgresql+asyncpg://), got '{shown}'."
-            ) from exc
+            )
+        return create_engine(url)
+
+    @staticmethod
+    def _engine_is_async(engine: object) -> bool:
+        try:
+            from sqlalchemy.ext.asyncio import AsyncEngine
+        except ImportError:
+            return False
+        return isinstance(engine, AsyncEngine)
 
     @staticmethod
     async def _json_405(_request: Request, exc: Exception) -> Response:
