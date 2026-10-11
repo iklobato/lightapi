@@ -29,6 +29,7 @@ import importlib
 import inspect
 import os
 from decimal import Decimal
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Optional, Union
 
 import yaml
@@ -447,7 +448,7 @@ class LightAPIConfig(BaseModel):
     @classmethod
     def from_file(cls, config_path: str) -> LightAPIConfig:
         """The validated document at ``config_path``."""
-        with open(config_path) as fh:
+        with Path(config_path).open() as fh:
             raw: dict[str, Any] = yaml.safe_load(fh) or {}
         try:
             return cls.model_validate(raw)
