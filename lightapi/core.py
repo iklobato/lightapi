@@ -22,7 +22,7 @@ class Response(JSONResponse):
     def __init__(
         self,
         content: Any = None,
-        status_code: int = 200,
+        status_code: int = HTTPStatus.OK,
         headers: Dict | None = None,
         media_type: str | None = None,
         content_type: str | None = None,
