@@ -254,7 +254,7 @@ class MetaConfig(BaseModel):
             return type("Meta", (), attrs)
 
         if isinstance(self.methods, dict):
-            auth = self._per_method_authentication(defaults)
+            auth = self._per_method_authentication(self.methods, defaults)
         else:
             auth = self._endpoint_authentication(defaults)
         if auth is not None:
@@ -312,7 +312,7 @@ class MetaConfig(BaseModel):
         return settings.to_authentication(settings.resolved_permission())
 
     def _per_method_authentication(
-        self, defaults: DefaultsConfig
+        self, methods: dict[str, MethodAuthConfig | None], defaults: DefaultsConfig
     ) -> Authentication | None:
         """Authentication for ``methods: {GET: {...}, DELETE: {...}}``.
 
@@ -322,8 +322,7 @@ class MetaConfig(BaseModel):
         default_permission = default_auth.permission if default_auth else None
 
         permissions: dict[str, type] = {}
-        assert isinstance(self.methods, dict)
-        for method, method_cfg in self.methods.items():
+        for method, method_cfg in methods.items():
             method_auth = (method_cfg.authentication if method_cfg else None) or (
                 self.authentication
             )
