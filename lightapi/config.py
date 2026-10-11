@@ -98,26 +98,23 @@ class Filtering:
 class Pagination:
     """Pagination configuration for a RestEndpoint."""
 
-    style: PaginationStyle = PaginationStyle.PAGE_NUMBER
+    # A PaginationStyle or its value, as the user wrote it; `paginator` converts.
+    style: PaginationStyle | str = PaginationStyle.PAGE_NUMBER
     page_size: int = DEFAULT_PAGE_SIZE
 
     def __post_init__(self) -> None:
-        try:
-            style = PaginationStyle(self.style)
-        except ValueError:
+        if self.style not in PaginationStyle.__members__.values():
             raise ConfigurationError(
                 f"Pagination style '{self.style}' is invalid. "
                 f"Choose from: {tuple(valid.value for valid in PaginationStyle)}"
-            ) from None
-        # The documented way to normalise a field of a frozen dataclass.
-        object.__setattr__(self, "style", style)
+            )
         if self.page_size < 1:
             raise ConfigurationError("Pagination page_size must be a positive integer.")
 
     @cached_property
     def paginator(self) -> Paginator:
         """Built once per configuration; paginators keep no per-request state."""
-        return self.style.build(self.page_size)
+        return PaginationStyle(self.style).build(self.page_size)
 
 
 @dataclass(frozen=True)
