@@ -97,6 +97,11 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_startup` handler; same moment, no deprecation warning. `created_at`/`updated_at`
   column defaults no longer use the deprecated `datetime.utcnow()`; the stored value is the
   same naive UTC.
+- **A method the endpoint does not allow answers the documented JSON 405**:
+  `{"detail": "Method Not Allowed. Allowed: GET"}` with the `Allow` header, on the CRUD
+  routes and on `/auth/login`. Before, the route listed only the allowed methods and
+  Starlette answered the others with a `text/plain` "Method Not Allowed" (the JSON reply
+  existed in the code but only `HEAD` ever reached it). Status and `Allow` are unchanged.
 - **An async app on asyncpg no longer fails its first request after startup** ("Future
   attached to a different loop"). The startup created the tables on a worker thread with
   its own event loop, and the connection that did it went back to the pool bound to that

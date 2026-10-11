@@ -94,6 +94,19 @@ class Test405AllowHeader:
         assert "Allow" in resp.headers
         assert "GET" in resp.headers["Allow"]
 
+    def test_405_body_is_the_documented_json(self, client):
+        """README "Error responses": {"detail": "Method Not Allowed. Allowed: GET"}.
+
+        Starlette's route-level method filter used to answer first, with a
+        text/plain body, so the JSON reply the handler builds never left the server.
+        """
+        resp = client.post("/readonly", json={"title": "X"})
+
+        assert resp.status_code == 405
+        assert resp.headers["content-type"].startswith("application/json")
+        assert resp.json() == {"detail": "Method Not Allowed. Allowed: GET"}
+        assert resp.headers["Allow"] == "GET"
+
 
 class TestRouteMerge:
     def test_route_merge_combines_methods(self, client):

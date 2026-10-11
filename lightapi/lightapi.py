@@ -27,7 +27,7 @@ from lightapi.authentication import (
     JWTAuthentication,
 )
 from lightapi.cache import RedisCacheBackend
-from lightapi.constants import CRUD_VERBS, ExecutionMode, HttpVerb
+from lightapi.constants import CRUD_VERBS, ExecutionMode
 from lightapi.endpoint_handler import AppContext, EndpointHandler, MiddlewareChain
 from lightapi.exceptions import ConfigurationError
 from lightapi.health import HEALTH_PATH, HealthCheckEndpoint
@@ -66,6 +66,7 @@ class LightApi:
         "requests_per_day": 100000,
     }
     # An `async def` of any of these on an endpoint switches the app to async mode.
+    _ROUTE_METHODS: Final = [verb.value for verb in CRUD_VERBS]
     _ASYNC_HANDLER_NAMES: Final = (
         "queryset",
         *(verb.value.lower() for verb in CRUD_VERBS),
@@ -139,11 +140,14 @@ class LightApi:
 
         collection = EndpointHandler.for_collection(cls, app_context)
         detail = EndpointHandler.for_detail(cls, app_context)
+        # Every CRUD verb reaches the handler: a route that listed only the allowed
+        # ones made Starlette answer the others with its text/plain 405, and the
+        # JSON reply the README documents (with the Allow header) was never sent.
         self._routes.append(
             Route(
                 path,
                 endpoint=collection.handle,
-                methods=collection.methods,
+                methods=self._ROUTE_METHODS,
                 name=f"{cls.__name__}_collection",
             )
         )
@@ -151,7 +155,7 @@ class LightApi:
             Route(
                 path.rstrip("/") + "/{id:int}",
                 endpoint=detail.handle,
-                methods=detail.methods,
+                methods=self._ROUTE_METHODS,
                 name=f"{cls.__name__}_detail",
             )
         )
@@ -169,7 +173,8 @@ class LightApi:
         login = LoginEndpoint(backend, self._login_validator, rate_limiter)
         auth_path = self._auth_path.rstrip("/")
         return [
-            Route(f"{auth_path}/{name}", login.handle, methods=[HttpVerb.POST.value])
+            # LoginEndpoint answers its own JSON 405 (Allow: POST) to other methods.
+            Route(f"{auth_path}/{name}", login.handle, methods=self._ROUTE_METHODS)
             for name in ("login", "token")
         ]
 

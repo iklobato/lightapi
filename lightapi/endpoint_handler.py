@@ -221,7 +221,12 @@ class EndpointHandler:
             if authentication is not None
             else None
         )
-        self._bound = {http_verb: self._bind(verb) for http_verb, verb in verbs.items()}
+        # Only the verbs the endpoint allows are bound; the others get the JSON 405.
+        self._bound = {
+            http_verb: self._bind(verb)
+            for http_verb, verb in verbs.items()
+            if http_verb.value in self.methods
+        }
 
     def _bind(self, verb: _Verb) -> _BoundVerb:
         """Resolve what serves one verb on this endpoint class, once."""

@@ -227,6 +227,13 @@ class TestHttpMethodAndErrorFormat:
         assert resp.status_code == 405
         assert resp.headers.get("Allow") == "POST"
 
+    def test_login_get_405_body_is_json(self, jwt_client):
+        """The login route's own 405 reply, not Starlette's text/plain one."""
+        resp = jwt_client.get("/auth/login")
+
+        assert resp.headers["content-type"].startswith("application/json")
+        assert resp.json() == {"detail": "method not allowed"}
+
 
 class TestConfigurationAndRegistration:
     def test_register_jwt_without_validator_succeeds(self):
