@@ -304,4 +304,38 @@ Fix: `_create_tables` skips table creation for an `AsyncEngine` on a sync app an
 warning naming the cause, so the app builds and behaves as before (the two 500s). Regression
 test added (`caplog`); 3.11 run before the fix: 567 passed.
 
-### Measurements
+### Measurements (final commit of the pass vs the merged base d24c7f3)
+
+| Measure | Base (d24c7f3) | Final |
+|---|---|---|
+| pytest 3.10 (`--isolated`) | 547 passed, 19 skipped, 1 xfailed, 2 xpassed | 568 passed, 19 skipped, 1 xfailed, 2 xpassed |
+| pytest 3.11 / 3.12 / 3.13 | 547 passed (3.13 measured) | 567 (3.11, before the last fix), 568, 568 |
+| coverage (3.10) | 90% (2136 statements, 213 missed) | 92% (2174 statements, 176 missed) |
+| ruff check / format | clean | clean |
+| mypy lightapi | 0 errors, 35 files | 0 errors, 30 files |
+| build + twine | PASSED | PASSED |
+| `lightapi/` files / lines | 35 / 4647 | 30 / 4675 |
+| classes / enums | 69 / 2 | 81 / 10 |
+| module-level functions | 72 | 6 (`Field`, `get_sync_session`, `get_async_session`, `server.main`, `_coerce_filter_value`, `invalidate_cache_prefix`: all public or documented) |
+| `except Exception` | 16 | 3 (`_login.py` documented 401; two rollback-and-reraise in `session.py`) |
+| in-function imports | ~30 | 2 (both the optional `sqlalchemy[asyncio]` extra) |
+| HTTP snapshot (`18_full_api.py`, 41 requests) | recorded | 41/41 identical |
+| differential harness vs base | 412 steps | 412/412 identical |
+| differential harness vs published 0.1.29 | | 404 identical, 6 declared (#44's), 2 undeclared that come from PR #46 (`?page=abc`, `?page=0`; not in `compare.py`'s `ALLOWED` nor in the CHANGELOG) |
+| warnings in the suite | 656 (547 tests) | 714 (568 tests); same four kinds: SQLAlchemy class-name reuse, `Column.copy()` deprecation, pytest `env` option, Starlette `on_startup` deprecation |
+| `mkdocs build --strict` | | passes with the two new pages (not in `docs/.pages`, on purpose) |
+
+Lines: the dead code was removed in PR #44, so this pass is structure, not deletion. Files
+that grew and why: `constants.py` +122 (six enums and `ApiError` that replaced literals in
+nine modules), `table_mapping.py` +133 (took the column building from `rest.py`, which lost
+154), `endpoint_handler.py` +109 (absorbed `auth_checker.py` and `middleware_runner.py`,
+together 87 lines), `cache.py` +60 (absorbed `cache_helper.py`, 82 lines, minus the removed
+module functions), `yaml_config.py` 553 (replaces 664 lines of three modules).
+
+Not done, on purpose (plan "Pare e anote"): `_meta` stays a dict (documented); `partial: bool`
+in the public `update()` stays; `Cache.vary_on`, `Config.jwt_expiration` and
+`Authentication.rate_limiter` are public fields that nothing reads; FROZEN bodies untouched
+(`jwt.py:65` literal `"OPTIONS"`, raw 401s in `base.py`/`jwt.py`); B19, B20, T8-01 untouched.
+
+Not pushed. The prompt forbids `git push`; the stacked PR on `test/release-validation` waits
+for Henry's go-ahead.

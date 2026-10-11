@@ -1019,4 +1019,565 @@ Detail for claim 10, every import inside a function body (file:line, imported na
 
 ## After the refactor
 
-(to be written at the end of the refactor)
+State of `lightapi/` at the end of the second OO pass (branch `refactor/oo-second-pass`).
+30 modules (was 35), 81 classes, 10 enums, and 6 module-level functions, every one of them
+public or documented: `Field`, `get_sync_session`, `get_async_session`, `server.main`,
+`filters._coerce_filter_value`, `cache.invalidate_cache_prefix`.
+
+### Module overview
+
+```mermaid
+flowchart LR
+  subgraph app["Application"]
+    LA[lightapi.py: LightApi]
+    EH[endpoint_handler.py: EndpointHandler, EndpointGuard, MiddlewareChain]
+    LOGIN[_login.py: LoginRequest, LoginEndpoint]
+    HEALTH[health.py]
+    SERVER[server.py: ServerCommand, main]
+  end
+  subgraph core["Core"]
+    REST[rest.py: RestEndpointMeta, RestEndpoint]
+    REPO[repository.py: Repository]
+    SCHEMA[schema.py: SchemaFactory, FieldProjection]
+    TABLE[table_mapping.py: TableSource, DeclaredTable, ReflectedTable]
+    SM[session_manager.py: SessionManager]
+    SESS[session.py: get_sync_session, get_async_session]
+  end
+  subgraph cfg["Configuration"]
+    CONFIG[config.py: Config, Authentication, Filtering, Pagination, Cache, Serializer]
+    CONST[constants.py: HttpVerb, ExecutionMode, TableReflection, JwtAlgorithm, ApiError, ResponseKey]
+    YAML[yaml_config.py: LightAPIConfig and the YAML models]
+    DICT[_dict_config_loader.py: DictConfig, DictAuthKind]
+  end
+  subgraph features["Features"]
+    AUTH[authentication/: backends and permissions]
+    CACHE[cache.py: RedisCacheBackend, EndpointCache]
+    PAG[pagination.py: PaginationStyle, Cursor, paginators]
+    FILT[filters.py: BaseFilter and backends]
+    RL[rate_limiter.py: RateLimiter, RateLimitWindow]
+  end
+  LA --> EH --> REST --> REPO
+  REST --> SCHEMA
+  REST --> TABLE --> SCHEMA
+  REST --> SESS
+  EH --> CACHE
+  EH --> SM
+  LA --> LOGIN --> RL
+  LA --> YAML --> CONFIG
+  LA --> DICT --> CONFIG
+  CONFIG --> PAG
+  REST --> CONFIG
+  AUTH --> CONFIG
+  EH --> AUTH
+  FILT --> REST
+  CONST --> AUTH
+  CONST --> REST
+  CONST --> EH
+  CONST --> CACHE
+  SM -.->|engine, run_blocking| REPO
+  CACHE -.->|RedisCacheBackend.shared| REDIS[(Redis)]
+  SM -.-> DB[(SQLAlchemy engine)]
+  AUTH -.-> JWT[PyJWT]
+  YAML -.-> PYYAML[PyYAML]
+```
+
+Global state left: `config.config` (the `Config` instance `JWTAuthentication` reads, kept as
+documented), `session_manager._state` (one `_GlobalState` with `reset()`), and
+`RedisCacheBackend.shared()` (a `functools.cache` on a classmethod, built on first use).
+
+### Enums (constants.py, pagination.py, rate_limiter.py, _dict_config_loader.py)
+
+```mermaid
+classDiagram
+  class HttpVerb {
+    <<str, Enum>>
+    GET POST PUT PATCH DELETE OPTIONS
+    +of(method: str) HttpVerb or None
+  }
+  class ExecutionMode {
+    <<str, Enum>>
+    SYNC ASYNC
+    +from_user(mode: str or None) ExecutionMode
+  }
+  class TableReflection {
+    <<str, Enum>>
+    FULL PARTIAL
+    +from_meta(value: object) TableReflection or None
+  }
+  class JwtAlgorithm {
+    <<str, Enum>>
+    HS256 HS384 HS512 RS256 RS384 RS512 ES256 ES384 ES512
+    +validated(name: str) str
+  }
+  class ApiError {
+    <<Enum>>
+    NOT_FOUND VERSION_CONFLICT AUTHENTICATION_REQUIRED INSUFFICIENT_PERMISSIONS INVALID_CREDENTIALS LOGIN_METHOD_NOT_ALLOWED
+    +status: HTTPStatus
+    +detail: str
+    +headers: dict or None
+    +response() JSONResponse
+    +validation_failed(errors) JSONResponse
+  }
+  class ResponseKey {
+    <<str, Enum>>
+    DETAIL RESULTS TOKEN USER COUNT PAGES NEXT PREVIOUS
+  }
+  class PaginationStyle {
+    <<str, Enum>>
+    PAGE_NUMBER CURSOR
+    +build(page_size: int) Paginator
+  }
+  class RateLimitWindow {
+    <<str, Enum>>
+    MINUTE HOUR DAY
+    +seconds int
+    +from_key(key: str) RateLimitWindow
+  }
+  class DictAuthKind {
+    <<str, Enum>>
+    JWT BASIC
+    +backend type
+  }
+  class _CrudArgument {
+    <<Enum>>
+    REQUEST DATA PK FULL_UPDATE PARTIAL_UPDATE
+  }
+```
+
+`http.HTTPStatus` from the standard library replaced the copy in `constants.py`. Members of
+a `(str, Enum)` are never formatted (`f"{member}"` differs between Python 3.10 and 3.11+);
+code that needs the text uses `.value`.
+
+### Core
+
+```mermaid
+classDiagram
+  class RestEndpointMeta {
+    +__new__(name, bases, namespace) type
+    -_process(cls, name, namespace) None
+    -_reject_redeclared_auto_fields(name, namespace) None
+    -_parsed_meta(name, meta_obj) dict
+    -_methods_from_mixins(cls) set of str
+  }
+  class RestEndpoint {
+    +_meta: dict
+    +_allowed_methods: set of str
+    +_model_class: type or None
+    +_table_source: TableSource
+    +background(fn, *args, **kwargs) None
+    +list(request) Response
+    +retrieve(request, pk) Response
+    +create(data) Response
+    +update(data, pk, partial) Response
+    +destroy(request, pk) Response
+    +_list_async(request) Response
+    +_retrieve_async(request, pk) Response
+    +_create_async(data) Response
+    +_update_async(data, pk, partial) Response
+    +_destroy_async(request, pk) Response
+    -_session_manager_or_raise() SessionManager
+    -_get_engine() Engine
+    -_get_async_engine() AsyncEngine
+    -_get_queryset(request) Select
+    -_get_queryset_async(request) Select
+    -_fields_for(verb: HttpVerb) list or None
+    -_serialize_row(row, fields) dict
+    -_list(session, request, qs) Response
+    -_retrieve(session, pk) Response
+    -_create(session, data) Response
+    -_update(session, data, pk, partial) Response
+    -_update_values(data, partial, nullable_columns) dict
+    -_destroy(session, pk) Response
+    -_repository(session) Repository
+  }
+  class Repository {
+    -_MIN_PK: int
+    -_MAX_PK: int
+    +nullable_columns set of str
+    +get(pk) row
+    +add(values) row
+    +update(pk, expected_version, values) row
+    +delete(pk) None
+    -_in_pk_range(pk) bool
+    -_utcnow() datetime
+  }
+  class RowNotFound
+  class VersionConflict
+  class FieldProjection {
+    <<NamedTuple>>
+    +fields: list or None
+    +read: list or None
+    +write: list or None
+    +from_serializer(serializer) FieldProjection
+    +for_method(method: str) list or None
+    +apply(d: dict, fields) dict
+  }
+  class SchemaFactory {
+    +build(cls) tuple
+    +build_from_reflected_table(cls, table) tuple
+    +row_to_dict(row) dict
+    +patch_schema(schema_create) type
+    -_schema_pair(name, create_fields, read_fields) tuple
+    -_reflected_annotation(column) type
+  }
+  class TableSource {
+    <<ABC>>
+    +map(endpoint_cls, session_manager)* None
+    -_table_name(endpoint_cls, session_manager) str
+    -_strip_field_infos(endpoint_cls, columns) None
+  }
+  class DeclaredTable {
+    +from_endpoint(endpoint_cls, name, namespace) DeclaredTable
+    +map(endpoint_cls, session_manager) None
+    -_field_annotations(endpoint_cls) dict
+    -_column_for(endpoint_name, field_name, annotation, field_info) Column or None
+    -_is_optional(annotation) tuple
+    -_auto_columns() list of Column
+  }
+  class ReflectedTable {
+    -_reflection: TableReflection
+    +map(endpoint_cls, session_manager) None
+    -_reflect(table_name, session_manager) Table
+    -_reflect_sync(engine, metadata, table_name) Table
+    -_reflect_async(engine, metadata, table_name) Table
+  }
+  class SessionManager {
+    +engine
+    +sync_engine
+    +metadata: MetaData
+    +registry
+    +is_async: bool
+    +run_blocking(fn, *args) T
+    +table_name_for(base_name) str
+    +create_tables_now() None
+  }
+  RestEndpointMeta ..> DeclaredTable : from_endpoint
+  RestEndpointMeta ..> ReflectedTable
+  RestEndpointMeta ..> SchemaFactory : build
+  RestEndpointMeta ..> FieldProjection : from_serializer
+  TableSource <|-- DeclaredTable
+  TableSource <|-- ReflectedTable
+  ReflectedTable ..> SchemaFactory : build_from_reflected_table
+  RestEndpoint ..> Repository
+  RestEndpoint ..> FieldProjection : for_method, apply
+  RestEndpoint ..> SchemaFactory : row_to_dict, patch_schema
+  RestEndpoint ..> SessionManager : _session_manager_or_raise
+  Repository ..> RowNotFound
+  Repository ..> VersionConflict
+```
+
+### Request path
+
+```mermaid
+classDiagram
+  class LightApi {
+    -_LOGIN_RATE_LIMITS: dict
+    -_ASYNC_HANDLER_NAMES: tuple
+    -_mode: ExecutionMode
+    +register(mapping) None
+    +build_app(debug) Starlette
+    +run(host, port, debug, reload) None
+    +from_config(config_path, **kwargs) LightApi
+    +from_dict(config, **kwargs) LightApi
+    -_register_endpoint(path, cls, app_context) None
+    -_login_routes() list of Route
+    -_login_backend() BaseAuthentication or None
+    -_asgi_routes() list of Route
+    -_create_tables() None
+    -_create_tables_inside_running_loop(metadata) None
+    -_check_cache_connections() None
+    -_engine_from_url(database_url) Engine
+    -_as_rate_limiter(value) RateLimiter or None
+    -_require_rest_endpoint(path, cls) None
+    -_has_async_handlers(endpoint_cls) bool
+    -_require_async_engine(engine) None
+    -_validate_async_dependencies(engine) None
+  }
+  class AppContext {
+    <<frozen dataclass>>
+    +middlewares: MiddlewareChain
+    +mode: ExecutionMode
+    +login_validator
+  }
+  class MiddlewareChain {
+    <<frozen dataclass>>
+    +classes: list of type
+    +before(request) Response or None
+    +after(request, response) Response
+  }
+  class EndpointGuard {
+    +backend BaseAuthentication
+    +check(request) Response or None
+  }
+  class _Verb {
+    <<frozen dataclass>>
+    +override: str
+    +sync_name: str
+    +async_name: str
+    +arguments: tuple of _CrudArgument
+    +reads_body: bool
+    +cached: bool
+    +call_arguments(request, data, pk) tuple
+  }
+  class EndpointHandler {
+    +for_collection(endpoint_cls, app) EndpointHandler
+    +for_detail(endpoint_cls, app) EndpointHandler
+    +methods list of str
+    +handle(request) Response
+    -_serve(verb, endpoint, request) Response
+    -_call_override(override, endpoint, request) Response
+    -_json_body(request) dict
+    -_method_not_allowed() Response
+  }
+  class EndpointCache {
+    +serve(request, fn) Response
+    +serve_async(request, fn) Response
+    +invalidate_after_write(request) None
+    -_cached_response(request) Response or None
+    -_store_response(request, response) None
+    -_key(request) str
+    -_key_prefix() str
+  }
+  class RedisCacheBackend {
+    +shared() RedisCacheBackend
+    +get(key) Any or None
+    +set(key, value, timeout) bool
+    +delete(key) bool
+    +invalidate_prefix(prefix) bool
+    +ping() bool
+  }
+  LightApi ..> AppContext : one per register()
+  LightApi ..> EndpointHandler : two per endpoint
+  LightApi ..> RedisCacheBackend : ping at build_app
+  EndpointHandler --> MiddlewareChain
+  EndpointHandler --> EndpointGuard : when Meta.authentication
+  EndpointHandler --> EndpointCache : one per route
+  EndpointHandler ..> _Verb
+  EndpointGuard ..> ApiError
+  EndpointCache ..> RedisCacheBackend : shared()
+```
+
+```mermaid
+sequenceDiagram
+  participant S as Starlette Route
+  participant H as EndpointHandler
+  participant M as MiddlewareChain
+  participant G as EndpointGuard
+  participant E as RestEndpoint
+  participant C as EndpointCache
+  participant R as Repository
+  S->>H: handle(request)
+  H->>M: before(request)
+  H->>G: check(request)
+  Note over G: backend built on the first call, cached
+  H->>H: HttpVerb.of(request.method), verb table
+  H->>H: _json_body(request) when the verb reads a body
+  alt ExecutionMode.ASYNC
+    H->>C: serve_async(request, crud) for cached verbs
+    C->>E: _list_async / _retrieve_async / ...
+  else ExecutionMode.SYNC
+    H->>E: SessionManager.run_blocking(cache.serve or crud)
+  end
+  E->>E: _fields_for(verb) once per request
+  E->>R: get / add / update / delete
+  E-->>H: Response or dict
+  H->>C: invalidate_after_write(request)
+  H->>M: after(request, response)
+```
+
+Built once at `register()`: handlers, guards, caches, routes, table mapping, schemas,
+paginators (`Pagination.paginator`). Per request: the endpoint instance, middleware
+instances (as `Middleware` subclasses always were), the body parse, `Repository` and the
+session.
+
+### Authentication, configuration and login
+
+```mermaid
+classDiagram
+  class Authentication {
+    <<frozen dataclass>>
+    +backend: type or None
+    +permission: type or dict or None
+    +jwt_expiration +jwt_extra_claims +jwt_algorithm +rate_limiter
+    +permission_for(method) type or None
+    +requires_login(method) bool
+    +build_backend(login_validator) BaseAuthentication
+  }
+  class BasePermission {
+    +requires_authentication: bool = True
+    +has_permission(request) bool
+  }
+  class AllowAny {
+    +requires_authentication = False
+  }
+  class IsAuthenticated
+  class IsAdminUser
+  class BaseAuthentication {
+    +from_config(authentication, login_validator) BaseAuthentication
+    +authenticate(request) bool
+    +validate_credentials(username, password) dict or None
+  }
+  class JWTAuthentication
+  class BasicAuthentication
+  class LoginRequest {
+    <<pydantic, frozen>>
+    +username: str
+    +password: str
+    +from_request(request) LoginRequest or None
+    +parse_basic_header(header) tuple or None
+  }
+  class LoginEndpoint {
+    +handle(request) JSONResponse
+    -_validated_user(username, password) dict or None
+  }
+  class Config {
+    +jwt_secret +jwt_algorithm +jwt_expiration
+    +jwt_secret_value str or None
+    +jwt_algorithm_value str
+  }
+  class Pagination {
+    <<frozen dataclass>>
+    +style: PaginationStyle
+    +page_size: int
+    +paginator Paginator
+  }
+  BasePermission <|-- AllowAny
+  BasePermission <|-- IsAuthenticated
+  BasePermission <|-- IsAdminUser
+  BaseAuthentication <|-- JWTAuthentication
+  BaseAuthentication <|-- BasicAuthentication
+  Authentication ..> BasePermission : requires_authentication
+  Authentication ..> BaseAuthentication : from_config
+  LoginEndpoint ..> LoginRequest
+  LoginEndpoint ..> ApiError
+  BasicAuthentication ..> LoginRequest : parse_basic_header
+  JWTAuthentication ..> Config : config.jwt_secret_value
+  Config ..> JwtAlgorithm : validated
+  Pagination ..> PaginationStyle : build
+```
+
+`config.py` no longer imports `lightapi.authentication` at runtime: the permission says
+whether login is required, so the import cycle that forced two in-function imports is gone.
+
+### YAML and dict configuration
+
+```mermaid
+classDiagram
+  class LightAPIConfig {
+    <<pydantic>>
+    +database +cors_origins +defaults +endpoints +middleware +auth +mode
+    +from_file(config_path) LightAPIConfig
+    +build_app(app_cls, **overrides) LightApi
+    +resolve_name(name) type
+    +resolve_callable(dotted_path) callable
+  }
+  class EndpointConfig {
+    +route +fields +reflect +meta
+    +class_name str
+    +build_endpoint_class(defaults) type
+  }
+  class MetaConfig {
+    +methods +authentication +filtering +pagination +cache +serializer +table
+    +build_meta_class(defaults, reflect) type
+    +endpoint_bases() tuple of type
+  }
+  class FieldSpec {
+    +type +optional
+    +annotation type
+    +field_info() FieldInfo or None
+  }
+  class AuthConfig {
+    +merged_over(defaults) AuthConfig
+    +resolved_permission() type or dict or None
+    +to_authentication(permission) Authentication
+  }
+  class FilteringConfig {
+    +to_filtering() Filtering
+  }
+  class PaginationConfig {
+    +to_pagination() Pagination
+  }
+  class DictConfig {
+    <<frozen dataclass>>
+    +config: dict
+    +build(app_cls, **overrides) LightApi
+    -_endpoint_class(route, spec) type
+    -_meta_attributes(spec) dict
+    -_method_mixins(methods) list of type
+    -_class_name(route) str
+  }
+  LightAPIConfig *-- EndpointConfig
+  EndpointConfig *-- MetaConfig
+  EndpointConfig *-- FieldSpec
+  MetaConfig *-- AuthConfig
+  MetaConfig *-- FilteringConfig
+  MetaConfig *-- PaginationConfig
+  DictConfig ..> DictAuthKind
+```
+
+The name registry (`NAME_REGISTRY`) and the verb-to-mixin map (`HTTP_METHOD_MIXINS`) are
+module constants built with top-level imports; none of the modules they name imports
+`yaml_config` or `lightapi.lightapi`, so there is no cycle.
+
+### Pagination and filters
+
+```mermaid
+classDiagram
+  class Paginator {
+    <<Protocol>>
+    +render(request, qs, session, serialize) dict
+  }
+  class Cursor {
+    <<frozen dataclass>>
+    +last_id: int
+    +INVALID: tuple of exception types
+    +encode() str
+    +decode(text) Cursor
+  }
+  class NoPagination
+  class PageNumberPaginator {
+    +render(...) dict
+    +paginate(request, qs, session, page_size) tuple
+    +paginate_async(...) tuple
+    +wrap(request, results, total, page, page_size) dict
+    -_current_page(request) int
+  }
+  class CursorPaginator {
+    +render(...) dict
+    +paginate(request, qs, session, page_size) tuple
+    +paginate_async(...) tuple
+    +wrap(results, next_cursor, prev_cursor) dict
+  }
+  class BaseFilter {
+    +RESERVED_PARAMS
+    +filter_queryset(request, queryset, view) Select
+    -_escape_like(value) str
+    -_coerce_filter_value(col, value) Any
+  }
+  class FieldFilter
+  class SearchFilter
+  class OrderingFilter
+  Paginator <|.. NoPagination
+  Paginator <|.. PageNumberPaginator
+  Paginator <|.. CursorPaginator
+  CursorPaginator ..> Cursor
+  BaseFilter <|-- FieldFilter
+  BaseFilter <|-- SearchFilter
+  BaseFilter <|-- OrderingFilter
+```
+
+### What changed against the "before" diagnosis
+
+- No module-level function outside the six public or documented ones listed at the top.
+- Every closed set is an enum (`HttpVerb`, `ExecutionMode`, `TableReflection`,
+  `PaginationStyle`, `JwtAlgorithm`, `RateLimitWindow`, `ApiError`, `DictAuthKind`,
+  `_CrudArgument`), converted at the edge; the strings users pass still work.
+- `except Exception` remains only where it is the contract: `_login.py` (a
+  `login_validator` that raises is a 401, CHANGELOG 0.1.24) and the two rollback-and-reraise
+  guards in `session.py`.
+- No import inside a function except the two optional-extra (`sqlalchemy[asyncio]`) probes.
+- Built once per route instead of per request: the auth backend, the response cache object,
+  the paginator; the serializer projection is resolved once per request instead of per row.
+- Modules removed: `auth_checker.py`, `middleware_runner.py`, `cache_helper.py`,
+  `yaml_loader.py`, `yaml_names.py`, `yaml_schema.py` (the last three became
+  `yaml_config.py`).
