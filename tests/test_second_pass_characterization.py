@@ -103,9 +103,9 @@ class TestAuthenticationResponses:
 
         assert resp.status_code == 401
         assert resp.headers["WWW-Authenticate"] == "Bearer"
-        assert resp.json() == {"detail": "Authentication required"}
+        assert resp.json() == {"detail": "Authentication credentials invalid."}
 
-    def test_basic_endpoint_without_credentials_returns_401_with_bearer_challenge(
+    def test_basic_endpoint_without_credentials_returns_401_with_basic_challenge(
         self,
     ):
         client = _client({"/notes": BasicNote})
@@ -113,8 +113,8 @@ class TestAuthenticationResponses:
         resp = client.get("/notes")
 
         assert resp.status_code == 401
-        assert resp.headers["WWW-Authenticate"] == "Bearer"
-        assert resp.json() == {"detail": "Authentication required"}
+        assert resp.headers["WWW-Authenticate"] == 'Basic realm="Restricted Area"'
+        assert resp.json() == {"error": "authentication failed"}
 
     def test_method_missing_from_permission_dict_is_public(self):
         client = _client({"/notes": PostOnlyLogin})

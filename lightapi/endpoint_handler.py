@@ -99,7 +99,9 @@ class EndpointGuard:
         if authentication.requires_login(request.method) and not (
             self.backend.authenticate(request)
         ):
-            return ApiError.AUTHENTICATION_REQUIRED.response()
+            # The backend's own 401: its text, and the challenge header its scheme
+            # needs (Bearer, or Basic with a realm so browsers prompt).
+            return self.backend.get_auth_error_response(request)
 
         permission = authentication.permission_for(request.method)
         if permission is not None and not permission().has_permission(request):

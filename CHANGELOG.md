@@ -97,6 +97,14 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_startup` handler; same moment, no deprecation warning. `created_at`/`updated_at`
   column defaults no longer use the deprecated `datetime.utcnow()`; the stored value is the
   same naive UTC.
+- **A protected endpoint's 401 is the backend's own reply**: the guard answered every
+  failed authentication with `{"detail": "Authentication required"}` and
+  `WWW-Authenticate: Bearer`, whatever the backend. It now returns the backend's
+  `get_auth_error_response(request)`, so a JWT endpoint answers the documented
+  `{"detail": "Authentication credentials invalid."}` with `Bearer`, a Basic endpoint
+  answers `{"error": "authentication failed"}` with `Basic realm="Restricted Area"` (the
+  challenge a browser needs to prompt), and a backend subclass that overrides the hook is
+  finally heard. Status 401 unchanged.
 - **A method the endpoint does not allow answers the documented JSON 405**:
   `{"detail": "Method Not Allowed. Allowed: GET"}` with the `Allow` header, on the CRUD
   routes and on `/auth/login`. Before, the route listed only the allowed methods and

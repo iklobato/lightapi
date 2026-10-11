@@ -15,12 +15,15 @@ from sqlalchemy import select as sa_select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
+from starlette.responses import JSONResponse
 from starlette.testclient import TestClient
 
 import lightapi
 from lightapi import (
     Authentication,
+    BasicAuthentication,
     Cache,
+    IsAuthenticated,
     JWTAuthentication,
     LightApi,
     Pagination,
@@ -356,6 +359,66 @@ class TestB14WarningsAndLogs:
             app.register({"/fresh": AuditFresh})
 
         assert AuditFresh.__table__.c.title is not None
+
+
+class TestA10GuardAnswersWithTheBackend:
+    """The 401 a protected endpoint sends is the backend's get_auth_error_response():
+    the documented hook, the README's JWT text, and the Basic challenge browsers need.
+    """
+
+    def test_jwt_endpoint_401_is_the_backend_reply(self):
+        class AuditJwtGuarded(RestEndpoint):
+            title: str = LField()
+
+            class Meta:
+                authentication = Authentication(
+                    backend=JWTAuthentication, permission=IsAuthenticated
+                )
+
+        client = _client({"/jwtguarded": AuditJwtGuarded})
+
+        response = client.get("/jwtguarded")
+
+        assert response.status_code == 401
+        assert response.json() == {"detail": "Authentication credentials invalid."}
+        assert response.headers["www-authenticate"] == "Bearer"
+
+    def test_basic_endpoint_401_carries_the_basic_challenge(self):
+        class AuditBasicGuarded(RestEndpoint):
+            title: str = LField()
+
+            class Meta:
+                authentication = Authentication(
+                    backend=BasicAuthentication, permission=IsAuthenticated
+                )
+
+        client = _client({"/basicguarded": AuditBasicGuarded})
+
+        response = client.get("/basicguarded")
+
+        assert response.status_code == 401
+        assert response.json() == {"error": "authentication failed"}
+        assert response.headers["www-authenticate"] == 'Basic realm="Restricted Area"'
+
+    def test_a_backend_that_overrides_the_hook_is_heard(self):
+        class Teapot(JWTAuthentication):
+            def get_auth_error_response(self, request):
+                return JSONResponse({"detail": "no tea"}, status_code=418)
+
+        class AuditCustomGuarded(RestEndpoint):
+            title: str = LField()
+
+            class Meta:
+                authentication = Authentication(
+                    backend=Teapot, permission=IsAuthenticated
+                )
+
+        client = _client({"/customguarded": AuditCustomGuarded})
+
+        response = client.get("/customguarded")
+
+        assert response.status_code == 418
+        assert response.json() == {"detail": "no tea"}
 
 
 class TestB19LifespanLoop:

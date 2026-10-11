@@ -20,7 +20,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | A7 duplicate flows | 1 | 0 | 1 | 0 | 0 |
 | A8 backend construction | 1 | 0 | 1 | 0 | 0 |
 | A9 per-request constants | 0 | 0 | 0 | 0 | 0 |
-| A10 error replies | 2 | 1 | 1 | 0 | 0 |
+| A10 error replies | 3 | 2 | 1 | 0 | 0 |
 | B1 silent errors | 18 | 4 | 11 | 3 | 0 |
 | B2 hiding defaults | 10 | 3 | 7 | 0 | 0 |
 | B3 sentinel returns | 3 | 0 | 3 | 0 | 0 |
@@ -37,7 +37,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B14 logs and warnings | 8 | 7 | 1 | 0 | 0 |
 | B15 hidden YAGNI | 5 | 3 | 1 | 1 | 0 |
 | B16 tests that do not protect | 5 | 2 | 3 | 0 | 0 |
-| **Total** | **118** | **48** | **56** | **14** | **0** |
+| **Total** | **119** | **49** | **56** | **14** | **0** |
 
 ## Phase 0: baseline
 
@@ -118,6 +118,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | A6-003 | A6 | `lightapi/repository.py:23` | `VersionedRow` Protocol | manter: a structural type for every mapped class, used for typing only, not dispatch | justificado | |
 | A7-001 | A7 | `lightapi/_dict_config_loader.py:38` | `DictConfig.build` and `LightAPIConfig.build_app` both build an app from a config | manter: two public input formats (`from_dict` is deprecated and goes in 0.2.0) | justificado | |
 | A8-001 | A8 | `lightapi/lightapi.py:174` | `_login_backend` picks the login backend with `issubclass(backend, kind)` over (JWT, Basic) | manter: single construction point stays `Authentication.build_backend`; this chooses which endpoint's backend answers `/auth/login`, by class, not by name | justificado | |
+| A10-003 | A10 | `lightapi/endpoint_handler.py:102` | `EndpointGuard.check` answered every failed authentication with the generic `{"detail": "Authentication required"}` + `WWW-Authenticate: Bearer`; the backend's `get_auth_error_response()` (the documented hook; JWT's text is the one the README lists; Basic's carries the `Basic realm` challenge) never ran on the guard path. Same in v0.1.29. Found by e2e scenario 04 | corrigido: the guard returns `backend.get_auth_error_response(request)`; `ApiError.AUTHENTICATION_REQUIRED` removed | corrigido | `see git log: fix(A10-003)` |
 | A10-002 | A10 | `lightapi/lightapi.py:146`, `endpoint_handler.py:224` | The routes listed only the allowed methods, so Starlette answered every other verb with its text/plain 405; the JSON 405 the README documents (`{"detail": "Method Not Allowed. Allowed: GET"}`) was reachable only by HEAD. Found by e2e scenario 03 | corrigido: every CRUD verb reaches the handler, which binds only the allowed ones and answers the JSON 405 with `Allow` for the rest; same on `/auth/login` | corrigido | `6ad5247` |
 | A10-001 | A10 | `lightapi/endpoint_handler.py:299`, `rate_limiter.py:165`, `core.py:157`, `authentication/basic.py:69` | Error replies built outside `ApiError`: dynamic 405 (`Allow` lists the route's verbs), 429 (public `get_rate_limit_response`), compat 403 `{"error": "not allowed"}`, Basic 401 `{"error": ...}` (public method, no internal caller); JWT/Base 401 are FROZEN | manter: each shape is a public method or a documented body | justificado | |
 | B1-001 | B1 | `lightapi/_dict_config_loader.py:89` | Unknown `auth:` value in a dict config is ignored (no backend); v0.1.29 did the same with `if auth == "jwt" ... elif "basic"` | propor: `ConfigurationError` at `from_dict` (visible: an app that built now fails); alternative: keep, the path is deprecated | proposta | |
