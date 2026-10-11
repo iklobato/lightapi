@@ -319,6 +319,23 @@ class TestRequestBodyAndPagination:
         assert resp.headers["Allow"] == "DELETE, GET, PATCH, PUT"
 
 
+class TestAsyncEngineWithoutMode:
+    async def test_build_app_warns_instead_of_failing(self, caplog):
+        """An AsyncEngine on a sync app never could create its tables; the app must
+        still build (the differential harness records this as two 500s)."""
+
+        class Plain(RestEndpoint):
+            name: str = LField(min_length=1)
+
+        app = LightApi(engine=create_async_engine("sqlite+aiosqlite:///:memory:"))
+        app.register({"/plain": Plain})
+
+        with caplog.at_level("WARNING", logger="lightapi.lightapi"):
+            app.build_app()
+
+        assert "Table creation skipped" in caplog.text
+
+
 class TestAsyncVersioning:
     @pytest_asyncio.fixture
     async def async_client(self):

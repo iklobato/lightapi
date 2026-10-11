@@ -291,5 +291,17 @@ Remaining `except Exception` in the package, all deliberate: `_login.py` (valida
   package, because `lightapi.py` now imports this module at the top.
 - `[tool.mypy]`: `yaml_loader` -> `yaml_config`. CHANGELOG `Removed`.
 
-Next: Phase 3 (gates on 3.10/3.11/3.12/3.13, HTTP snapshot diff, differential harness,
-final diagram, `.cursorrules`, metrics).
+## Phase 3: production readiness
+
+### Found by the differential harness, fixed
+
+Recording the final wheel crashed in the `async-no-mode` scenario (an `AsyncEngine` passed
+to `LightApi` without `mode="async"` and without async handlers, which the README calls a
+one-line swap): `_create_tables` ran `metadata.create_all(bind=AsyncEngine)`, whose
+`AttributeError` the old `except Exception` turned into a warning, and the two requests were
+recorded as 500s. With the narrowed `except SQLAlchemyError` the error reached `build_app()`.
+Fix: `_create_tables` skips table creation for an `AsyncEngine` on a sync app and logs a
+warning naming the cause, so the app builds and behaves as before (the two 500s). Regression
+test added (`caplog`); 3.11 run before the fix: 567 passed.
+
+### Measurements

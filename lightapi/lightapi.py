@@ -288,6 +288,14 @@ class LightApi:
         try:
             if self._mode is ExecutionMode.ASYNC:
                 self._create_tables_inside_running_loop(metadata)
+            elif self._session_manager.is_async:
+                # create_all() needs a sync engine, and register() only switches to
+                # async mode for an endpoint that needs it. Before, this was an
+                # AttributeError swallowed into the same warning.
+                logger.warning(
+                    "Table creation skipped: an AsyncEngine without mode='async'. "
+                    "Pass mode='async' or create the tables yourself."
+                )
             else:
                 metadata.create_all(bind=self._engine)
                 logger.info("Tables created/verified against %s", self._engine.url)
