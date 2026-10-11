@@ -29,7 +29,7 @@ import importlib
 import inspect
 import os
 from decimal import Decimal
-from typing import Any, Final, Optional, Union
+from typing import TYPE_CHECKING, Any, Final, Optional, Union
 
 import yaml
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
@@ -49,6 +49,9 @@ from lightapi.fields import Field
 from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
 from lightapi.pagination import PaginationStyle
 from lightapi.rest import RestEndpoint
+
+if TYPE_CHECKING:
+    from lightapi.lightapi import LightApi
 
 YAML_FIELD_TYPES: Final[dict[str, type]] = {
     "str": str,
@@ -453,7 +456,7 @@ class LightAPIConfig(BaseModel):
                 f"Invalid lightapi.yaml — {exc.error_count()} error(s):\n{exc}"
             ) from exc
 
-    def build_app(self, app_cls: type, **overrides: Any) -> Any:
+    def build_app(self, app_cls: type[LightApi], **overrides: Any) -> LightApi:
         """A configured ``app_cls`` instance with every endpoint registered.
 
         Kwargs override YAML-derived values (e.g. engine=..., database_url=...).

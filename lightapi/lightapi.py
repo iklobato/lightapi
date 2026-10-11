@@ -8,7 +8,7 @@ import importlib
 import logging
 import os
 import warnings
-from typing import Any, Callable, Final
+from typing import TYPE_CHECKING, Any, Callable, Final
 
 import uvicorn
 from sqlalchemy import MetaData, create_engine
@@ -33,6 +33,9 @@ from lightapi.rate_limiter import RateLimiter
 from lightapi.rest import RestEndpoint
 from lightapi.session_manager import SessionManager
 from lightapi.yaml_config import LightAPIConfig
+
+if TYPE_CHECKING:
+    from lightapi.config import Authentication
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +169,7 @@ class LightApi:
 
     def _login_backend(self) -> BaseAuthentication | None:
         """The backend that answers the login routes: a JWT one if any, else Basic."""
-        configured = [
+        configured: list[Authentication] = [
             authentication
             for cls in self._endpoint_map.values()
             if (authentication := cls._meta.get("authentication"))
@@ -174,7 +177,8 @@ class LightApi:
         ]
         for kind in (JWTAuthentication, BasicAuthentication):
             for authentication in configured:
-                if issubclass(authentication.backend, kind):
+                backend = authentication.backend
+                if backend is not None and issubclass(backend, kind):
                     return authentication.build_backend(self._login_validator)
         return None
 

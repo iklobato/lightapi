@@ -85,11 +85,12 @@ class LoginEndpoint:
         self._rate_limiter = rate_limiter
 
     async def handle(self, request: Request) -> JSONResponse:
-        is_limited, window = self._rate_limiter.is_rate_limited(
+        # The limiter names the exhausted window; None when the request passes.
+        _, exhausted_window = self._rate_limiter.is_rate_limited(
             request, endpoint="auth"
         )
-        if is_limited:
-            return self._rate_limiter.get_rate_limit_response(request, window)
+        if exhausted_window is not None:
+            return self._rate_limiter.get_rate_limit_response(request, exhausted_window)
 
         if request.method != HttpVerb.POST:
             return ApiError.LOGIN_METHOD_NOT_ALLOWED.response()

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from lightapi.authentication import (
     AllowAny,
@@ -18,6 +18,9 @@ from lightapi.authentication import (
 from lightapi.config import Authentication, Filtering, Pagination
 from lightapi.constants import HTTP_METHOD_MIXINS
 from lightapi.rest import RestEndpoint
+
+if TYPE_CHECKING:
+    from lightapi.lightapi import LightApi
 
 
 class DictAuthKind(str, Enum):
@@ -44,7 +47,7 @@ class DictConfig:
 
     config: dict[str, Any]
 
-    def build(self, app_cls: type, **overrides: Any) -> Any:
+    def build(self, app_cls: type[LightApi], **overrides: Any) -> LightApi:
         """A configured ``app_cls`` instance with every endpoint registered."""
         constructor_kwargs: dict[str, Any] = {
             "database_url": self.config.get("database_url"),

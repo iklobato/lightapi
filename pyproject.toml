@@ -156,28 +156,10 @@ module = [
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = [
-    "lightapi.auth",
-    "lightapi.cache",
-    "lightapi.lightapi",
-    "lightapi.core",
-]
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = [
-    "lightapi.rest",
-    "lightapi.schema",
-    "lightapi.fields",
-    "lightapi.filters",
-    "lightapi.config",
-    "lightapi.pagination",
-    "lightapi.yaml_config",
-    "lightapi._dict_config_loader",
-    "lightapi._login",
-    "lightapi.session_manager",
-    "lightapi.table_mapping",
-]
+# redis-py types every reply of its sync client as "Awaitable | Any" (ResponseT),
+# so get/set/ping can never type-check here; RedisCache is FROZEN and takes no
+# narrowing casts. Every other module is checked.
+module = ["lightapi.cache"]
 ignore_errors = true
 
 [dependency-groups]
