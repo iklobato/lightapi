@@ -336,23 +336,24 @@ class TestAsyncEngineWithoutMode:
         assert "Table creation skipped" in caplog.text
 
 
+class Widget(RestEndpoint):
+    name: str = LField(min_length=1)
+
+    class Meta:
+        authentication = Authentication(permission=AllowAny)
+
+
 class TestAsyncVersioning:
     @pytest_asyncio.fixture
     async def async_client(self):
-        class Widget(RestEndpoint):
-            name: str = LField(min_length=1)
-
-            class Meta:
-                authentication = Authentication(permission=AllowAny)
-
-        app = LightApi(
-            engine=create_async_engine("sqlite+aiosqlite:///:memory:"), mode="async"
-        )
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        app = LightApi(engine=engine, mode="async")
         app.register({"/widgets": Widget})
         async with AsyncClient(
             transport=ASGITransport(app=app.build_app()), base_url="http://test"
         ) as client:
             yield client
+        await engine.dispose()
 
     async def test_async_patch_with_stale_version_returns_409(self, async_client):
         pk = (await async_client.post("/widgets", json={"name": "w"})).json()["id"]

@@ -150,7 +150,7 @@ class TestSerializerPipelineIntegration:
     def test_per_verb_serializer_post_only_write_fields(self):
         """POST 201 response has only fields in Serializer(write=[...])."""
 
-        class OrderEndpoint(RestEndpoint):
+        class OrderWriteEndpoint(RestEndpoint):
             name: str = LField(min_length=1)
             tag: str = LField(default="")
 
@@ -166,8 +166,8 @@ class TestSerializerPipelineIntegration:
             poolclass=StaticPool,
         )
         app = LightApi(engine=engine)
-        app.register({"/orders": OrderEndpoint})
-        OrderEndpoint.__table__.create(engine, checkfirst=True)
+        app.register({"/orders": OrderWriteEndpoint})
+        OrderWriteEndpoint.__table__.create(engine, checkfirst=True)
         c = TestClient(app.build_app())
         resp = c.post("/orders", json={"name": "Order1", "tag": "x"})
         assert resp.status_code == 201

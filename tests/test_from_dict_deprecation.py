@@ -8,8 +8,8 @@ from starlette.testclient import TestClient
 from lightapi import LightApi
 
 
-def _config() -> dict:
-    return {"endpoints": {"/dictpamphlets": {"fields": {"title": str}}}}
+def _config(route: str = "/dictpamphlets") -> dict:
+    return {"endpoints": {route: {"fields": {"title": str}}}}
 
 
 def _engine():
@@ -27,10 +27,10 @@ def test_from_dict_warns_about_its_removal():
 
 def test_from_dict_still_builds_a_working_app():
     with pytest.warns(DeprecationWarning):
-        app = LightApi.from_dict(_config(), engine=_engine())
+        app = LightApi.from_dict(_config("/dictleaflets"), engine=_engine())
     client = TestClient(app.build_app())
 
-    created = client.post("/dictpamphlets", json={"title": "still here"})
+    created = client.post("/dictleaflets", json={"title": "still here"})
 
     assert created.status_code == 201
     assert created.json()["title"] == "still here"
