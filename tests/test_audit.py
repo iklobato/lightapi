@@ -14,9 +14,18 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
-from lightapi import Authentication, Cache, JWTAuthentication, LightApi, RestEndpoint
+import lightapi
+from lightapi import (
+    Authentication,
+    Cache,
+    JWTAuthentication,
+    LightApi,
+    Pagination,
+    RestEndpoint,
+)
 from lightapi.cache import RedisCacheBackend
 from lightapi.config import Config
+from lightapi.exceptions import ConfigurationError
 from lightapi.fields import Field as LField
 
 os.environ.setdefault("LIGHTAPI_JWT_SECRET", "audit-secret")
@@ -48,6 +57,65 @@ class TestB2HidingDefaults:
         client = _client({"/future": AuditFuture})
 
         assert client.post("/future", json={"title": "ok"}).status_code == 201
+
+
+class TestB9DispatchByName:
+    def test_subclass_named_rest_endpoint_is_still_mapped(self):
+        """B9-001: the root class is the one without bases, not the one named so."""
+
+        class RestEndpoint(lightapi.RestEndpoint):
+            title: str = LField(min_length=1)
+
+        client = _client({"/shadow": RestEndpoint})
+
+        assert client.post("/shadow", json={"title": "ok"}).status_code == 201
+
+
+class TestB8HiddenMutation:
+    def test_pagination_keeps_the_style_as_given_and_still_builds_the_paginator(self):
+        """B8-001: no object.__setattr__ on the frozen config; the user's value stays."""
+        from lightapi.pagination import CursorPaginator, PaginationStyle
+
+        as_string = Pagination(style="cursor", page_size=5)
+        as_member = Pagination(style=PaginationStyle.CURSOR, page_size=5)
+
+        assert as_string.style == "cursor" and type(as_string.style) is str
+        assert isinstance(as_string.paginator, CursorPaginator)
+        assert isinstance(as_member.paginator, CursorPaginator)
+        with pytest.raises(ConfigurationError, match="'offset' is invalid"):
+            Pagination(style="offset")
+
+
+class TestB5PerRequestChecks:
+    def test_middleware_coroutine_detection_happens_once_per_class(self):
+        """B5-002: the chain decides once whether each process() is awaited."""
+        from lightapi.core import Middleware
+        from lightapi.endpoint_handler import MiddlewareChain
+
+        class Sync(Middleware):
+            def process(self, request, response):
+                return None
+
+        class Async(Middleware):
+            async def process(self, request, response):
+                return None
+
+        chain = MiddlewareChain([Sync, Async])
+
+        assert chain._awaits == {Sync: False, Async: True}
+        assert chain._awaits is chain._awaits
+
+    def test_isolated_session_managers_on_one_thread_share_the_thread_state(self):
+        """B5-003: the thread-local state is built by its own __init__, not lazily."""
+        from lightapi.session_manager import SessionManager
+
+        first = SessionManager(_memory_engine(), use_test_isolation=True)
+        second = SessionManager(_memory_engine(), use_test_isolation=True)
+
+        assert first.metadata is second.metadata
+        assert first.registry is second.registry
+        assert first.table_name_for("audit_tbl") == "audit_tbl"
+        assert second.table_name_for("audit_tbl") == "audit_tbl_2"
 
 
 class TestA4DeadCode:

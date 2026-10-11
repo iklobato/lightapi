@@ -21,6 +21,18 @@ T = TypeVar("T")
 _SINGLE_CONNECTION_POOLS = (SingletonThreadPool, StaticPool)
 
 
+class _ThreadState(threading.local):
+    """Metadata, registry and table-name counters of one thread (test isolation).
+
+    ``threading.local`` runs ``__init__`` again on first use from each thread.
+    """
+
+    def __init__(self) -> None:
+        self.metadata = MetaData()
+        self.registry = registry(metadata=self.metadata)
+        self.table_counter: dict[str, int] = {}
+
+
 class _GlobalState:
     """Process-wide SQLAlchemy metadata/registry, plus a thread-local copy.
 
@@ -31,7 +43,7 @@ class _GlobalState:
     """
 
     def __init__(self) -> None:
-        self._local = threading.local()
+        self._local = _ThreadState()
         self.reset()
 
     def reset(self) -> None:
@@ -46,20 +58,14 @@ class _GlobalState:
 
     @property
     def test_metadata(self) -> MetaData:
-        if not hasattr(self._local, "metadata"):
-            self._local.metadata = MetaData()
         return self._local.metadata
 
     @property
     def test_registry(self) -> registry:
-        if not hasattr(self._local, "registry"):
-            self._local.registry = registry(metadata=self.test_metadata)
         return self._local.registry
 
     def unique_table_name(self, base_name: str) -> str:
         """A table name unique to this thread, for parallel test isolation."""
-        if not hasattr(self._local, "table_counter"):
-            self._local.table_counter = {}
         counter = self._local.table_counter.get(base_name, 0) + 1
         self._local.table_counter[base_name] = counter
         result = base_name if counter == 1 else f"{base_name}_{counter}"
