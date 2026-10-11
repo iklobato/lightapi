@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+from collections.abc import Mapping
 from decimal import Decimal
 from functools import cache
 from typing import Any, Final, NamedTuple, Optional
@@ -241,22 +242,33 @@ class SchemaFactory:
         return SchemaFactory._schema_pair(cls.__name__, create_fields, read_fields)
 
     @staticmethod
-    def build_from_reflected_table(cls: type, table: Table) -> tuple[type, type]:
+    def build_from_reflected_table(
+        cls: type, table: Table, declared: Mapping[str, FieldInfo] | None = None
+    ) -> tuple[type, type]:
         """Build __schema_create__ and __schema_read__ from reflected table columns.
 
         Maps SQLAlchemy column types to Pydantic-compatible annotations.
         Excludes id, created_at, updated_at, version from create schema.
         Includes all columns in read schema.
-        Uses Optional[T] when column.nullable is True.
+        A nullable column is optional on create (None when absent); a column the
+        endpoint declared itself (partial reflection, ``declared``) keeps its
+        ``Field()``: its default and its constraints.
         """
+        declared = declared or {}
         create_fields: dict[str, Any] = {}
         read_fields: dict[str, Any] = {}
         for col in table.c:
             annotation = SchemaFactory._reflected_annotation(col)
             # Optional[...]: `Any | None` is a typing form `| None` cannot build.
             nullable: Any = Optional[annotation]  # noqa: UP045
-            if col.key not in AUTO_FIELDS:
-                create_fields[col.key] = (nullable if col.nullable else annotation, ...)
+            create_annotation = nullable if col.nullable else annotation
+            if col.key in declared:
+                create_fields[col.key] = (create_annotation, declared[col.key])
+            elif col.key not in AUTO_FIELDS:
+                create_fields[col.key] = (
+                    create_annotation,
+                    None if col.nullable else ...,
+                )
             read_fields[col.key] = (nullable, None)
 
         return SchemaFactory._schema_pair(cls.__name__, create_fields, read_fields)

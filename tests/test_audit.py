@@ -10,7 +10,16 @@ from unittest.mock import patch
 
 import pytest
 import redis
-from sqlalchemy import MetaData, create_engine, insert
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    create_engine,
+    insert,
+)
 from sqlalchemy import select as sa_select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -48,8 +57,8 @@ def _memory_engine():
     )
 
 
-def _client(mapping: dict[str, type], **app_kwargs) -> TestClient:
-    app = LightApi(engine=_memory_engine(), **app_kwargs)
+def _client(mapping: dict[str, type], engine=None, **app_kwargs) -> TestClient:
+    app = LightApi(engine=engine or _memory_engine(), **app_kwargs)
     app.register(mapping)
     return TestClient(app.build_app())
 
@@ -348,6 +357,8 @@ class TestB14WarningsAndLogs:
         assert starlette_app.router.on_startup == []
         with TestClient(starlette_app) as client:
             assert client.get("/lifespan").status_code == 200
+            # Close the aiosqlite connections while their loop is still alive.
+            client.portal.call(engine.dispose)
 
     def test_registering_an_endpoint_raises_no_deprecation_warning(self):
         """B14-005: the declared columns go straight into the Table; nothing copies them."""
@@ -460,6 +471,81 @@ class TestB1FilterValueParsing:
         assert client.get("/filtered?pages=101").json()["results"] == []
 
 
+def _engine_with_docs_table():
+    """A pre-existing table with a nullable column, as reflection finds it."""
+    engine = _memory_engine()
+    metadata = MetaData()
+    Table(
+        "audit_reflected_docs",
+        metadata,
+        Column("id", Integer, primary_key=True, autoincrement=True),
+        Column("title", String, nullable=False),
+        Column("notes", String, nullable=True),
+        Column("created_at", DateTime),
+        Column("updated_at", DateTime),
+        Column("version", Integer, nullable=False, default=1),
+    )
+    metadata.create_all(engine)
+    return engine
+
+
+class TestReflectedSchemaDefaults:
+    """A reflected schema honours what the table and the declared fields say about
+    optional values; found by e2e scenario 11 (partial reflection, declared default)."""
+
+    def test_nullable_reflected_column_is_optional_on_post(self):
+        class AuditReflectedFull(RestEndpoint):
+            class Meta:
+                table = "audit_reflected_docs"
+                reflect = True
+
+        client = _client(
+            {"/rdocs": AuditReflectedFull}, engine=_engine_with_docs_table()
+        )
+
+        created = client.post("/rdocs", json={"title": "only the title"})
+
+        assert created.status_code == 201, created.text
+        assert created.json()["notes"] is None
+
+    def test_declared_default_applies_on_partial_reflection(self):
+        class AuditReflectedPartial(RestEndpoint):
+            notes: str = LField(default="")
+
+            class Meta:
+                table = "audit_reflected_docs"
+                reflect = "partial"
+
+        client = _client(
+            {"/pdocs": AuditReflectedPartial}, engine=_engine_with_docs_table()
+        )
+
+        created = client.post("/pdocs", json={"title": "no notes sent"})
+
+        assert created.status_code == 201, created.text
+        assert created.json()["notes"] == ""
+
+    def test_declared_constraint_applies_on_partial_reflection(self):
+        class AuditReflectedStrict(RestEndpoint):
+            notes: str = LField(min_length=3)
+
+            class Meta:
+                table = "audit_reflected_docs"
+                reflect = "partial"
+
+        client = _client(
+            {"/sdocs": AuditReflectedStrict}, engine=_engine_with_docs_table()
+        )
+
+        assert (
+            client.post("/sdocs", json={"title": "t", "notes": "ab"}).status_code == 422
+        )
+        assert (
+            client.post("/sdocs", json={"title": "t", "notes": "abc"}).status_code
+            == 201
+        )
+
+
 class TestB19LifespanLoop:
     def test_lifespan_creates_tables_on_the_serving_loop_not_a_worker_thread(self):
         """B19/B7-003: tables created on a worker loop poison an asyncpg pool; the
@@ -482,3 +568,4 @@ class TestB19LifespanLoop:
         ):
             assert client.post("/loopbound", json={"title": "t"}).status_code == 201
             assert client.get("/loopbound").json()["results"][0]["title"] == "t"
+            client.portal.call(engine.dispose)

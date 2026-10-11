@@ -22,7 +22,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | A9 per-request constants | 0 | 0 | 0 | 0 | 0 |
 | A10 error replies | 3 | 2 | 1 | 0 | 0 |
 | B1 silent errors | 18 | 5 | 11 | 2 | 0 |
-| B2 hiding defaults | 10 | 3 | 7 | 0 | 0 |
+| B2 hiding defaults | 11 | 4 | 7 | 0 | 0 |
 | B3 sentinel returns | 3 | 0 | 3 | 0 | 0 |
 | B4 lying types | 12 | 12 | 0 | 0 | 0 |
 | B5 per-request checks | 9 | 3 | 6 | 0 | 0 |
@@ -37,7 +37,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B14 logs and warnings | 8 | 7 | 1 | 0 | 0 |
 | B15 hidden YAGNI | 5 | 3 | 1 | 1 | 0 |
 | B16 tests that do not protect | 5 | 2 | 3 | 0 | 0 |
-| **Total** | **119** | **50** | **56** | **13** | **0** |
+| **Total** | **120** | **51** | **56** | **13** | **0** |
 
 ## Phase 0: baseline
 
@@ -148,6 +148,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B2-007 | B2 | `lightapi/pagination.py:187,194` | `getattr(qs, "columns_clause_froms", ())`, `getattr(row, "id", None)` | manter: the queryset and its rows come from the user's `queryset` hook | justificado | |
 | B2-008 | B2 | `lightapi/filters.py:41,45` | `hasattr(col, "property")`, `getattr(col, "type", None)` | manter: SQLAlchemy exposes the type on `InstrumentedAttribute` and `Column` differently | justificado | |
 | B2-009 | B2 | `lightapi/cache.py:31` | `LIGHTAPI_REDIS_URL` defaults to `redis://localhost:6379/0` | manter: documented default, same in v0.1.29 | justificado | |
+| B2-011 | B2 | `lightapi/schema.py:254`, `table_mapping.py:228` | A reflected table required every non-auto column on POST, nullable or not, and on `reflect = "partial"` the declared `Field()` (default, constraints) was stripped before the schema was built, so `notes: str = Field(default="")` still answered 422 "Field required". Same in v0.1.29. Found by e2e scenario 11 | corrigido: nullable reflected columns are optional (None); `ReflectedTable.map` keeps the declared FieldInfos and `build_from_reflected_table(cls, table, declared)` uses them | corrigido | `see git log: fix(B2-011)` |
 | B2-010 | B2 | `lightapi/rest.py:197,202,217`, `endpoint_handler.py:192`, `table_mapping.py:65`, `lightapi.py:170,324` | `_meta.get("pagination")` etc. on keys `_parsed_meta` always writes | manter: `_meta` is `{}` for `base_only` classes | justificado | |
 | B3-001 | B3 | `lightapi/cache.py:57-105` | `RedisCacheBackend` methods return None/False on failure | manter: "no Redis, no cache, requests still answered" is the documented contract; B1-005 adds the log | justificado | |
 | B3-002 | B3 | `lightapi/_login.py:42,56,108` | `from_request`, `parse_basic_header`, `_validated_user` return None | manter: each None maps to exactly one reply (401/422) | justificado | |

@@ -97,6 +97,12 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_startup` handler; same moment, no deprecation warning. `created_at`/`updated_at`
   column defaults no longer use the deprecated `datetime.utcnow()`; the stored value is the
   same naive UTC.
+- **Reflected tables accept what the table and the endpoint allow to be absent**: a
+  nullable column of a reflected table is optional on POST (stored as null), and on
+  `reflect = "partial"` a declared `Field(default=...)` or `Field(min_length=...)` is
+  honoured. Before, every non-auto column was required on POST, and the declared
+  `Field()` was dropped once the class was mapped, so `notes: str = Field(default="")`
+  still answered 422 "Field required".
 - **A filter value the column cannot parse is a 422**: `?pages=lots` on an integer
   column answers `422 {"detail": [{"loc": ["query", "pages"], ...}]}`. Before, the raw
   string reached the database: an empty list on SQLite, a 500 (`invalid input syntax for

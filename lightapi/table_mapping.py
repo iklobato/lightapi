@@ -228,14 +228,22 @@ class ReflectedTable(TableSource):
         table = self._reflect(
             self._table_name(endpoint_cls, session_manager), session_manager
         )
+        # The Field() objects a partial endpoint declares carry its defaults and
+        # constraints; instrumentation needs them off the class, so keep a copy.
+        declared: dict[str, FieldInfo] = {}
         if self._reflection is TableReflection.PARTIAL:
+            declared = {
+                name: value
+                for name, value in vars(endpoint_cls).items()
+                if isinstance(value, FieldInfo)
+            }
             self._strip_field_infos(endpoint_cls, list(table.c))
 
         session_manager.registry.map_imperatively(endpoint_cls, table)
         endpoint_cls._model_class = endpoint_cls  # noqa: SLF001  marks it mapped
         # The schemas need the columns, which are only known after reflection.
         endpoint_cls.__schema_create__, endpoint_cls.__schema_read__ = (
-            SchemaFactory.build_from_reflected_table(endpoint_cls, table)
+            SchemaFactory.build_from_reflected_table(endpoint_cls, table, declared)
         )
 
     def _reflect(self, table_name: str, session_manager: SessionManager) -> Table:
