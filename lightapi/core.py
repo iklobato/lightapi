@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from http import HTTPStatus
-from typing import Any, Dict, Final
+from typing import Any, Final
 
 from starlette.responses import JSONResponse
 
@@ -23,7 +23,7 @@ class Response(JSONResponse):
         self,
         content: Any = None,
         status_code: int = HTTPStatus.OK,
-        headers: Dict | None = None,
+        headers: dict[str, str] | None = None,
         media_type: str | None = None,
         content_type: str | None = None,
     ):
