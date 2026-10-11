@@ -219,7 +219,7 @@ Unregistered methods return `405 Method Not Allowed` with an `Allow` header list
 | Not found | `404` | `{"detail": "not found"}` |
 | Optimistic lock conflict | `409` | `{"detail": "version conflict"}` |
 | Auth failure | `401` | `{"detail": "Authentication credentials invalid."}` |
-| Permission denied | `403` | `{"detail": "You do not have permission to perform this action."}` |
+| Permission denied | `403` | `{"detail": "Insufficient permissions"}` |
 | Method not registered | `405` | `{"detail": "Method Not Allowed. Allowed: GET, POST"}` |
 
 ---
