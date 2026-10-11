@@ -124,6 +124,9 @@ ignore = ["TRY003"]
 # credentials, write `type(self)._model_class` the way the docs teach, keep the
 # documented `queryset(self, request)` signature, and quote curl commands.
 "examples/*.py" = ["S104", "T20", "S101", "S105", "SLF001", "ARG002", "E501"]
+# The e2e apps are user code too: `type(self)._model_class` in a queryset and the
+# documented `queryset(self, request)` / `process(self, request, response)` signatures.
+"tools/e2e/apps/*.py" = ["SLF001", "ARG002", "T20"]
 
 [tool.mypy]
 python_version = "3.10"
