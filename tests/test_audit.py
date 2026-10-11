@@ -87,6 +87,21 @@ class TestB8HiddenMutation:
 
 
 class TestB5PerRequestChecks:
+    def test_verb_override_is_resolved_at_registration(self):
+        """B5-001: the handler looks the hooks up once; a method assigned to the
+        class after register() is not consulted on every request any more."""
+
+        class AuditHooked(RestEndpoint):
+            title: str = LField(min_length=1)
+
+            def get(self, request):
+                return {"hook": "registered"}
+
+        client = _client({"/hooked": AuditHooked})
+        AuditHooked.get = lambda self, request: {"hook": "late"}  # type: ignore[method-assign]
+
+        assert client.get("/hooked").json() == {"hook": "registered"}
+
     def test_middleware_coroutine_detection_happens_once_per_class(self):
         """B5-002: the chain decides once whether each process() is awaited."""
         from lightapi.core import Middleware

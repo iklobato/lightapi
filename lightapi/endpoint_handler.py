@@ -183,6 +183,23 @@ _DETAIL_VERBS: Final[dict[HttpVerb, _Verb]] = {
 }
 
 
+@dataclass(frozen=True)
+class _Override:
+    """A verb method the user wrote on the endpoint (`def get(self, request)`)."""
+
+    fn: Callable[..., Any]
+    awaits: bool
+
+
+@dataclass(frozen=True)
+class _BoundVerb:
+    """A verb resolved against one endpoint class and execution mode, at register()."""
+
+    verb: _Verb
+    crud: Callable[..., Any]  # the class's built-in CRUD function, unbound
+    override: _Override | None
+
+
 class EndpointHandler:
     """Serves every request of one route (collection or detail) of an endpoint."""
 
@@ -205,6 +222,21 @@ class EndpointHandler:
             if authentication is not None
             else None
         )
+        self._bound = {http_verb: self._bind(verb) for http_verb, verb in verbs.items()}
+
+    def _bind(self, verb: _Verb) -> _BoundVerb:
+        """Resolve what serves one verb on this endpoint class, once."""
+        # A column may share a verb's name (`post: str`), so only functions count.
+        candidate = getattr(self._endpoint_cls, verb.override, None)
+        override = (
+            _Override(candidate, asyncio.iscoroutinefunction(candidate))
+            if inspect.isfunction(candidate)
+            else None
+        )
+        crud_name = (
+            verb.async_name if self._mode is ExecutionMode.ASYNC else verb.sync_name
+        )
+        return _BoundVerb(verb, getattr(self._endpoint_cls, crud_name), override)
 
     @classmethod
     def for_collection(
@@ -239,11 +271,11 @@ class EndpointHandler:
                 return denied
 
         http_verb = HttpVerb.of(request.method)
-        verb = self._verbs.get(http_verb) if http_verb is not None else None
-        if verb is None:
+        bound = self._bound.get(http_verb) if http_verb is not None else None
+        if bound is None:
             result = self._method_not_allowed()
         else:
-            result = await self._serve(verb, endpoint, request)
+            result = await self._serve(bound, endpoint, request)
 
         response = JSONResponse(result) if isinstance(result, dict) else result
         await self._cache.invalidate_after_write(request)
@@ -254,43 +286,42 @@ class EndpointHandler:
         return await self._middlewares.after(request, response)
 
     async def _serve(
-        self, verb: _Verb, endpoint: RestEndpoint, request: Request
+        self, bound: _BoundVerb, endpoint: RestEndpoint, request: Request
     ) -> Any:
+        if bound.override is not None:
+            return await self._call_override(bound.override, endpoint, request)
+
+        verb = bound.verb
         data = await self._json_body(request) if verb.reads_body else {}
         args = verb.call_arguments(request, data, request.path_params.get("id"))
 
-        # A column may share a verb's name (`post: str`), so only functions count.
-        override = getattr(self._endpoint_cls, verb.override, None)
-        if inspect.isfunction(override):
-            return await self._call_override(override, endpoint, request)
-
         if self._mode is ExecutionMode.ASYNC:
-            crud_async = getattr(endpoint, verb.async_name)
             if verb.cached:
-                return await self._cache.serve_async(request, lambda: crud_async(*args))
-            return await crud_async(*args)
+                return await self._cache.serve_async(
+                    request, lambda: bound.crud(endpoint, *args)
+                )
+            return await bound.crud(endpoint, *args)
 
-        crud = getattr(endpoint, verb.sync_name)
         sessions = endpoint._session_manager_or_raise()
         if verb.cached:
             return await sessions.run_blocking(
-                self._cache.serve, request, lambda: crud(*args)
+                self._cache.serve, request, lambda: bound.crud(endpoint, *args)
             )
-        return await sessions.run_blocking(crud, *args)
+        return await sessions.run_blocking(bound.crud, endpoint, *args)
 
     async def _call_override(
-        self, override: Callable[..., Any], endpoint: RestEndpoint, request: Request
+        self, override: _Override, endpoint: RestEndpoint, request: Request
     ) -> Any:
-        if asyncio.iscoroutinefunction(override):
-            return await override(endpoint, request)
+        if override.awaits:
+            return await override.fn(endpoint, request)
         if self._mode is ExecutionMode.ASYNC:
             # Gives a sync override the greenlet context that endpoint.list() and
             # friends need to reach an async driver.
             return await endpoint._in_async_session(
-                lambda _session: override(endpoint, request)
+                lambda _session: override.fn(endpoint, request)
             )
         return await endpoint._session_manager_or_raise().run_blocking(
-            override, endpoint, request
+            override.fn, endpoint, request
         )
 
     @staticmethod
