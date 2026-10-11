@@ -330,7 +330,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     def _destroy(self, session: Session, pk: int) -> Response:
         try:
             self._repository(session).delete(pk)
-        except RowNotFound as exc:
+        except (RowNotFound, ConstraintViolation) as exc:
             return _API_ERRORS[type(exc)].response()
         return Response(status_code=HTTPStatus.NO_CONTENT)
 

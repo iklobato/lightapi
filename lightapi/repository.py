@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import logging
 from typing import Any, Final, Protocol
 
 from sqlalchemy import delete, select, update
@@ -10,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, class_mapper
 
 FIRST_VERSION: Final = 1
+logger = logging.getLogger(__name__)
 
 
 class RowNotFound(Exception):
@@ -90,10 +92,25 @@ class Repository:
         try:
             self._session.flush()  # executes INSERT, populates auto-increment id
         except IntegrityError as exc:
-            self._session.rollback()
-            raise ConstraintViolation(str(exc.orig)) from exc
+            raise self._refused(exc) from exc
         self._session.refresh(row)  # re-loads DB-generated columns
         return row
+
+    def _refused(self, exc: IntegrityError) -> ConstraintViolation:
+        """Roll back and turn the database's refusal into a ConstraintViolation.
+
+        Logged with the table and the driver's text: a unique clash is a client
+        conflict, but a NOT NULL or CHECK failure usually means the schema and the
+        table disagree, and the operator should see that even though the client
+        only gets a 409.
+        """
+        self._session.rollback()
+        logger.info(
+            "Constraint violation on %s: %s",
+            class_mapper(self._model).local_table,
+            exc.orig,
+        )
+        return ConstraintViolation(str(exc.orig))
 
     def update(
         self, pk: int, expected_version: int, values: dict[str, Any]
@@ -111,8 +128,7 @@ class Repository:
                 )
             )
         except IntegrityError as exc:
-            self._session.rollback()
-            raise ConstraintViolation(str(exc.orig)) from exc
+            raise self._refused(exc) from exc
         if result.rowcount == 0:
             exists = self._session.execute(
                 select(model.id).where(model.id == pk)
@@ -126,8 +142,11 @@ class Repository:
         if not self._in_pk_range(pk):
             raise RowNotFound(pk)
         model = self._model
-        deleted = self._session.execute(
-            delete(model).where(model.id == pk).returning(model.id)
-        ).first()
+        try:
+            deleted = self._session.execute(
+                delete(model).where(model.id == pk).returning(model.id)
+            ).first()
+        except IntegrityError as exc:
+            raise self._refused(exc) from exc
         if deleted is None:
             raise RowNotFound(pk)

@@ -105,9 +105,12 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is a 422. Before, the option reached neither pydantic nor the DDL (`Numeric(scale=N)`
   without a precision renders as plain `NUMERIC` on every dialect), so "1.999" was stored
   as sent on a `decimal_places=2` column. The column type is unchanged.
-- **A database constraint violation is a 409**: a duplicate on a `unique=True` column (or
-  any `IntegrityError`) on POST, PUT or PATCH answers `409 {"detail": "constraint violation"}`
-  and leaves the session usable. It was an unhandled 500.
+- **A database constraint violation is a 409**: a duplicate on a `unique=True` column, a
+  DELETE of a row another table still references, or any other `IntegrityError` on POST,
+  PUT, PATCH or DELETE answers `409 {"detail": "constraint violation"}` and leaves the
+  session usable. It was an unhandled 500. The server logs the table and the driver's
+  text at INFO, because a NOT NULL or CHECK failure usually means the schema and the
+  table disagree.
 - **A YAML key the format does not know fails at load time**: `defaults.filtering`,
   `meta.paginate` or a misspelt top-level key now raise `ConfigurationError` naming the
   key, as the configuration guide promises. Before, pydantic dropped the key and the app

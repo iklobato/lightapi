@@ -1,7 +1,9 @@
 """A database constraint violation is a 409, not a 500, on every write path."""
 
+import logging
+
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
@@ -69,6 +71,54 @@ def test_the_session_is_usable_after_the_409(client):
     client.post("/accounts", json={"email": "a@x"})
 
     assert client.post("/accounts", json={"email": "c@x"}).status_code == 201
+
+
+class Shelf(RestEndpoint):
+    name: str = LField(min_length=1)
+
+    class Meta:
+        table = "constraint_shelves"
+
+
+class Volume(RestEndpoint):
+    title: str = LField(min_length=1)
+    shelf_id: int | None = LField(default=None, foreign_key="constraint_shelves.id")
+
+    class Meta:
+        table = "constraint_volumes"
+
+
+def _engine_enforcing_foreign_keys():
+    engine = _memory_engine()
+
+    @event.listens_for(engine, "connect")
+    def _enable(dbapi_connection, _record):
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    return engine
+
+
+def test_delete_of_a_referenced_row_answers_409():
+    app = LightApi(engine=_engine_enforcing_foreign_keys())
+    app.register({"/shelves": Shelf, "/volumes": Volume})
+    with TestClient(app.build_app()) as client:
+        shelf = client.post("/shelves", json={"name": "A"}).json()
+        client.post("/volumes", json={"title": "t", "shelf_id": shelf["id"]})
+
+        refused = client.delete(f"/shelves/{shelf['id']}")
+
+        assert refused.status_code == 409
+        assert refused.json() == {"detail": "constraint violation"}
+        assert client.get(f"/shelves/{shelf['id']}").status_code == 200
+
+
+def test_the_409_is_logged_with_the_table_name(client, caplog):
+    client.post("/accounts", json={"email": "a@x"})
+    with caplog.at_level(logging.INFO, logger="lightapi.repository"):
+        client.post("/accounts", json={"email": "a@x"})
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("constraint_accounts" in message for message in messages), messages
 
 
 def test_duplicate_on_the_async_path_answers_409():
