@@ -91,7 +91,16 @@ testpaths = [
 ]
 python_files = "test_*.py"
 asyncio_mode = "auto"
+xfail_strict = true
+markers = [
+    "integration: needs a real Postgres/Redis, skipped unless LIGHTAPI_TEST_PG_SYNC etc. are set",
+]
+# Any warning the library or the tests raise fails the run; a warning a test
+# expects goes through pytest.warns(). ResourceWarning keeps Python's default
+# (ignored): the tests build throwaway engines they never dispose().
 filterwarnings = [
+    "error",
+    "ignore::ResourceWarning",
     "ignore::pytest.PytestCollectionWarning",
 ]
 
