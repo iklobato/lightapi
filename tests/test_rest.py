@@ -201,9 +201,6 @@ class TestAutoFields:
         assert "updated_at" in table.c
         assert "version" in table.c
 
-    @pytest.mark.xfail(
-        reason="Framework may not yet reject redeclared auto fields (FR-2)"
-    )
     def test_redeclare_auto_field_raises(self):
         """Declaring id (or other auto field) raises ConfigurationError."""
         with pytest.raises(ConfigurationError, match="id|auto"):
