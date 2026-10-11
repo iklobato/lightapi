@@ -54,11 +54,11 @@ USER lightapi
 
 EXPOSE 8000
 
-# Lightweight health check — touches the root path expecting any HTTP response.
+# Health check against the liveness route the app always registers.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request, sys; \
 import os; \
-url='http://127.0.0.1:'+os.environ.get('LIGHTAPI_PORT','8000')+'/'; \
+url='http://127.0.0.1:'+os.environ.get('LIGHTAPI_PORT','8000')+'/healthz'; \
 sys.exit(0 if urllib.request.urlopen(url, timeout=2).status else 1)" \
     || exit 1
 

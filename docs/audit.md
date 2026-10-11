@@ -34,10 +34,10 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B11 weak security defaults | 6 | 1 | 3 | 2 | 0 |
 | B12 resources and timeouts | 1 | 1 | 0 | 0 | 0 |
 | B13 repeated work per request | 5 | 0 | 4 | 1 | 0 |
-| B14 logs and warnings | 8 | 7 | 1 | 0 | 0 |
+| B14 logs and warnings | 9 | 8 | 1 | 0 | 0 |
 | B15 hidden YAGNI | 5 | 3 | 1 | 1 | 0 |
 | B16 tests that do not protect | 5 | 2 | 3 | 0 | 0 |
-| **Total** | **123** | **55** | **56** | **12** | **0** |
+| **Total** | **124** | **56** | **56** | **12** | **0** |
 
 ## Phase 0: baseline
 
@@ -218,6 +218,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B14-006 | B14 | `pytest.ini:4` | Test warning: `PytestConfigWarning: Unknown config option: env` (pytest-env is not installed; the values were never applied). `pytest.ini` also shadows `[tool.pytest.ini_options]` in `pyproject.toml`, so `xfail_strict` must go where pytest reads it | corrigir: move `asyncio_mode` and `markers` to `pyproject.toml`, delete `pytest.ini`, add `xfail_strict = true` | corrigido | `d1ee2a8` |
 | B14-007 | B14 | 11 test modules (e.g. `tests/test_async_crud.py` and `tests/test_second_pass_characterization.py` both define `Widget`) | 13 `SAWarning: This declarative base already contains a class with the same class name and module name` | corrigir in tests: unique class names per module | corrigido | `56a7ebd` |
 | B14-008 | B14 | `lightapi/lightapi.py:325` | `warnings.warn(RuntimeWarning)` when Redis is unreachable at startup | manter: a user-facing startup warning, pinned by `tests/test_cache_v2.py` | justificado | |
+| B14-009 | B14 | `Dockerfile:58` | The image's HEALTHCHECK probed `/`, a 404 on every LightAPI app, so docker reported the container unhealthy no matter what (B20); e2e scenario 16 waits for `healthy` | corrigido: the probe hits `/healthz`, the liveness route the app always registers; scenario 16 proves `docker inspect` reports `healthy` | corrigido | `see git log: fix(B14-009)` |
 | B15-001 | B15 | 27 ARG002/ARG003 sites (`retrieve(request, pk)`, `destroy(request, pk)`, `_retrieve_async`, `_destroy_async`, base-class `authenticate`/`has_permission`/`validate_credentials`/`from_config`, `get_rate_limit_response(request)`, `HealthCheckEndpoint`, `BaseCache` FROZEN, `Middleware.process`) | Unused parameters | manter: every one is a public signature (pinned by `tests/data/public_api.json`) or an interface method; each carries `# noqa: ARG002`/`ARG003` with the reason; `BaseCache` (FROZEN) is exempted at module level in `cache.py` | justificado | `c3465a4` |
 | B15-002 | B15 | `lightapi/config.py:60`, `authentication/jwt.py:37`, `basic.py:30` | `Authentication.rate_limiter` is stored on the backend and never read | propor: remove in 0.2.0 (public field) | proposta | |
 | B15-003 | B15 | `lightapi/__init__.py:60`, `lightapi/rate_limiter.py:52` | ERA001: section labels inside `__all__` and a structure comment read as commented-out code | corrigir: sort `__all__` without labels (RUF022), reword the comment | corrigido | `efd6160` |
