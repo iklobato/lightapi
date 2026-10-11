@@ -299,8 +299,8 @@ class LightApi:
             else:
                 metadata.create_all(bind=self._engine)
                 logger.info("Tables created/verified against %s", self._engine.url)
-        except SQLAlchemyError as exc:
-            logger.warning("Table creation warning: %s", exc)
+        except SQLAlchemyError:
+            logger.warning("Table creation warning", exc_info=True)
 
     def _create_tables_inside_running_loop(self, metadata: MetaData) -> None:
         """Async engines create their tables on uvicorn's loop (the on_startup handler
@@ -321,8 +321,7 @@ class LightApi:
     def _check_cache_connections(self) -> None:
         """Emit RuntimeWarning if any endpoint has cache configured but Redis is unreachable."""
         for cls in self._endpoint_map.values():
-            cache_cfg = getattr(cls, "_meta", {}).get("cache")
-            if cache_cfg:
+            if cls._meta.get("cache"):
                 if not RedisCacheBackend.shared().ping():
                     warnings.warn(
                         "Redis is configured for caching but is not reachable at startup. "
