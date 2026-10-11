@@ -10,7 +10,7 @@ from lightapi.constants import (
     DEFAULT_JWT_ALGORITHM,
     DEFAULT_JWT_EXPIRATION,
     DEFAULT_PAGE_SIZE,
-    VALID_JWT_ALGORITHMS,
+    JwtAlgorithm,
 )
 from lightapi.exceptions import ConfigurationError
 from lightapi.pagination import PaginationStyle, Paginator
@@ -42,12 +42,7 @@ class Config:
         algorithm = self.jwt_algorithm or os.environ.get(
             "LIGHTAPI_JWT_ALGORITHM", DEFAULT_JWT_ALGORITHM
         )
-        if algorithm not in VALID_JWT_ALGORITHMS:
-            raise ConfigurationError(
-                f"Invalid JWT algorithm '{algorithm}'. "
-                f"Valid algorithms are: {sorted(VALID_JWT_ALGORITHMS)}"
-            )
-        return algorithm
+        return JwtAlgorithm.validated(algorithm)
 
 
 # Default global config instance for backward compatibility

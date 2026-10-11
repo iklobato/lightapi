@@ -104,24 +104,37 @@ CURSOR_PARAM = "cursor"
 # ─────────────────────────────────────────────────────────────────────────
 AUTO_FIELDS = frozenset({"id", "created_at", "updated_at", "version"})
 
+
 # ─────────────────────────────────────────────────────────────────────────
 # Auth / JWT
 # ─────────────────────────────────────────────────────────────────────────
-DEFAULT_JWT_ALGORITHM = "HS256"
+class JwtAlgorithm(str, Enum):
+    """Signing algorithms PyJWT accepts here; the value is what PyJWT receives."""
+
+    HS256 = "HS256"
+    HS384 = "HS384"
+    HS512 = "HS512"
+    RS256 = "RS256"
+    RS384 = "RS384"
+    RS512 = "RS512"
+    ES256 = "ES256"
+    ES384 = "ES384"
+    ES512 = "ES512"
+
+    @classmethod
+    def validated(cls, name: str) -> str:
+        """The name as PyJWT takes it; ConfigurationError for an unknown one."""
+        try:
+            return cls(name).value
+        except ValueError:
+            raise ConfigurationError(
+                f"Invalid JWT algorithm '{name}'. "
+                f"Valid algorithms are: {sorted(valid.value for valid in cls)}"
+            ) from None
+
+
+DEFAULT_JWT_ALGORITHM = JwtAlgorithm.HS256.value
 DEFAULT_JWT_EXPIRATION = 3600  # seconds
-VALID_JWT_ALGORITHMS = frozenset(
-    {
-        "HS256",
-        "HS384",
-        "HS512",
-        "RS256",
-        "RS384",
-        "RS512",
-        "ES256",
-        "ES384",
-        "ES512",
-    }
-)
 
 # ─────────────────────────────────────────────────────────────────────────
 # Cache
