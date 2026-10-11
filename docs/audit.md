@@ -309,6 +309,28 @@ one per fixed ID, in the commit that fixes the ID.
 - **Classes 81 -> 84**: `_ThreadState` (B5-003), `_Override` and `_BoundVerb` (B5-001),
   all private.
 
+### End-to-end curl suite (branch `test/e2e-curl`)
+
+`tools/e2e/run_all.sh`: 17 bash scenarios, each a real server process (an `apps/*.py`
+module, `python -m lightapi serve` on a YAML document, or the container image) driven by
+`curl` and checked with `jq`, on a SQLite file and, for the 8 scenarios tagged `pg`, again
+on a throwaway `postgres:16` container. Full runs on 2026-10-11, all green and identical:
+
+| Run | Result |
+|---|---|
+| Python 3.13.2, twice | `21 ok, 0 failed, 1 skipped` (383 steps; the skip is the docker scenario without `E2E_DOCKER=1`) |
+| Python 3.10.19 (`UV_PYTHON=3.10 UV_PROJECT_ENVIRONMENT=.venv310`) | `21 ok, 0 failed, 1 skipped` (same 383 steps) |
+| `E2E_DOCKER=1 tools/e2e/run_all.sh docker` | `1 ok` (7 steps: image built from this checkout, healthy, uid 1001) |
+| each of the 16 non-docker scripts alone | ok |
+
+What the suite forced, each fixed in the library with a unit test in its own commit before
+the scenario that found it: B7-003 (`1758f90`, asyncpg lifespan loop), A10-002 (`6ad5247`,
+JSON 405), A10-003 (`338e450`, backend 401), B1-008 (`64a38f3`, filter value 422), B2-011
+(`0adf7b1`, reflected defaults), B6-001 (`4248fc8`, async from a URL), B2-012 (`e7e5946`,
+unknown YAML keys), B1-019 (`732c248`, constraint 409), B6-006 (`9d223db`, `decimal_places`
+enforced), B14-009 (`77b868d`, `ffaf4f7`, container health probe), plus the 403 body in
+the docs (`e4ba40c`). Known gaps: none; `tools/e2e/README.md` keeps that line.
+
 ### Proposals (not applied: each changes visible behaviour or touches a FROZEN class)
 
 - B1-001: `ConfigurationError` from `from_dict` on an unknown `auth:` value instead of silently no auth.
