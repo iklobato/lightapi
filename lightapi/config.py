@@ -39,10 +39,7 @@ class Config:
 
     @property
     def jwt_algorithm_value(self) -> str:
-        algorithm = self.jwt_algorithm or os.environ.get(
-            "LIGHTAPI_JWT_ALGORITHM", DEFAULT_JWT_ALGORITHM
-        )
-        return JwtAlgorithm.validated(algorithm)
+        return JwtAlgorithm.validated(self.jwt_algorithm)
 
 
 # Default global config instance for backward compatibility
