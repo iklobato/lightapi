@@ -88,7 +88,7 @@ esac
 
 # --- start the server ---
 E2E_PORT=$PORT E2E_DB_URL=$DB_URL E2E_OUT=$OUT LIGHTAPI_JWT_SECRET=e2e-secret PYTHONPATH=$E2E \
-	uv run --frozen --extra dev --directory "$ROOT" python "$E2E/apps/$NAME.py" >"$OUT/server.log" 2>&1 &
+	uv run --frozen --extra dev --extra async --directory "$ROOT" python "$E2E/apps/$NAME.py" >"$OUT/server.log" 2>&1 &
 PID=$!
 trap 'pkill -P $PID 2>/dev/null; kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
 for _ in $(seq 1 60); do
@@ -120,7 +120,7 @@ expect "partial: reflected column is validated" 422 '' -- -X POST -H "$JSON" -d 
 # a reflected table that does not exist refuses to start
 MISSING_LOG=$OUT/missing.server.log
 E2E_PORT=$((PORT + 1)) E2E_DB_URL=$DB_URL E2E_OUT=$OUT PYTHONPATH=$E2E \
-	uv run --frozen --extra dev --directory "$ROOT" python "$E2E/apps/11_reflection_missing.py" >"$MISSING_LOG" 2>&1
+	uv run --frozen --extra dev --extra async --directory "$ROOT" python "$E2E/apps/11_reflection_missing.py" >"$MISSING_LOG" 2>&1
 check "missing table: process exits non-zero" $? -ne 0
 check "missing table: ConfigurationError in the log" "$(grep -c 'ConfigurationError' "$MISSING_LOG")" -ge 1
 check "missing table: the message names the table" "$(grep -c 'e2e11_ghost' "$MISSING_LOG")" -ge 1

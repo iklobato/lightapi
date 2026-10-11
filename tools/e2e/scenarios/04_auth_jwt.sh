@@ -70,7 +70,7 @@ esac
 
 # --- start the server ---
 E2E_PORT=$PORT E2E_DB_URL=$DB_URL E2E_OUT=$OUT LIGHTAPI_JWT_SECRET=e2e-secret PYTHONPATH=$E2E \
-	uv run --frozen --extra dev --directory "$ROOT" python "$E2E/apps/$NAME.py" >"$OUT/server.log" 2>&1 &
+	uv run --frozen --extra dev --extra async --directory "$ROOT" python "$E2E/apps/$NAME.py" >"$OUT/server.log" 2>&1 &
 PID=$!
 trap 'pkill -P $PID 2>/dev/null; kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
 for _ in $(seq 1 60); do
@@ -116,7 +116,7 @@ expect "secrets wrong scheme" 401 '' -- -H "Authorization: Basic $(printf 'user:
 expect "secrets with token" 200 '.results==[]' -- -H "Authorization: Bearer $USER_TOKEN" "$BASE/secrets"
 expect "secrets post with token" 201 '.text=="s1"' -- -X POST -H "$JSON" -H "Authorization: Bearer $USER_TOKEN" -d '{"text":"s1"}' "$BASE/secrets"
 
-EXPIRED=$(uv run --frozen --extra dev --directory "$ROOT" python -c "import jwt,datetime; print(jwt.encode({'sub':'2','exp':datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(seconds=5)}, 'e2e-secret', algorithm='HS256'))")
+EXPIRED=$(uv run --frozen --extra dev --extra async --directory "$ROOT" python -c "import jwt,datetime; print(jwt.encode({'sub':'2','exp':datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(seconds=5)}, 'e2e-secret', algorithm='HS256'))")
 expect "secrets expired token" 401 '.detail=="Authentication credentials invalid."' -- -H "Authorization: Bearer $EXPIRED" "$BASE/secrets"
 
 expect "admin as user is 403" 403 '.detail=="Insufficient permissions"' -- -H "Authorization: Bearer $USER_TOKEN" "$BASE/admin"

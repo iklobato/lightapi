@@ -69,7 +69,7 @@ sed "s|@DB@|sqlite+aiosqlite:///$OUT/async.sqlite|" "$E2E/configs/12_yaml_async.
 # --- start the two servers through the CLI ---
 serve() { # serve <config> <port> <log>
 	LIGHTAPI_CONFIG=$1 LIGHTAPI_PORT=$2 LIGHTAPI_HOST=127.0.0.1 LIGHTAPI_JWT_SECRET=e2e-secret PYTHONPATH=$E2E \
-		uv run --frozen --extra dev --directory "$ROOT" python -m lightapi serve >"$3" 2>&1 &
+		uv run --frozen --extra dev --extra async --directory "$ROOT" python -m lightapi serve >"$3" 2>&1 &
 	echo $!
 }
 PID=$(serve "$OUT/config.yaml" "$PORT" "$OUT/server.log")
@@ -118,14 +118,14 @@ expect "async document: list" 200 '(.results|length)==1' -- "$ABASE/asyncbooks"
 
 # a key the format does not know refuses to start and names the key
 LIGHTAPI_CONFIG=$E2E/configs/12_yaml_badkey.yaml LIGHTAPI_PORT=$((PORT + 2)) LIGHTAPI_HOST=127.0.0.1 \
-	uv run --frozen --extra dev --directory "$ROOT" python -m lightapi serve >"$OUT/badkey.log" 2>&1
+	uv run --frozen --extra dev --extra async --directory "$ROOT" python -m lightapi serve >"$OUT/badkey.log" 2>&1
 check "unknown yaml key exits non-zero" $? -ne 0
 check "unknown yaml key is named" "$(grep -c 'filtering' "$OUT/badkey.log")" -ge 1
 
 # the CLI itself
-uv run --frozen --extra dev --directory "$ROOT" python -m lightapi dance >"$OUT/dance.log" 2>&1
+uv run --frozen --extra dev --extra async --directory "$ROOT" python -m lightapi dance >"$OUT/dance.log" 2>&1
 check "unknown command exits non-zero" $? -ne 0
-env -u LIGHTAPI_CONFIG uv run --frozen --extra dev --directory "$ROOT" python -m lightapi serve >"$OUT/noconfig.log" 2>&1
+env -u LIGHTAPI_CONFIG uv run --frozen --extra dev --extra async --directory "$ROOT" python -m lightapi serve >"$OUT/noconfig.log" 2>&1
 check "missing LIGHTAPI_CONFIG exits non-zero" $? -ne 0
 check "missing LIGHTAPI_CONFIG says so" "$(grep -ci 'LIGHTAPI_CONFIG' "$OUT/noconfig.log")" -ge 1
 

@@ -68,7 +68,7 @@ esac
 
 # --- start the server ---
 E2E_PORT=$PORT E2E_DB_URL=$DB_URL E2E_OUT=$OUT PYTHONPATH=$E2E \
-	uv run --frozen --extra dev --directory "$ROOT" python "$E2E/apps/$NAME.py" >"$OUT/server.log" 2>&1 &
+	uv run --frozen --extra dev --extra async --directory "$ROOT" python "$E2E/apps/$NAME.py" >"$OUT/server.log" 2>&1 &
 PID=$!
 trap 'pkill -P $PID 2>/dev/null; kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
 for _ in $(seq 1 60); do

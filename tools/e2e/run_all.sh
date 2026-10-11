@@ -15,6 +15,19 @@ for tool in jq curl uv sqlite3 psql; do
 	}
 done
 
+# The [pg] runs need both Postgres drivers in the interpreter the scripts use. asyncpg comes
+# from the `async` extra; psycopg2 is not in the manifest, so it must be installed by hand
+# (`uv pip install psycopg2-binary`). This first `uv run` also builds a fresh environment
+# (UV_PYTHON=3.10 ...) before any server has to answer within its start window.
+if [ "${E2E_NO_DOCKER:-}" != 1 ]; then
+	uv run --frozen --extra dev --extra async --directory "$ROOT" python -c "import asyncpg, psycopg2" >"$OUT/drivers.log" 2>&1 || {
+		echo "the [pg] runs need asyncpg and psycopg2 in the uv environment:"
+		tail -1 "$OUT/drivers.log"
+		echo "install with: uv pip install psycopg2-binary   (E2E_NO_DOCKER=1 skips the [pg] runs)"
+		exit 1
+	}
+fi
+
 HAVE_DOCKER=0
 command -v docker >/dev/null && docker info >/dev/null 2>&1 && HAVE_DOCKER=1
 PG_NAME=lightapi-e2e-pg

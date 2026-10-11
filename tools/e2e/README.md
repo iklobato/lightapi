@@ -11,8 +11,17 @@ step of every run passed.
     E2E_DOCKER=1 tools/e2e/run_all.sh docker   # build and probe the container image
     tools/e2e/scenarios/04_auth_jwt.sh         # one scenario alone, SQLite, port 18100
 
-Needs: jq, curl, uv, sqlite3, psql, docker. Logs, response bodies and databases land in
-`tools/e2e/.out/<scenario>/` (gitignored).
+Needs: jq, curl, uv, sqlite3, psql, docker. The [pg] runs also need both Postgres drivers in
+the uv environment: the scripts run `uv run --frozen --extra dev --extra async`, which gives
+asyncpg from the lock; psycopg2 is in no manifest, so install it once with
+`uv pip install psycopg2-binary`. `run_all.sh` checks both before the first run. Logs,
+response bodies and databases land in `tools/e2e/.out/<scenario>/` (gitignored).
+
+To run the whole suite on the other supported interpreter, point uv at a second
+environment (built from the same lock) and install the driver there too:
+
+    uv pip install --python .venv310/bin/python psycopg2-binary   # after the first run created it
+    UV_PYTHON=3.10 UV_PROJECT_ENVIRONMENT=$PWD/.venv310 tools/e2e/run_all.sh
 
 Each script is self-contained: it starts its app from `apps/<name>.py` (or
 `python -m lightapi serve` on `configs/<name>.yaml`), waits for `/healthz`, runs its steps
