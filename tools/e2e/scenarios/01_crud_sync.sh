@@ -105,8 +105,10 @@ expect "version as string accepted" 200 '.version==4 and .pages==501' \
 	-- -X PATCH -H "$JSON" -d '{"pages":501,"version":"3"}' "$BASE/books/$ID"
 expect "version as text rejected" 422 '(.detail|type)=="array"' \
 	-- -X PATCH -H "$JSON" -d '{"pages":1,"version":"three"}' "$BASE/books/$ID"
-expect "patch null clears nullable" 200 '.version==5 and .pages==null' \
-	-- -X PATCH -H "$JSON" -d '{"pages":null,"version":4}' "$BASE/books/$ID"
+expect "put: version as string accepted" 200 '.version==5 and .pages==502' \
+	-- -X PUT -H "$JSON" -d '{"title":"Dune","author":"Herbert","pages":502,"version":"4"}' "$BASE/books/$ID"
+expect "patch null clears nullable" 200 '.version==6 and .pages==null' \
+	-- -X PATCH -H "$JSON" -d '{"pages":null,"version":5}' "$BASE/books/$ID"
 expect "wrong type" 422 '(.detail|type)=="array"' \
 	-- -X POST -H "$JSON" -d '{"title":"x","author":"y","pages":"many"}' "$BASE/books"
 expect "missing required" 422 '(.detail|type)=="array"' -- -X POST -H "$JSON" -d '{"author":"nobody"}' "$BASE/books"

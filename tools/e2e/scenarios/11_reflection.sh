@@ -108,7 +108,7 @@ expect "full: numeric is a json string" 200 '(.price|type)=="string"' -- "$BASE/
 expect "full: post" 201 '.id==3 and .sku=="C-3" and .version==1 and (.created_at|type)=="string"' -- -X POST -H "$JSON" -d '{"sku":"C-3","name":"Cog","price":"3.75"}' "$BASE/products"
 expect "full: put" 200 '.version==2 and .name=="Cogwheel"' -- -X PUT -H "$JSON" -d '{"sku":"C-3","name":"Cogwheel","price":"3.75","version":1}' "$BASE/products/3"
 expect "full: patch" 200 '.version==3 and .price=="4.00"' -- -X PATCH -H "$JSON" -d '{"price":"4.00","version":2}' "$BASE/products/3"
-expect "reflected patch without version" 422 '(.detail|type)=="array"' -- -X PATCH -H "$JSON" -d '{"price":"5.00"}' "$BASE/products/3"
+expect "reflected patch without version" 422 '.detail[0].loc[0]=="version"' -- -X PATCH -H "$JSON" -d '{"price":"5.00"}' "$BASE/products/3"
 expect "full: stale version" 409 '.detail=="version conflict"' -- -X PATCH -H "$JSON" -d '{"price":"5.00","version":1}' "$BASE/products/3"
 expect "full: missing required column" 422 '' -- -X POST -H "$JSON" -d '{"sku":"D-4"}' "$BASE/products"
 expect "full: delete" 204 '' -- -X DELETE "$BASE/products/3"
