@@ -9,6 +9,27 @@ if TYPE_CHECKING:
     from lightapi.rest import RestEndpoint
 
 
+class FilterValueError(ValueError):
+    """A query-string value the column type cannot parse (``?pages=lots``)."""
+
+    def __init__(self, param: str, value: str, expected: str) -> None:
+        super().__init__(f"{param}={value!r} is not a valid {expected}")
+        self.param = param
+        self.value = value
+        self.expected = expected
+
+    def errors(self) -> list[dict[str, Any]]:
+        """The 422 body, shaped like pydantic's error list."""
+        return [
+            {
+                "loc": ["query", self.param],
+                "msg": f"Input should be a valid {self.expected}",
+                "type": f"{self.expected}_parsing",
+                "input": self.value,
+            }
+        ]
+
+
 class BaseFilter:
     """Base class for SQLAlchemy 2.0-style filter backends.
 
@@ -44,24 +65,30 @@ class BaseFilter:
     ) -> bool | int | float | str:
         """Coerce a query-string value to match the column's Python type.
 
-        A value the column type cannot parse, or an attribute that is not a
-        column, is passed through as the string it came in as.
+        An attribute that is not a column passes the value through as the string
+        it came in as. A value an int or float column cannot parse raises
+        FilterValueError: handed to the database it is a silent empty list on
+        SQLite and a DataError (500) on Postgres.
         """
         try:
             col_type = (
                 col.property.columns[0].type if hasattr(col, "property") else None
             )
-            if col_type is None:
-                # InstrumentedAttribute from mapped class
-                col_type = getattr(col, "type", None)
-            if isinstance(col_type, Boolean):
-                return value.lower() in ("1", "true", "yes", "on")
+        except (AttributeError, IndexError):
+            col_type = None
+        if col_type is None:
+            # InstrumentedAttribute from mapped class
+            col_type = getattr(col, "type", None)
+        if isinstance(col_type, Boolean):
+            return value.lower() in ("1", "true", "yes", "on")
+        try:
             if isinstance(col_type, Integer):
                 return int(value)
             if isinstance(col_type, (Numeric, Float)):
                 return float(value)
-        except (ValueError, AttributeError, IndexError):
-            pass
+        except ValueError:
+            expected = "integer" if isinstance(col_type, Integer) else "number"
+            raise FilterValueError(getattr(col, "key", "?"), value, expected) from None
         return value
 
 

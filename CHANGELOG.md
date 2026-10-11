@@ -97,6 +97,11 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_startup` handler; same moment, no deprecation warning. `created_at`/`updated_at`
   column defaults no longer use the deprecated `datetime.utcnow()`; the stored value is the
   same naive UTC.
+- **A filter value the column cannot parse is a 422**: `?pages=lots` on an integer
+  column answers `422 {"detail": [{"loc": ["query", "pages"], ...}]}`. Before, the raw
+  string reached the database: an empty list on SQLite, a 500 (`invalid input syntax for
+  type integer`) on Postgres. `lightapi.filters._coerce_filter_value` raises
+  `FilterValueError` for such a value; custom backends that call it get the same.
 - **A protected endpoint's 401 is the backend's own reply**: the guard answered every
   failed authentication with `{"detail": "Authentication required"}` and
   `WWW-Authenticate: Bearer`, whatever the backend. It now returns the backend's

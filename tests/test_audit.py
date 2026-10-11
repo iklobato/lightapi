@@ -23,6 +23,8 @@ from lightapi import (
     Authentication,
     BasicAuthentication,
     Cache,
+    FieldFilter,
+    Filtering,
     IsAuthenticated,
     JWTAuthentication,
     LightApi,
@@ -419,6 +421,43 @@ class TestA10GuardAnswersWithTheBackend:
 
         assert response.status_code == 418
         assert response.json() == {"detail": "no tea"}
+
+
+class AuditFiltered(RestEndpoint):
+    title: str = LField()
+    pages: int = LField()
+    price: float = LField()
+
+    class Meta:
+        filtering = Filtering(backends=[FieldFilter], fields=["pages", "price"])
+
+
+class TestB1FilterValueParsing:
+    """B1-008: a filter value the column type cannot parse is a 422, not a silent
+    empty list (SQLite) or a 500 (Postgres: invalid input syntax for type integer)."""
+
+    def _client(self):
+        client = _client({"/filtered": AuditFiltered})
+        client.post("/filtered", json={"title": "t", "pages": 100, "price": 9.5})
+        return client
+
+    def test_unparsable_int_filter_is_422_naming_the_parameter(self):
+        response = self._client().get("/filtered?pages=lots")
+
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"] == ["query", "pages"]
+
+    def test_unparsable_float_filter_is_422(self):
+        response = self._client().get("/filtered?price=cheap")
+
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"] == ["query", "price"]
+
+    def test_parsable_filter_values_still_filter(self):
+        client = self._client()
+
+        assert len(client.get("/filtered?pages=100").json()["results"]) == 1
+        assert client.get("/filtered?pages=101").json()["results"] == []
 
 
 class TestB19LifespanLoop:

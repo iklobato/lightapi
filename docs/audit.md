@@ -21,7 +21,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | A8 backend construction | 1 | 0 | 1 | 0 | 0 |
 | A9 per-request constants | 0 | 0 | 0 | 0 | 0 |
 | A10 error replies | 3 | 2 | 1 | 0 | 0 |
-| B1 silent errors | 18 | 4 | 11 | 3 | 0 |
+| B1 silent errors | 18 | 5 | 11 | 2 | 0 |
 | B2 hiding defaults | 10 | 3 | 7 | 0 | 0 |
 | B3 sentinel returns | 3 | 0 | 3 | 0 | 0 |
 | B4 lying types | 12 | 12 | 0 | 0 | 0 |
@@ -37,7 +37,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B14 logs and warnings | 8 | 7 | 1 | 0 | 0 |
 | B15 hidden YAGNI | 5 | 3 | 1 | 1 | 0 |
 | B16 tests that do not protect | 5 | 2 | 3 | 0 | 0 |
-| **Total** | **119** | **49** | **56** | **14** | **0** |
+| **Total** | **119** | **50** | **56** | **13** | **0** |
 
 ## Phase 0: baseline
 
@@ -128,7 +128,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B1-005 | B1 | `lightapi/cache.py:50,61,71,81,93,102` | `RedisCacheBackend` turns every `redis.RedisError` (and a bad cached payload) into None/False silently | corrigir: keep the fallback, log `warning(..., exc_info=True)` (prompt rule for optional dependencies) | corrigido | `4171583` |
 | B1-006 | B1 | `lightapi/constants.py:63` | `HttpVerb.of` returns None for a method outside the enum (HEAD) | manter: expected absence, answered with 405 | justificado | |
 | B1-007 | B1 | `lightapi/endpoint_handler.py:296` | Malformed JSON body becomes `{}` and a 422 "Field required" (`json.JSONDecodeError`, `UnicodeDecodeError` only) | manter: specific exceptions, 422 body is contract. A 422 saying "invalid JSON" would be a visible change | justificado | |
-| B1-008 | B1 | `lightapi/filters.py:52` | A filter value the column type cannot parse (`?price=abc`) is passed through as the string: no rows on SQLite, a DB error (500) on Postgres; same in v0.1.29 | propor: 422 for an unparsable filter value; alternative: keep | proposta | |
+| B1-008 | B1 | `lightapi/filters.py:52` | A filter value the column type cannot parse (`?price=abc`) is passed through as the string: no rows on SQLite, a DB error (500) on Postgres; same in v0.1.29. e2e scenario 06 on Postgres hit the 500 | corrigido: `_coerce_filter_value` raises `FilterValueError`, `_list` answers 422 with `loc: ["query", param]` | corrigido | `see git log: fix(B1-008)` |
 | B1-009 | B1 | `lightapi/lightapi.py:311` | `except RuntimeError: return` when no loop runs | manter: `asyncio.get_running_loop()` signals absence by raising; the return defers to the startup handler | justificado | |
 | B1-010 | B1 | `lightapi/lightapi.py:303` | A failed `create_all` at `build_app` is logged as a warning without traceback and the app serves 500s; same in v0.1.29 (`except Exception`) | corrigir the log (`exc_info=True`); the fail-fast is B1-011 | corrigido | `d21960f` |
 | B1-011 | B1 | `lightapi/lightapi.py:303` | Same site: should `build_app` raise instead of warn? | propor: raise `ConfigurationError` from the DDL error (visible: startup fails instead of every request); alternative: keep the warning | proposta | |

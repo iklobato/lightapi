@@ -27,6 +27,7 @@ from lightapi.constants import (
     TableReflection,
 )
 from lightapi.exceptions import ConfigurationError
+from lightapi.filters import FilterValueError
 from lightapi.pagination import NoPagination
 from lightapi.repository import Repository, RowNotFound, VersionConflict
 from lightapi.schema import FieldProjection, SchemaFactory
@@ -246,7 +247,10 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     def _list(self, session: Session, request: Request, qs: Select[Any]) -> Response:
         pagination = self._meta.get("pagination")
         paginator = pagination.paginator if pagination else _NO_PAGINATION
-        qs = self._run_filter_backends(request, qs)
+        try:
+            qs = self._run_filter_backends(request, qs)
+        except FilterValueError as exc:
+            return ApiError.validation_failed(exc.errors())
         serialize = partial(self._serialize_row, fields=self._fields_for(HttpVerb.GET))
         return JSONResponse(paginator.render(request, qs, session, serialize))
 
