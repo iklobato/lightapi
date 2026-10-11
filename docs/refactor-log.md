@@ -132,4 +132,29 @@ the usages first (ruff reports F821, changes nothing), then the import line.
 table with only the automatic columns). `ReflectedTable` takes the member instead of a
 `partial: bool`. One regression test added to the characterization file; CHANGELOG `Changed`.
 
-Next: 3f `RateLimitWindow`, 3g `JwtAlgorithm`, 3h `ApiError`.
+### 3f. `RateLimitWindow`
+
+`rate_limiter.RateLimitWindow(str, Enum)` (MINUTE, HOUR, DAY) carries `seconds`;
+`RateLimiter._limit_for(window)` replaces the two if-chains and the tuple list. Store keys and
+the window name returned by `is_rate_limited` use `.value` (plain strings, identical on every
+Python). `get_rate_limit_response(window: str)` keeps its public signature and still answers an
+unknown name as the minute window.
+
+### 3g. `JwtAlgorithm`
+
+`constants.JwtAlgorithm(str, Enum)` with the nine names and `validated(name) -> str`
+replaces `VALID_JWT_ALGORITHMS`; `Config.jwt_algorithm_value` delegates to it and still returns
+the plain string PyJWT receives (`jwt.py` is FROZEN). Same error text.
+
+### 3h. `ApiError`
+
+`constants.ApiError(Enum)` holds the fixed error replies (status, detail, extra headers):
+`NOT_FOUND`, `VERSION_CONFLICT`, `AUTHENTICATION_REQUIRED` (with `WWW-Authenticate: Bearer`),
+`INSUFFICIENT_PERMISSIONS`, `INVALID_CREDENTIALS`, `LOGIN_METHOD_NOT_ALLOWED` (with
+`Allow: POST`), plus `validation_failed(errors)` for the 422 shape. `rest.py`, `_login.py` and
+`auth_checker.py` build their error responses through it; the dynamic 405 of
+`EndpointHandler` (lists the allowed verbs) stays where it is. Texts, status codes and headers
+are byte-identical (characterization tests and the HTTP snapshot pin them).
+
+Next: Step 4 (authentication: break the config <-> authentication cycle, build the backend
+once per route, move the login helpers onto `LoginRequest`).

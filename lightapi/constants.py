@@ -1,5 +1,8 @@
 from enum import Enum
+from http import HTTPStatus
 from typing import Final
+
+from starlette.responses import JSONResponse
 
 from lightapi.exceptions import ConfigurationError
 
@@ -63,6 +66,47 @@ class HttpVerb(str, Enum):
 CRUD_VERBS: Final = frozenset(
     {HttpVerb.GET, HttpVerb.POST, HttpVerb.PUT, HttpVerb.PATCH, HttpVerb.DELETE}
 )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Error replies with a fixed text (status, detail, extra headers)
+# ─────────────────────────────────────────────────────────────────────────
+class ApiError(Enum):
+    NOT_FOUND = (HTTPStatus.NOT_FOUND, "not found")
+    VERSION_CONFLICT = (HTTPStatus.CONFLICT, "version conflict")
+    AUTHENTICATION_REQUIRED = (
+        HTTPStatus.UNAUTHORIZED,
+        "Authentication required",
+        {"WWW-Authenticate": "Bearer"},
+    )
+    INSUFFICIENT_PERMISSIONS = (HTTPStatus.FORBIDDEN, "Insufficient permissions")
+    INVALID_CREDENTIALS = (HTTPStatus.UNAUTHORIZED, "Invalid credentials")
+    LOGIN_METHOD_NOT_ALLOWED = (
+        HTTPStatus.METHOD_NOT_ALLOWED,
+        "method not allowed",
+        {"Allow": HttpVerb.POST.value},
+    )
+
+    def __init__(
+        self, status: HTTPStatus, detail: str, headers: "dict[str, str] | None" = None
+    ) -> None:
+        self.status = status
+        self.detail = detail
+        self.headers = headers
+
+    def response(self) -> JSONResponse:
+        return JSONResponse(
+            {ResponseKey.DETAIL: self.detail},
+            status_code=self.status,
+            headers=self.headers,
+        )
+
+    @staticmethod
+    def validation_failed(errors: object) -> JSONResponse:
+        """The 422 reply; `errors` is pydantic's error list or one built like it."""
+        return JSONResponse(
+            {ResponseKey.DETAIL: errors}, status_code=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────

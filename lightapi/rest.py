@@ -44,8 +44,8 @@ from starlette.responses import JSONResponse, Response
 from lightapi.constants import (
     AUTO_FIELDS,
     CRUD_VERBS,
+    ApiError,
     HttpVerb,
-    ResponseKey,
     TableReflection,
 )
 from lightapi.exceptions import ConfigurationError
@@ -253,21 +253,10 @@ def _allowed_methods(cls: type) -> set[str]:
     return allowed or {verb.value for verb in CRUD_VERBS}
 
 
-_ERROR_RESPONSES: dict[type[Exception], tuple[HTTPStatus, str]] = {
-    RowNotFound: (HTTPStatus.NOT_FOUND, "not found"),
-    VersionConflict: (HTTPStatus.CONFLICT, "version conflict"),
+_API_ERRORS: Final[dict[type[Exception], ApiError]] = {
+    RowNotFound: ApiError.NOT_FOUND,
+    VersionConflict: ApiError.VERSION_CONFLICT,
 }
-
-
-def _error_response(error: Exception) -> Response:
-    status, detail = _ERROR_RESPONSES[type(error)]
-    return JSONResponse({ResponseKey.DETAIL: detail}, status_code=status)
-
-
-def _unprocessable(errors: Any) -> Response:
-    return JSONResponse(
-        {ResponseKey.DETAIL: errors}, status_code=HTTPStatus.UNPROCESSABLE_ENTITY
-    )
 
 
 class RestEndpoint(metaclass=RestEndpointMeta):
@@ -366,14 +355,14 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         try:
             row = self._repository(session).get(pk)
         except RowNotFound as exc:
-            return _error_response(exc)
+            return _API_ERRORS[type(exc)].response()
         return JSONResponse(self._serialize_row(row, HttpVerb.GET))
 
     def _create(self, session: Session, data: dict[str, Any]) -> Response:
         try:
             validated = type(self).__schema_create__.model_validate(data)
         except ValidationError as exc:
-            return _unprocessable(exc.errors())
+            return ApiError.validation_failed(exc.errors())
 
         row = self._repository(session).add(validated.model_dump())
         return JSONResponse(
@@ -386,24 +375,24 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         """PUT/PATCH; the client must send the ``version`` it last read."""
         client_version = data.get("version")
         if client_version is None:
-            return _unprocessable(
+            return ApiError.validation_failed(
                 [{"loc": ["version"], "msg": "Field required", "type": "missing"}]
             )
         try:
             client_version = _VERSION_ADAPTER.validate_python(client_version)
         except ValidationError as exc:
-            return _unprocessable(exc.errors())
+            return ApiError.validation_failed(exc.errors())
 
         repository = self._repository(session)
         try:
             values = self._update_values(data, partial, repository.nullable_columns)
         except ValidationError as exc:
-            return _unprocessable(exc.errors())
+            return ApiError.validation_failed(exc.errors())
 
         try:
             row = repository.update(pk, client_version, values)
         except (RowNotFound, VersionConflict) as exc:
-            return _error_response(exc)
+            return _API_ERRORS[type(exc)].response()
         return JSONResponse(self._serialize_row(row, HttpVerb.PUT))
 
     def _update_values(
@@ -427,7 +416,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         try:
             self._repository(session).delete(pk)
         except RowNotFound as exc:
-            return _error_response(exc)
+            return _API_ERRORS[type(exc)].response()
         return Response(status_code=HTTPStatus.NO_CONTENT)
 
     def _repository(self, session: Session) -> Repository:

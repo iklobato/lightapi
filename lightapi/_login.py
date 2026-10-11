@@ -6,14 +6,13 @@ import base64
 import inspect
 import json
 import logging
-from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.constants import HttpVerb, ResponseKey
+from lightapi.constants import ApiError, HttpVerb
 
 if TYPE_CHECKING:
     from lightapi.authentication.base import BaseAuthentication, LoginValidator
@@ -103,26 +102,16 @@ class LoginEndpoint:
             return self._rate_limiter.get_rate_limit_response(request, window)
 
         if request.method != HttpVerb.POST:
-            return JSONResponse(
-                {ResponseKey.DETAIL: "method not allowed"},
-                status_code=HTTPStatus.METHOD_NOT_ALLOWED,
-                headers={"Allow": HttpVerb.POST.value},
-            )
+            return ApiError.LOGIN_METHOD_NOT_ALLOWED.response()
 
         try:
             creds = await _parse_credentials(request)
         except ValidationError as exc:
-            return JSONResponse(
-                {ResponseKey.DETAIL: exc.errors()},
-                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            )
+            return ApiError.validation_failed(exc.errors())
 
         user = await self._validated_user(*creds) if creds is not None else None
         if user is None:
-            return JSONResponse(
-                {ResponseKey.DETAIL: "Invalid credentials"},
-                status_code=HTTPStatus.UNAUTHORIZED,
-            )
+            return ApiError.INVALID_CREDENTIALS.response()
         return JSONResponse(self._backend.login_response(user))
 
     async def _validated_user(
