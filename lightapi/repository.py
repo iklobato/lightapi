@@ -56,6 +56,9 @@ class Repository:
 
     @property
     def nullable_columns(self) -> set[str]:
+        # class_mapper() and column_attrs are memoised by SQLAlchemy; caching the
+        # result per class here (functools.cache) pinned every endpoint class and
+        # its engine for the life of the process.
         return {
             attr.key
             for attr in class_mapper(self._model).column_attrs
