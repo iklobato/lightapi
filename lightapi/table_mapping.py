@@ -118,7 +118,7 @@ class DeclaredTable(TableSource):
         table = Table(
             self._table_name(endpoint_cls, session_manager),
             session_manager.metadata,
-            *[column.copy() for column in self._columns],
+            *self._columns,
             extend_existing=True,
             keep_existing=False,
         )
