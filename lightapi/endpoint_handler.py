@@ -34,10 +34,18 @@ class MiddlewareChain:
 
     classes: list[type]
 
+    @cached_property
+    def _awaits(self) -> dict[type, bool]:
+        """Whether each class's process() is a coroutine function; decided once."""
+        return {
+            cls: asyncio.iscoroutinefunction(getattr(cls, "process"))
+            for cls in self.classes
+        }
+
     async def before(self, request: Request) -> Response | None:
         """The first response a middleware answers with, or None to carry on."""
         for middleware_cls in self.classes:
-            result = await self._process(middleware_cls(), request, None)
+            result = await self._process(middleware_cls, request, None)
             if result is not None:
                 return result
         return None
@@ -45,16 +53,16 @@ class MiddlewareChain:
     async def after(self, request: Request, response: Response) -> Response:
         """The response after every middleware saw it, last registered first."""
         for middleware_cls in reversed(self.classes):
-            result = await self._process(middleware_cls(), request, response)
+            result = await self._process(middleware_cls, request, response)
             if result is not None:
                 response = result
         return response
 
-    @staticmethod
     async def _process(
-        middleware: Any, request: Request, response: Response | None
+        self, middleware_cls: type, request: Request, response: Response | None
     ) -> Response | None:
-        if asyncio.iscoroutinefunction(middleware.process):
+        middleware = middleware_cls()
+        if self._awaits[middleware_cls]:
             awaited: Response | None = await middleware.process(request, response)
             return awaited
         result: Response | None = middleware.process(request, response)
