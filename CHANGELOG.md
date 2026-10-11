@@ -101,6 +101,11 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   404 on every LightAPI app, so `docker inspect` reported every healthy container as
   unhealthy. The probe also stops importing `urllib.request`, which alone took 1.8 to 2.9 s
   inside the image on Docker Desktop and blew the 3 s timeout; the socket probe takes 0.7 s.
+- **PATCH validates every field constraint**: the PATCH schema rebuilt each field as an
+  optional copy and dropped its `Field()` constraints, so `min_length`, `ge`,
+  `decimal_places` and the rest applied to POST and PUT but not to PATCH (`{"name": ""}`
+  against `min_length=3` was a 200). A PATCH now meets the same constraints as a PUT and
+  answers 422 like it; only the "every field is optional" part is unchanged.
 - **`Field(decimal_places=N)` is enforced**: a `Decimal` with more than N decimal places
   is a 422. Before, the option reached neither pydantic nor the DDL (`Numeric(scale=N)`
   without a precision renders as plain `NUMERIC` on every dialect), so "1.999" was stored

@@ -22,7 +22,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | A9 per-request constants | 0 | 0 | 0 | 0 | 0 |
 | A10 error replies | 3 | 2 | 1 | 0 | 0 |
 | B1 silent errors | 19 | 6 | 11 | 2 | 0 |
-| B2 hiding defaults | 12 | 5 | 7 | 0 | 0 |
+| B2 hiding defaults | 13 | 6 | 7 | 0 | 0 |
 | B3 sentinel returns | 3 | 0 | 3 | 0 | 0 |
 | B4 lying types | 12 | 12 | 0 | 0 | 0 |
 | B5 per-request checks | 9 | 3 | 6 | 0 | 0 |
@@ -37,7 +37,7 @@ bump only). Audited state: commit `804d716` (`refactor/oo-second-pass`, on top o
 | B14 logs and warnings | 9 | 8 | 1 | 0 | 0 |
 | B15 hidden YAGNI | 5 | 3 | 1 | 1 | 0 |
 | B16 tests that do not protect | 5 | 2 | 3 | 0 | 0 |
-| **Total** | **124** | **56** | **56** | **12** | **0** |
+| **Total** | **125** | **57** | **56** | **12** | **0** |
 
 ## Phase 0: baseline
 
@@ -139,7 +139,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B1-016 | B1 | `lightapi/yaml_config.py:531` | `except ValueError: return fn` for a callable without an inspectable signature | manter: builtins; the validator is still called with two args | justificado | |
 | B1-017 | B1 | `lightapi/authentication/jwt.py:84`, `lightapi/cache.py:243,262` | Silent excepts inside FROZEN classes | manter: FROZEN | justificado | |
 | B1-018 | B1 | `lightapi/cache.py:49` | `redis.from_url` failure (bad URL) returns no client, silently, forever | corrigir with B1-005 (log once per call) | corrigido | `4171583` |
-| B1-019 | B1 | `lightapi/repository.py:85,99` | `IntegrityError` from a `unique=True` column (or any constraint) escaped `Repository.add()`/`update()`: a duplicate value was an unhandled 500 with a traceback and the session was left in the failed state. e2e scenario 17 planned the case | corrigido: the repository rolls back and raises `ConstraintViolation`; POST, PUT and PATCH answer `409 {"detail": "constraint violation"}`, sync and async (`tests/test_constraints.py`). The whole-branch review found `delete()` still unwrapped (a DELETE of a referenced row was a 500 while the docs already promised the 409) and the refusal swallowed without a trace: `delete()` is wrapped too and every refusal is logged at INFO with the table and the driver's text | corrigido | `732c248`, `see git log: fix(B1-019) review` |
+| B1-019 | B1 | `lightapi/repository.py:85,99` | `IntegrityError` from a `unique=True` column (or any constraint) escaped `Repository.add()`/`update()`: a duplicate value was an unhandled 500 with a traceback and the session was left in the failed state. e2e scenario 17 planned the case | corrigido: the repository rolls back and raises `ConstraintViolation`; POST, PUT and PATCH answer `409 {"detail": "constraint violation"}`, sync and async (`tests/test_constraints.py`). The whole-branch review found `delete()` still unwrapped (a DELETE of a referenced row was a 500 while the docs already promised the 409) and the refusal swallowed without a trace: `delete()` is wrapped too and every refusal is logged at INFO with the table and the driver's text | corrigido | `732c248`, `39ab9fc` |
 | B2-001 | B2 | `lightapi/filters.py:71,97,125` | `getattr(view, "_meta", {})` on a view that is always a `RestEndpoint` (has `_meta`) | corrigir: `view._meta.get("filtering")` | corrigido | `5e91407` |
 | B2-002 | B2 | `lightapi/lightapi.py:324` | `getattr(cls, "_meta", {})` on a registered endpoint (validated by `_require_rest_endpoint`) | corrigir: `cls._meta` | corrigido | `5e91407` |
 | B2-003 | B2 | `lightapi/rest.py:171` | `getattr(type(self), "_session_manager", None)` | corrigir: declare `_session_manager: ClassVar[SessionManager | corrigido | `5e91407` | |
@@ -150,6 +150,7 @@ Decisão: `corrigir`, `manter` (reason), `propor`. Status: `aberto`, `corrigido`
 | B2-008 | B2 | `lightapi/filters.py:41,45` | `hasattr(col, "property")`, `getattr(col, "type", None)` | manter: SQLAlchemy exposes the type on `InstrumentedAttribute` and `Column` differently | justificado | |
 | B2-009 | B2 | `lightapi/cache.py:31` | `LIGHTAPI_REDIS_URL` defaults to `redis://localhost:6379/0` | manter: documented default, same in v0.1.29 | justificado | |
 | B2-012 | B2 | `lightapi/yaml_config.py` (every block model) | The YAML models used pydantic's default `extra="ignore"`: a key the format does not know (`defaults.filtering`, `meta.paginate`, a misspelt top-level key) was dropped and the app started without the feature, while `docs/getting-started/configuration.md:89` promises a typo fails at load time. Same in v0.1.29. Found by e2e scenario 12 | corrigido: every block model inherits `_Document` with `extra="forbid"`; `FieldSpec` keeps `extra="allow"` for the constraint keys | corrigido | `e7e5946` |
+| B2-013 | B2 | `lightapi/schema.py:138` | `patch_schema` rebuilt every field as `(Optional[annotation], None)` and dropped its `FieldInfo`, so a PATCH skipped `min_length`, `ge`, `decimal_places` and every other constraint a PUT enforces (`PATCH {"name": ""}` against `min_length=3` was a 200); older than the branch, found by the whole-branch review because it made the new B6-006 claim untrue on PATCH | corrigido: the optional copy keeps the field's `FieldInfo` (`FieldInfo.merge_field_infos(field, default=None)`), so PATCH answers 422 like PUT (`tests/test_audit.py::TestReviewPatchKeepsConstraints`, e2e scenario 17) | corrigido | `see git log: fix(B2-013)` |
 | B2-011 | B2 | `lightapi/schema.py:254`, `table_mapping.py:228` | A reflected table required every non-auto column on POST, nullable or not, and on `reflect = "partial"` the declared `Field()` (default, constraints) was stripped before the schema was built, so `notes: str = Field(default="")` still answered 422 "Field required". Same in v0.1.29. Found by e2e scenario 11 | corrigido: nullable reflected columns are optional (None); `ReflectedTable.map` keeps the declared FieldInfos and `build_from_reflected_table(cls, table, declared)` uses them | corrigido | `0adf7b1` |
 | B2-010 | B2 | `lightapi/rest.py:197,202,217`, `endpoint_handler.py:192`, `table_mapping.py:65`, `lightapi.py:170,324` | `_meta.get("pagination")` etc. on keys `_parsed_meta` always writes | manter: `_meta` is `{}` for `base_only` classes | justificado | |
 | B3-001 | B3 | `lightapi/cache.py:57-105` | `RedisCacheBackend` methods return None/False on failure | manter: "no Redis, no cache, requests still answered" is the documented contract; B1-005 adds the log | justificado | |

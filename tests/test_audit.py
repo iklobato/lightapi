@@ -608,6 +608,57 @@ class TestB6DecimalPlaces:
         assert response.json()["price"] == "12.50"
 
 
+class AuditPatched(RestEndpoint):
+    name: str = Field(min_length=3)
+    price: Decimal = Field(decimal_places=2)
+
+    class Meta:
+        table = "audit_patched"
+
+
+class TestReviewPatchKeepsConstraints:
+    """B2-013: the PATCH schema rebuilt every field as `Optional[annotation]` and
+    dropped its FieldInfo, so PATCH skipped min_length, decimal_places and every
+    other constraint PUT enforces (review finding 6 on the e2e branch)."""
+
+    def _seeded(self):
+        client = _client({"/patched": AuditPatched})
+        client.__enter__()
+        row = client.post("/patched", json={"name": "abc", "price": "1.00"}).json()
+        return client, row
+
+    def test_patch_enforces_decimal_places(self):
+        client, row = self._seeded()
+        with client:
+            response = client.patch(
+                f"/patched/{row['id']}", json={"price": "1.999", "version": 1}
+            )
+
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"] == ["price"]
+
+    def test_patch_enforces_min_length(self):
+        client, row = self._seeded()
+        with client:
+            response = client.patch(
+                f"/patched/{row['id']}", json={"name": "ab", "version": 1}
+            )
+
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"] == ["name"]
+
+    def test_patch_with_a_valid_subset_still_works(self):
+        client, row = self._seeded()
+        with client:
+            response = client.patch(
+                f"/patched/{row['id']}", json={"name": "abcd", "version": 1}
+            )
+
+        assert response.status_code == 200
+        assert response.json()["name"] == "abcd"
+        assert response.json()["price"] == "1.00"
+
+
 class TestYamlUnknownKeys:
     """A key the YAML format does not know is a ConfigurationError naming it, not a
     silently ignored block; found by e2e scenario 12 (`defaults.filtering`)."""

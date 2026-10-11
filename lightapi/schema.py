@@ -134,9 +134,13 @@ class SchemaFactory:
         """
         # Optional[...] because `| None` fails on what gets here: pydantic may hand
         # back None, and a user module under `from __future__ import annotations`
-        # declares its fields as strings.
+        # declares its fields as strings. The FieldInfo travels with the field so
+        # a PATCH meets the same constraints as a PUT; only the default changes.
         optional_fields: dict[str, Any] = {
-            name: (Optional[field.annotation], None)  # noqa: UP045
+            name: (
+                Optional[field.annotation],  # noqa: UP045
+                FieldInfo.merge_field_infos(field, default=None),
+            )
             for name, field in schema_create.model_fields.items()
         }
         return create_model(
