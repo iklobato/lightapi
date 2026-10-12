@@ -285,3 +285,35 @@ class TestB11002CompatCorsNeedsOrigins:
         middleware = CORSMiddleware(allow_origins=["https://app.example.com"])
 
         assert middleware.allow_origins == ["https://app.example.com"]
+
+
+class CountingFilter(BaseFilter):
+    instances = 0
+
+    def __init__(self) -> None:
+        CountingFilter.instances += 1
+
+    def filter_queryset(self, request, queryset, view):
+        return queryset
+
+
+class AuditFilteredOnce(RestEndpoint):
+    title: str = Field(min_length=1)
+
+    class Meta:
+        table = "audit_filtered_once"
+        filtering = Filtering(backends=[CountingFilter])
+
+
+class TestB13002FilterBackendBuiltOnce:
+    """B13-002: a filter backend instance was built on every request."""
+
+    def test_three_requests_build_the_backend_once(self):
+        CountingFilter.instances = 0
+        app = LightApi(engine=_memory_engine())
+        app.register({"/once": AuditFilteredOnce})
+        with TestClient(app.build_app()) as client:
+            for _ in range(3):
+                assert client.get("/once").status_code == 200
+
+        assert CountingFilter.instances == 1
