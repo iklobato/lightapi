@@ -271,3 +271,17 @@ class TestB11001CorsCredentialsOptIn:
             LightApi(
                 engine=_memory_engine(), cors_origins=["*"], cors_allow_credentials=True
             )
+
+
+class TestB11002CompatCorsNeedsOrigins:
+    """B11-002: the compat `lightapi.core.CORSMiddleware` defaulted to `*`; it now
+    wants the origins spelled out, like `cors_origins` does."""
+
+    def test_no_origins_is_refused(self):
+        with pytest.raises(ConfigurationError, match="allow_origins"):
+            CORSMiddleware()
+
+    def test_explicit_origins_still_work(self):
+        middleware = CORSMiddleware(allow_origins=["https://app.example.com"])
+
+        assert middleware.allow_origins == ["https://app.example.com"]

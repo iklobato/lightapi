@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Final
 from starlette.responses import JSONResponse
 
 from lightapi.constants import HttpVerb
+from lightapi.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -103,7 +104,12 @@ class CORSMiddleware(Middleware):
         allow_headers: list[str] | None = None,
     ):
         if allow_origins is None:
-            allow_origins = ["*"]
+            # B11-002: the old default was "*". Origins are spelled out here, as
+            # LightApi(cors_origins=[...]) already requires.
+            raise ConfigurationError(
+                "CORSMiddleware needs allow_origins: pass the list, or subclass it "
+                "with one; LightApi(cors_origins=[...]) is the documented route."
+            )
         if allow_methods is None:
             allow_methods = [verb.value for verb in self._DEFAULT_ALLOW_METHODS]
         if allow_headers is None:

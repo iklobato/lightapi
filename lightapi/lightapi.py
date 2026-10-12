@@ -148,6 +148,11 @@ class LightApi:
         if self._mode is ExecutionMode.ASYNC:
             self._require_async_engine(self._engine)
 
+        for middleware_cls in self._middlewares:
+            # The chain builds a fresh instance per request, so a constructor that
+            # refuses (CORSMiddleware without origins) would be a 500 on the first
+            # request; this makes it a register() error instead.
+            middleware_cls()
         app_context = AppContext(
             MiddlewareChain(self._middlewares), self._mode, self._login_validator
         )
