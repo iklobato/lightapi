@@ -11,7 +11,10 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Nothing yet.
 
-## [0.2.0] - 2026-10-12
+## [0.2.1] - 2026-10-12
+
+Published as 0.2.1, not 0.2.0: the release workflow adds one to the last number of
+`pyproject.toml` before building, so the tree says 0.2.0 until that bump lands on master.
 
 ### Deprecated
 - **`LightApi.from_dict`** emits a `DeprecationWarning` and will be removed in 0.3.0. Use
@@ -311,8 +314,8 @@ Nothing yet.
 
 ---
 
-[Unreleased]: https://github.com/iklobato/lightapi/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/iklobato/lightapi/compare/v0.1.29...v0.2.0
+[Unreleased]: https://github.com/iklobato/lightapi/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/iklobato/lightapi/compare/v0.1.29...v0.2.1
 [0.1.23]: https://github.com/iklobato/lightapi/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/iklobato/lightapi/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/iklobato/lightapi/compare/v0.1.20...v0.1.21
