@@ -21,7 +21,7 @@ def _engine():
 
 
 def test_from_dict_warns_about_its_removal():
-    with pytest.warns(DeprecationWarning, match="from_dict.*0.2.0"):
+    with pytest.warns(DeprecationWarning, match=r"from_dict.*0\.3\.0"):
         LightApi.from_dict(_config(), engine=_engine())
 
 
