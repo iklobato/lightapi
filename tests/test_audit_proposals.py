@@ -127,3 +127,22 @@ class TestB6002CacheVaryOn:
         keys = self._keys_for("/varied?page=1", "/varied?page=2")
 
         assert keys[0] != keys[1]
+
+
+class TestB6003ConfigJwtExpiration:
+    """B6-003: `Config.jwt_expiration` existed and was never read; a backend built
+    without its own `expiration` fell back to a literal 3600."""
+
+    def test_generate_token_uses_the_global_config(self, monkeypatch):
+        monkeypatch.setenv(
+            "LIGHTAPI_JWT_SECRET", "audit-proposals-secret-32-bytes-long!"
+        )
+        monkeypatch.setattr(config, "jwt_expiration", 120)
+
+        token = JWTAuthentication().generate_token({"sub": "1"})
+
+        claims = jwt.decode(token, options={"verify_signature": False})
+        lifetime = (
+            claims["exp"] - datetime.datetime.now(datetime.timezone.utc).timestamp()
+        )
+        assert 100 < lifetime <= 120
