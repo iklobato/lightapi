@@ -9,6 +9,10 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.0] - 2026-10-12
+
 ### Changed
 - **CORS credentials are opt-in**: `LightApi(cors_origins=[...])` no longer sends
   `Access-Control-Allow-Credentials: true` by itself; pass `cors_allow_credentials=True`,
@@ -335,7 +339,8 @@ Published as 0.2.1, not 0.2.0: the release workflow adds one to the last number 
 
 ---
 
-[Unreleased]: https://github.com/iklobato/lightapi/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/iklobato/lightapi/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/iklobato/lightapi/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/iklobato/lightapi/compare/v0.1.29...v0.2.1
 [0.1.23]: https://github.com/iklobato/lightapi/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/iklobato/lightapi/compare/v0.1.21...v0.1.22
