@@ -13,9 +13,11 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Final
 
 from starlette.background import BackgroundTasks
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from lightapi.authentication import BasicAuthentication
 from lightapi.cache import EndpointCache
 from lightapi.constants import ApiError, ExecutionMode, HttpVerb, ResponseKey
 from lightapi.rest import RestEndpoint
@@ -93,11 +95,11 @@ class EndpointGuard:
         """Built on the first request that needs it, then shared by every later one."""
         return self._authentication.build_backend(self._login_validator)
 
-    def check(self, request: Request) -> Response | None:
+    async def check(self, request: Request) -> Response | None:
         """The 401 or 403 response that stops the request, or None to let it in."""
         authentication = self._authentication
         if authentication.requires_login(request.method) and not (
-            self.backend.authenticate(request)
+            await self._authenticate(request)
         ):
             # The backend's own 401: its text, and the challenge header its scheme
             # needs (Bearer, or Basic with a realm so browsers prompt).
@@ -108,6 +110,15 @@ class EndpointGuard:
             return ApiError.INSUFFICIENT_PERMISSIONS.response()
 
         return None
+
+    async def _authenticate(self, request: Request) -> bool:
+        """A Basic backend runs its validate_credentials (a database lookup, as a
+        rule) in a worker thread, like the sync CRUD path; JWT only decodes a
+        token and stays on the loop (B7-001)."""
+        backend = self.backend
+        if isinstance(backend, BasicAuthentication):
+            return await run_in_threadpool(backend.authenticate, request)
+        return backend.authenticate(request)
 
 
 class _CrudArgument(Enum):
@@ -273,7 +284,7 @@ class EndpointHandler:
             return early
 
         if self._guard is not None:
-            denied = self._guard.check(request)
+            denied = await self._guard.check(request)
             if denied is not None:
                 return denied
 

@@ -146,3 +146,39 @@ class TestB6003ConfigJwtExpiration:
             claims["exp"] - datetime.datetime.now(datetime.timezone.utc).timestamp()
         )
         assert 100 < lifetime <= 120
+
+
+class TestB7001BasicValidatorOffTheLoop:
+    """B7-001: the guard called a Basic backend's validate_credentials on the event
+    loop; a validator that queries a database stalled every other request."""
+
+    def test_sync_basic_validator_runs_in_a_worker_thread(self):
+        seen: dict[str, bool] = {}
+
+        class AuditOffLoopBasic(BasicAuthentication):
+            def validate_credentials(self, username, password):
+                try:
+                    asyncio.get_running_loop()
+                    seen["on_loop"] = True
+                except RuntimeError:
+                    seen["on_loop"] = False
+                return {"username": username}
+
+        class AuditGuarded(RestEndpoint):
+            text: str = Field(min_length=1)
+
+            class Meta:
+                table = "audit_offloop_guarded"
+                authentication = Authentication(
+                    backend=AuditOffLoopBasic, permission=IsAuthenticated
+                )
+
+        app = LightApi(engine=_memory_engine())
+        app.register({"/guarded": AuditGuarded})
+        with TestClient(app.build_app()) as client:
+            response = client.get(
+                "/guarded", headers={"Authorization": _basic_header("u", "p")}
+            )
+
+        assert response.status_code == 200
+        assert seen["on_loop"] is False
