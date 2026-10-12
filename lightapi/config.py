@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from functools import cached_property
 from typing import TYPE_CHECKING, Any
 
 from lightapi.constants import (
@@ -9,12 +11,14 @@ from lightapi.constants import (
     DEFAULT_JWT_ALGORITHM,
     DEFAULT_JWT_EXPIRATION,
     DEFAULT_PAGE_SIZE,
-    VALID_JWT_ALGORITHMS,
-    VALID_PAGINATION_STYLES,
+    JwtAlgorithm,
 )
 from lightapi.exceptions import ConfigurationError
+from lightapi.pagination import PaginationStyle, Paginator
 
 if TYPE_CHECKING:
+    from lightapi.authentication.base import BaseAuthentication, BasePermission
+    from lightapi.filters import BaseFilter
     from lightapi.rate_limiter import RateLimiter
 
 
@@ -37,24 +41,7 @@ class Config:
 
     @property
     def jwt_algorithm_value(self) -> str:
-        algorithm = self.jwt_algorithm or os.environ.get(
-            "LIGHTAPI_JWT_ALGORITHM", DEFAULT_JWT_ALGORITHM
-        )
-        if algorithm not in VALID_JWT_ALGORITHMS:
-            raise ConfigurationError(
-                f"Invalid JWT algorithm '{algorithm}'. "
-                f"Valid algorithms are: {sorted(VALID_JWT_ALGORITHMS)}"
-            )
-        return algorithm
-
-    def update(self, **kwargs: Any) -> None:
-        """Update configuration values."""
-        if "jwt_secret" in kwargs:
-            self.jwt_secret = kwargs["jwt_secret"]
-        if "jwt_algorithm" in kwargs:
-            self.jwt_algorithm = kwargs["jwt_algorithm"]
-        if "jwt_expiration" in kwargs:
-            self.jwt_expiration = kwargs["jwt_expiration"]
+        return JwtAlgorithm.validated(self.jwt_algorithm)
 
 
 # Default global config instance for backward compatibility
@@ -65,49 +52,73 @@ config = Config()
 class Authentication:
     """Authentication configuration for a RestEndpoint."""
 
-    backend: type | None = None
-    permission: type | None = None
+    backend: type[BaseAuthentication] | None = None
+    # One permission class for every method, or {"GET": ..., "DELETE": ...}.
+    permission: type[BasePermission] | dict[str, type[BasePermission]] | None = None
     jwt_expiration: int | None = None
-    jwt_extra_claims: tuple[str, ...] = field(default_factory=tuple)
+    jwt_extra_claims: Sequence[str] | None = ()
     jwt_algorithm: str | None = None
-    rate_limiter: "RateLimiter | None" = field(default=None, repr=False)
+    rate_limiter: RateLimiter | None = field(default=None, repr=False)
 
-    def __post_init__(self) -> None:
-        # Lazy import to avoid circular imports
-        pass
+    def permission_for(self, method: str) -> type[BasePermission] | None:
+        """Permission class set for an HTTP method; None when none is set for it."""
+        if isinstance(self.permission, dict):
+            return self.permission.get(method)
+        return self.permission
 
-    @property
-    def permission_value(self) -> type:
-        from lightapi.authentication import AllowAny
+    def requires_login(self, method: str) -> bool:
+        """Whether the backend has to authenticate a request with this method.
 
-        return self.permission or AllowAny
+        A backend with no permission set still authenticates. A permission that
+        does not require authentication (AllowAny), for every method or for this
+        one, makes the request public.
+        """
+        if self.backend is None:
+            return False
+        if self.permission is None:
+            return True
+        permission = self.permission_for(method)
+        return permission is not None and permission.requires_authentication
+
+    def build_backend(
+        self, login_validator: Callable[[str, str], Any] | None = None
+    ) -> BaseAuthentication:
+        if self.backend is None:
+            raise ConfigurationError("Authentication has no backend to build.")
+        return self.backend.from_config(self, login_validator)
 
 
 @dataclass(frozen=True)
 class Filtering:
     """Filtering configuration for a RestEndpoint."""
 
-    backends: tuple[type, ...] = field(default_factory=tuple)
-    fields: tuple[str, ...] = field(default_factory=tuple)
-    search: tuple[str, ...] = field(default_factory=tuple)
-    ordering: tuple[str, ...] = field(default_factory=tuple)
+    backends: Sequence[type[BaseFilter]] | None = ()
+    fields: Sequence[str] | None = ()
+    search: Sequence[str] | None = ()
+    ordering: Sequence[str] | None = ()
 
 
 @dataclass(frozen=True)
 class Pagination:
     """Pagination configuration for a RestEndpoint."""
 
-    style: str = "page_number"
+    # A PaginationStyle or its value, as the user wrote it; `paginator` converts.
+    style: PaginationStyle | str = PaginationStyle.PAGE_NUMBER
     page_size: int = DEFAULT_PAGE_SIZE
 
-    def __post_init__(self):
-        if self.style not in VALID_PAGINATION_STYLES:
+    def __post_init__(self) -> None:
+        if self.style not in PaginationStyle.__members__.values():
             raise ConfigurationError(
                 f"Pagination style '{self.style}' is invalid. "
-                f"Choose from: {VALID_PAGINATION_STYLES}"
+                f"Choose from: {tuple(valid.value for valid in PaginationStyle)}"
             )
         if self.page_size < 1:
             raise ConfigurationError("Pagination page_size must be a positive integer.")
+
+    @cached_property
+    def paginator(self) -> Paginator:
+        """Built once per configuration; paginators keep no per-request state."""
+        return PaginationStyle(self.style).build(self.page_size)
 
 
 @dataclass(frozen=True)
@@ -117,7 +128,7 @@ class Cache:
     ttl: int = DEFAULT_CACHE_TTL
     vary_on: tuple[str, ...] = field(default_factory=tuple)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.ttl < 1:
             raise ConfigurationError("Cache ttl must be a positive integer (seconds).")
 
@@ -137,7 +148,10 @@ class Serializer:
     read: list[str] | None = None
     write: list[str] | None = None
 
-    def __init_subclass__(cls, **kwargs: Any) -> None:
+    def __init_subclass__(
+        cls,
+        **kwargs: Any,  # noqa: ANN401  class kwargs, forwarded
+    ) -> None:
         super().__init_subclass__(**kwargs)
         has_fields = cls.__dict__.get("fields") is not None
         has_read = cls.__dict__.get("read") is not None

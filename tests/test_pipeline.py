@@ -1,21 +1,23 @@
 """Tests for the serialization pipeline helpers."""
 
+from typing import ClassVar
+
 import pytest
 
 from lightapi.exceptions import SerializationError
-from lightapi.schema import _apply_fields, _row_to_dict, resolve_fields
+from lightapi.schema import FieldProjection, SchemaFactory
 
 
 class TestRowToDict:
     def test_dict_passthrough(self):
         d = {"id": 1, "name": "x"}
-        assert _row_to_dict(d) is d
+        assert SchemaFactory.row_to_dict(d) is d
 
     def test_row_mapping(self):
         class FakeRow:
-            _mapping = {"id": 1, "name": "test"}
+            _mapping: ClassVar[dict] = {"id": 1, "name": "test"}
 
-        result = _row_to_dict(FakeRow())
+        result = SchemaFactory.row_to_dict(FakeRow())
         assert result == {"id": 1, "name": "test"}
 
     def test_orm_instance(self):
@@ -25,37 +27,37 @@ class TestRowToDict:
                 self.name = "orm"
                 self._sa_instance_state = "internal"
 
-        result = _row_to_dict(FakeOrm())
+        result = SchemaFactory.row_to_dict(FakeOrm())
         assert result == {"id": 1, "name": "orm"}
         assert "_sa_instance_state" not in result
 
     def test_unknown_type_raises(self):
         with pytest.raises(SerializationError):
-            _row_to_dict(42)
+            SchemaFactory.row_to_dict(42)
 
     def test_unknown_type_message(self):
         with pytest.raises(SerializationError, match="int"):
-            _row_to_dict(42)
+            SchemaFactory.row_to_dict(42)
 
 
 class TestApplyFields:
     def test_none_passthrough(self):
         d = {"id": 1, "name": "x", "secret": "hidden"}
-        assert _apply_fields(d, None) is d
+        assert FieldProjection.apply(d, None) is d
 
     def test_subset_projection(self):
         d = {"id": 1, "name": "x", "secret": "hidden"}
-        result = _apply_fields(d, ["id", "name"])
+        result = FieldProjection.apply(d, ["id", "name"])
         assert result == {"id": 1, "name": "x"}
         assert "secret" not in result
 
     def test_empty_fields_list(self):
         d = {"id": 1, "name": "x"}
-        assert _apply_fields(d, []) == {}
+        assert FieldProjection.apply(d, []) == {}
 
     def test_fields_not_in_dict_ignored(self):
         d = {"id": 1}
-        result = _apply_fields(d, ["id", "missing"])
+        result = FieldProjection.apply(d, ["id", "missing"])
         assert result == {"id": 1}
 
 
@@ -94,7 +96,11 @@ class TestResolveFields:
                     read=["id", "name", "tag"], write=["id", "name"]
                 )
 
-        assert resolve_fields(Ep, "GET") == ["id", "name", "tag"]
+        assert Ep._meta["serializer_normalised"].for_method("GET") == [
+            "id",
+            "name",
+            "tag",
+        ]
 
     def test_post_returns_write_fields(self):
         from lightapi.config import Serializer
@@ -109,7 +115,7 @@ class TestResolveFields:
                     read=["id", "name", "tag"], write=["id", "name"]
                 )
 
-        assert resolve_fields(Ep, "POST") == ["id", "name"]
+        assert Ep._meta["serializer_normalised"].for_method("POST") == ["id", "name"]
 
     def test_no_serializer_returns_none(self):
         from lightapi.fields import Field as LField
@@ -118,5 +124,5 @@ class TestResolveFields:
         class Ep(RestEndpoint):
             name: str = LField(min_length=1)
 
-        assert resolve_fields(Ep, "GET") is None
-        assert resolve_fields(Ep, "POST") is None
+        assert Ep._meta["serializer_normalised"].for_method("GET") is None
+        assert Ep._meta["serializer_normalised"].for_method("POST") is None

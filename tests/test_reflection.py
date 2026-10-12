@@ -163,14 +163,13 @@ class TestReflectFullCrud:
     def test_reflect_post_creates_row(self):
         engine = _make_engine_with_products_table()
 
-
-        class ProductEndpoint(RestEndpoint):
+        class ProductPostEndpoint(RestEndpoint):
             class Meta:
                 reflect = True
                 table = "products"
 
         app_instance = LightApi(engine=engine)
-        app_instance.register({"/products": ProductEndpoint})
+        app_instance.register({"/products": ProductPostEndpoint})
         app = app_instance.build_app()
         client = TestClient(app)
 
@@ -187,14 +186,13 @@ class TestReflectFullCrud:
     def test_reflect_put_updates_business_fields(self):
         engine = _make_engine_with_products_table()
 
-
-        class ProductEndpoint(RestEndpoint):
+        class ProductPutEndpoint(RestEndpoint):
             class Meta:
                 reflect = True
                 table = "products"
 
         app_instance = LightApi(engine=engine)
-        app_instance.register({"/products": ProductEndpoint})
+        app_instance.register({"/products": ProductPutEndpoint})
         app = app_instance.build_app()
         client = TestClient(app)
 
@@ -223,14 +221,13 @@ class TestReflectFullCrud:
     def test_reflect_get_list_and_retrieve(self):
         engine = _make_engine_with_products_table()
 
-
-        class ProductEndpoint(RestEndpoint):
+        class ProductListEndpoint(RestEndpoint):
             class Meta:
                 reflect = True
                 table = "products"
 
         app_instance = LightApi(engine=engine)
-        app_instance.register({"/products": ProductEndpoint})
+        app_instance.register({"/products": ProductListEndpoint})
         app = app_instance.build_app()
         client = TestClient(app)
 
@@ -253,14 +250,13 @@ class TestReflectFullCrud:
     def test_reflect_patch_partial_update(self):
         engine = _make_engine_with_products_table()
 
-
-        class ProductEndpoint(RestEndpoint):
+        class ProductPatchEndpoint(RestEndpoint):
             class Meta:
                 reflect = True
                 table = "products"
 
         app_instance = LightApi(engine=engine)
-        app_instance.register({"/products": ProductEndpoint})
+        app_instance.register({"/products": ProductPatchEndpoint})
         app = app_instance.build_app()
         client = TestClient(app)
 
@@ -283,14 +279,13 @@ class TestReflectFullCrud:
     def test_reflect_delete_returns_204(self):
         engine = _make_engine_with_products_table()
 
-
-        class ProductEndpoint(RestEndpoint):
+        class ProductDeleteEndpoint(RestEndpoint):
             class Meta:
                 reflect = True
                 table = "products"
 
         app_instance = LightApi(engine=engine)
-        app_instance.register({"/products": ProductEndpoint})
+        app_instance.register({"/products": ProductDeleteEndpoint})
         app = app_instance.build_app()
         client = TestClient(app)
 
@@ -310,14 +305,13 @@ class TestReflectFullCrud:
     def test_reflect_put_version_conflict_409(self):
         engine = _make_engine_with_products_table()
 
-
-        class ProductEndpoint(RestEndpoint):
+        class ProductConflictEndpoint(RestEndpoint):
             class Meta:
                 reflect = True
                 table = "products"
 
         app_instance = LightApi(engine=engine)
-        app_instance.register({"/products": ProductEndpoint})
+        app_instance.register({"/products": ProductConflictEndpoint})
         app = app_instance.build_app()
         client = TestClient(app)
 
@@ -342,14 +336,13 @@ class TestReflectFullCrud:
     def test_reflect_put_missing_version_422(self):
         engine = _make_engine_with_products_table()
 
-
-        class ProductEndpoint(RestEndpoint):
+        class ProductMissingVersionEndpoint(RestEndpoint):
             class Meta:
                 reflect = True
                 table = "products"
 
         app_instance = LightApi(engine=engine)
-        app_instance.register({"/products": ProductEndpoint})
+        app_instance.register({"/products": ProductMissingVersionEndpoint})
         app = app_instance.build_app()
         client = TestClient(app)
 
@@ -371,8 +364,7 @@ class TestPartialReflection:
     def test_partial_reflect_appends_new_columns(self):
         engine = _make_engine_with_partial_table()
 
-
-        class PartialDocEndpoint(RestEndpoint):
+        class PartialDocColumnsEndpoint(RestEndpoint):
             notes: str = LField(default="")
 
             class Meta:
@@ -380,7 +372,7 @@ class TestPartialReflection:
                 table = "partial_docs"
 
         app_instance = LightApi(engine=engine)
-        app_instance.register({"/partial_docs": PartialDocEndpoint})
+        app_instance.register({"/partial_docs": PartialDocColumnsEndpoint})
         app = app_instance.build_app()
         client = TestClient(app)
 
@@ -402,8 +394,7 @@ class TestPartialReflection:
     def test_partial_reflect_full_crud(self):
         engine = _make_engine_with_partial_table()
 
-
-        class PartialDocEndpoint(RestEndpoint):
+        class PartialDocCrudEndpoint(RestEndpoint):
             notes: str = LField(default="")
 
             class Meta:
@@ -411,7 +402,7 @@ class TestPartialReflection:
                 table = "partial_docs"
 
         app_instance = LightApi(engine=engine)
-        app_instance.register({"/partial_docs": PartialDocEndpoint})
+        app_instance.register({"/partial_docs": PartialDocCrudEndpoint})
         app = app_instance.build_app()
         client = TestClient(app)
 
@@ -447,7 +438,6 @@ class TestPartialReflection:
         """Table price=Integer, endpoint price=str → ConfigurationError."""
         engine = _make_engine_with_price_integer_table()
 
-
         class TypeConflictEndpoint(RestEndpoint):
             price: str = LField(min_length=1)
 
@@ -456,5 +446,5 @@ class TestPartialReflection:
                 table = "type_conflict"
 
         app_instance = LightApi(engine=engine)
-        with pytest.raises(ConfigurationError, match="conflict|type"):
+        with pytest.raises(ConfigurationError, match=r"conflict|type"):
             app_instance.register({"/type_conflict": TypeConflictEndpoint})

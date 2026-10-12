@@ -9,10 +9,12 @@ import jwt
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.authentication.base import BaseAuthentication
+from lightapi.authentication.base import BaseAuthentication, LoginValidator
 from lightapi.config import config
+from lightapi.constants import ResponseKey
 
 if TYPE_CHECKING:
+    from lightapi.config import Authentication
     from lightapi.rate_limiter import RateLimiter
 
 
@@ -27,11 +29,37 @@ class JWTAuthentication(BaseAuthentication):
         self,
         algorithm: str | None = None,
         expiration: int | None = None,
-        rate_limiter: "RateLimiter | None" = None,
+        rate_limiter: RateLimiter | None = None,
+        extra_claims: tuple[str, ...] = (),
     ) -> None:
         self.algorithm = algorithm
         self.expiration = expiration
         self.rate_limiter = rate_limiter
+        self.extra_claims = extra_claims
+
+    @classmethod
+    def from_config(
+        cls,
+        authentication: Authentication,
+        login_validator: LoginValidator | None = None,  # noqa: ARG003  interface
+    ) -> JWTAuthentication:
+        # A subclass with its own constructor keeps being built without arguments.
+        if cls.__init__ is not JWTAuthentication.__init__:
+            return cls()
+        return cls(
+            algorithm=authentication.jwt_algorithm,
+            expiration=authentication.jwt_expiration,
+            rate_limiter=authentication.rate_limiter,
+            extra_claims=tuple(authentication.jwt_extra_claims or ()),
+        )
+
+    def login_response(self, user: dict[str, Any]) -> dict[str, Any]:
+        """Token plus user. The token carries ``extra_claims`` when the user has any."""
+        claims = {key: user[key] for key in self.extra_claims if key in user}
+        return {
+            ResponseKey.TOKEN: self.generate_token(claims or user),
+            ResponseKey.USER: user,
+        }
 
     def authenticate(self, request: Request) -> bool:
         if request.method == "OPTIONS":
@@ -59,7 +87,10 @@ class JWTAuthentication(BaseAuthentication):
         request.state.user = payload
         return True
 
-    def get_auth_error_response(self, request: Request) -> JSONResponse:
+    def get_auth_error_response(
+        self,
+        request: Request,  # noqa: ARG002  public signature
+    ) -> JSONResponse:
         return JSONResponse(
             {"detail": "Authentication credentials invalid."},
             status_code=401,
@@ -67,7 +98,9 @@ class JWTAuthentication(BaseAuthentication):
         )
 
     def validate_credentials(
-        self, username: str, password: str
+        self,
+        username: str,  # noqa: ARG002  override point
+        password: str,  # noqa: ARG002  override point
     ) -> dict[str, Any] | None:
         """Validate user credentials.
 

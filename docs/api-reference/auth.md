@@ -49,7 +49,7 @@ JWT authentication using `Authorization: Bearer <token>` headers.
 **Required:** `LIGHTAPI_JWT_SECRET` environment variable must be set.
 
 ```bash
-export LIGHTAPI_JWT_SECRET="your-secret-key"
+export LIGHTAPI_JWT_SECRET="your-secret-key-at-least-32-bytes-long"
 ```
 
 **Token format:**

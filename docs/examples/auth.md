@@ -7,7 +7,7 @@ title: Authentication Examples
 ## JWT Authentication — quick start
 
 ```bash
-export LIGHTAPI_JWT_SECRET="your-secret-key"
+export LIGHTAPI_JWT_SECRET="your-secret-key-at-least-32-bytes-long"
 ```
 
 ```python

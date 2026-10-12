@@ -22,6 +22,8 @@ Then try:
     curl "http://localhost:8000/books?min_price=50"
 """
 
+import contextlib
+
 from sqlalchemy import create_engine, select
 from sqlalchemy.pool import StaticPool
 
@@ -51,10 +53,8 @@ class BookEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
         # Filter by minimum price
         min_price = request.query_params.get("min_price")
         if min_price:
-            try:
+            with contextlib.suppress(ValueError):
                 qs = qs.where(cls._model_class.price >= float(min_price))
-            except ValueError:
-                pass
 
         return qs
 

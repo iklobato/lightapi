@@ -57,7 +57,7 @@ When validation fails, LightAPI returns `422 Unprocessable Entity` with a detail
 | `int` | `Integer` | |
 | `float` | `Float` | |
 | `bool` | `Boolean` | |
-| `Decimal` | `Numeric` | Use `decimal_places=N` extra kwarg |
+| `Decimal` | `Numeric` | `decimal_places=N` caps the places a value may carry |
 | `datetime.datetime` | `DateTime` | |
 | `Optional[T]` | nullable column | Makes the column nullable |
 
@@ -70,7 +70,7 @@ Beyond standard Pydantic constraints, LightAPI adds extra kwargs processed by th
 | `unique=True` | bool | Adds a `UNIQUE` constraint to the column. |
 | `index=True` | bool | Creates a database index on the column. |
 | `foreign_key="table.col"` | str | Creates a foreign key reference. |
-| `decimal_places=N` | int | Precision for `Decimal` columns (default: 10). |
+| `decimal_places=N` | int | A `Decimal` with more than N decimal places is rejected (422); the column type stays `NUMERIC`. |
 | `exclude=True` | bool | Skips column creation entirely — field exists only on the schema. |
 | `default=<value>` | any | Sets both the Pydantic default and the SQLAlchemy column default. |
 

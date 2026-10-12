@@ -4,7 +4,6 @@ Run with: uv run python examples/smoke_async.py
 """
 
 import asyncio
-from typing import Optional
 
 import httpx
 from pydantic import Field
@@ -27,7 +26,7 @@ class Item(RestEndpoint):
     name: str = Field(min_length=1)
     quantity: int = Field(ge=0)
     secret: str = Field(default="internal")
-    notes: Optional[str] = Field(default=None)
+    notes: str | None = Field(default=None)
 
     class Meta:
         authentication = Authentication(permission=AllowAny)

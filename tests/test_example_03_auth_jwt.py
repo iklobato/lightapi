@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
-os.environ.setdefault("LIGHTAPI_JWT_SECRET", "test-secret-key")
+os.environ.setdefault("LIGHTAPI_JWT_SECRET", "test-secret-key-at-least-32-bytes-long")
 
 from lightapi import (
     Authentication,
@@ -42,9 +42,9 @@ def client():
     )
     app = LightApi(
         engine=engine,
-        login_validator=lambda u, p: {"sub": "1", "username": u}
-        if u == "admin" and p == "secret"
-        else None,
+        login_validator=lambda u, p: (
+            {"sub": "1", "username": u} if u == "admin" and p == "secret" else None
+        ),
         use_test_isolation=True,
     )
     app.register({"/books": BookEndpoint})

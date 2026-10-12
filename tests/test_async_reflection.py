@@ -112,14 +112,14 @@ class TestAsyncReflectFullCrud:
     """Full CRUD on reflected async endpoint."""
 
     async def test_async_reflect_post_creates_row(self, async_products_engine):
-        class AsyncProductEndpoint(RestEndpoint):
+        class AsyncProductPostEndpoint(RestEndpoint):
             class Meta:
                 reflect = True
                 table = "async_products"
                 authentication = Authentication(permission=AllowAny)
 
         app = LightApi(engine=async_products_engine, mode="async")
-        app.register({"/async_products": AsyncProductEndpoint})
+        app.register({"/async_products": AsyncProductPostEndpoint})
         starlette_app = app.build_app()
 
         async with AsyncClient(
@@ -136,14 +136,14 @@ class TestAsyncReflectFullCrud:
         assert float(data["price"]) == 12.50
 
     async def test_async_reflect_put_updates_row(self, async_products_engine):
-        class AsyncProductEndpoint(RestEndpoint):
+        class AsyncProductPutEndpoint(RestEndpoint):
             class Meta:
                 reflect = True
                 table = "async_products"
                 authentication = Authentication(permission=AllowAny)
 
         app = LightApi(engine=async_products_engine, mode="async")
-        app.register({"/async_products": AsyncProductEndpoint})
+        app.register({"/async_products": AsyncProductPutEndpoint})
         starlette_app = app.build_app()
 
         async with AsyncClient(
@@ -177,14 +177,14 @@ class TestAsyncReflectFullCrud:
         assert float(updated["price"]) == 14.99
 
     async def test_async_reflect_delete_returns_204(self, async_products_engine):
-        class AsyncProductEndpoint(RestEndpoint):
+        class AsyncProductDeleteEndpoint(RestEndpoint):
             class Meta:
                 reflect = True
                 table = "async_products"
                 authentication = Authentication(permission=AllowAny)
 
         app = LightApi(engine=async_products_engine, mode="async")
-        app.register({"/async_products": AsyncProductEndpoint})
+        app.register({"/async_products": AsyncProductDeleteEndpoint})
         starlette_app = app.build_app()
 
         async with AsyncClient(

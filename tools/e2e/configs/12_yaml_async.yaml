@@ -1,0 +1,13 @@
+---
+# Scenario 12: an async document, served by `lightapi serve` (B6-001).
+database:
+  url: "@DB@"
+
+mode: async
+
+endpoints:
+  - route: /asyncbooks
+    fields:
+      title:
+        type: str
+        min_length: 1

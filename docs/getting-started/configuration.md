@@ -281,7 +281,7 @@ Each key under `endpoints[].fields` maps a column name to:
 | `index` | bool | Create a database index. |
 | `unique` | bool | Add a UNIQUE constraint. |
 | `foreign_key` | string | `"table.col"` — adds a SQLAlchemy `ForeignKey` constraint. |
-| `decimal_places` | int | Precision for `Decimal` columns. |
+| `decimal_places` | int | A `Decimal` with more than N decimal places is rejected (422); the column type stays `NUMERIC`. |
 
 ### Cache invalidation
 

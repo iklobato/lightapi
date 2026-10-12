@@ -57,7 +57,7 @@ Beyond Pydantic's built-in constraints, LightAPI processes:
 | `unique=True` | `UNIQUE` constraint |
 | `index=True` | Database index |
 | `foreign_key="table.col"` | Foreign key reference |
-| `decimal_places=N` | Precision for `Decimal` |
+| `decimal_places=N` | A `Decimal` with more than N decimal places is rejected (422) |
 | `exclude=True` | Skip column creation; field is schema-only |
 | `default=<value>` | Column-level default |
 

@@ -1,6 +1,7 @@
 """Tests for US4: self.background() fire-and-forget tasks."""
 
 import asyncio
+import json
 
 import pytest
 import pytest_asyncio
@@ -12,76 +13,100 @@ from lightapi import LightApi, RestEndpoint
 from lightapi.auth import AllowAny
 from lightapi.config import Authentication
 
+# Every background notification lands here; each fixture starts it empty.
+_TRACKER: list[int] = []
 
-def _build_app(tracker: list, use_async_fn: bool = False, multi: bool = False):
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
 
-    if use_async_fn:
+def _notify(item_id: int) -> None:
+    _TRACKER.append(item_id)
 
-        async def notify(item_id: int) -> None:
-            tracker.append(item_id)
-    else:
 
-        def notify(item_id: int) -> None:  # type: ignore[misc]
-            tracker.append(item_id)
+async def _notify_async(item_id: int) -> None:
+    _TRACKER.append(item_id)
 
-    class BgItem(RestEndpoint):
-        name: str = PydanticField(min_length=1)
 
-        class Meta:
-            authentication = Authentication(permission=AllowAny)
+async def _created_id(endpoint: RestEndpoint, request) -> tuple:
+    """(response, id) of the row the POST body creates."""
+    item = await endpoint._create_async(json.loads(await request.body()))
+    return item, json.loads(item.body)["id"]
 
-        async def post(self, request):
-            item = await self._create_async(await _read_json(request))
-            import json
 
-            body = json.loads(item.body)
-            if multi:
-                self.background(notify, body["id"])
-                self.background(notify, body["id"] + 100)
-            else:
-                self.background(notify, body["id"])
-            return item
+class BgItem(RestEndpoint):
+    name: str = PydanticField(min_length=1)
 
+    class Meta:
+        authentication = Authentication(permission=AllowAny)
+
+    async def post(self, request):
+        item, item_id = await _created_id(self, request)
+        self.background(_notify, item_id)
+        return item
+
+
+class BgAsyncFnItem(RestEndpoint):
+    name: str = PydanticField(min_length=1)
+
+    class Meta:
+        authentication = Authentication(permission=AllowAny)
+
+    async def post(self, request):
+        item, item_id = await _created_id(self, request)
+        self.background(_notify_async, item_id)
+        return item
+
+
+class BgMultiItem(RestEndpoint):
+    name: str = PydanticField(min_length=1)
+
+    class Meta:
+        authentication = Authentication(permission=AllowAny)
+
+    async def post(self, request):
+        item, item_id = await _created_id(self, request)
+        self.background(_notify, item_id)
+        self.background(_notify, item_id + 100)
+        return item
+
+
+def _build_app(endpoint_cls: type[RestEndpoint], engine):
     app = LightApi(engine=engine, mode="async")
-    app.register({"/items": BgItem})
+    app.register({"/items": endpoint_cls})
     return app.build_app()
-
-
-async def _read_json(request):
-    import json
-
-    return json.loads(await request.body())
 
 
 @pytest_asyncio.fixture
 async def bg_client():
-    tracker: list = []
-    starlette_app = _build_app(tracker)
+    _TRACKER.clear()
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with AsyncClient(
-        transport=ASGITransport(app=starlette_app), base_url="http://test"
+        transport=ASGITransport(app=_build_app(BgItem, engine)), base_url="http://test"
     ) as c:
-        yield c, tracker
+        yield c, _TRACKER
+    await engine.dispose()
 
 
 @pytest_asyncio.fixture
 async def async_fn_client():
-    tracker: list = []
-    starlette_app = _build_app(tracker, use_async_fn=True)
+    _TRACKER.clear()
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with AsyncClient(
-        transport=ASGITransport(app=starlette_app), base_url="http://test"
+        transport=ASGITransport(app=_build_app(BgAsyncFnItem, engine)),
+        base_url="http://test",
     ) as c:
-        yield c, tracker
+        yield c, _TRACKER
+    await engine.dispose()
 
 
 @pytest_asyncio.fixture
 async def multi_client():
-    tracker: list = []
-    starlette_app = _build_app(tracker, multi=True)
+    _TRACKER.clear()
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with AsyncClient(
-        transport=ASGITransport(app=starlette_app), base_url="http://test"
+        transport=ASGITransport(app=_build_app(BgMultiItem, engine)),
+        base_url="http://test",
     ) as c:
-        yield c, tracker
+        yield c, _TRACKER
+    await engine.dispose()
 
 
 async def test_background_fn_runs_after_response(bg_client):

@@ -180,7 +180,7 @@ class ProductEndpoint(RestEndpoint):
 | `unique=True` | Adds `UNIQUE` constraint |
 | `index=True` | Adds a database index |
 | `exclude=True` | Column is skipped entirely (no DB column, no schema field) |
-| `decimal_places=N` | Sets `Numeric(scale=N)` (used with `Decimal` type) |
+| `decimal_places=N` | A `Decimal` with more than N decimal places is rejected (422); the column type stays `NUMERIC` |
 
 ### Auto-injected Columns
 
@@ -303,7 +303,7 @@ import os
 from lightapi import RestEndpoint, Authentication, Field
 from lightapi.authentication import JWTAuthentication, IsAuthenticated, IsAdminUser
 
-os.environ["LIGHTAPI_JWT_SECRET"] = "your-secret-key"
+os.environ["LIGHTAPI_JWT_SECRET"] = "your-secret-key-at-least-32-bytes-long"
 
 class ProtectedEndpoint(RestEndpoint):
     secret: str = Field(min_length=1)
@@ -984,8 +984,10 @@ class MyEndpoint(RestEndpoint):
 | Validation failure | `422` | `{"detail": [...pydantic errors...]}` |
 | Not found | `404` | `{"detail": "not found"}` |
 | Optimistic lock conflict | `409` | `{"detail": "version conflict"}` |
-| Auth failure | `401` | `{"detail": "Authentication credentials invalid."}` |
-| Permission denied | `403` | `{"detail": "You do not have permission to perform this action."}` |
+| Constraint violation (unique, foreign key) | `409` | `{"detail": "constraint violation"}` |
+| Auth failure (JWT) | `401` | `{"detail": "Authentication credentials invalid."}` with `WWW-Authenticate: Bearer` |
+| Auth failure (Basic) | `401` | `{"error": "authentication failed"}` with `WWW-Authenticate: Basic realm="Restricted Area"` |
+| Permission denied | `403` | `{"detail": "Insufficient permissions"}` |
 | Method not registered | `405` | `{"detail": "Method Not Allowed. Allowed: GET, POST"}` |
 
 ---

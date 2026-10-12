@@ -66,7 +66,7 @@ from sqlalchemy import create_engine
 from lightapi import LightApi
 from blog.endpoints import ArticleEndpoint
 
-os.environ.setdefault("LIGHTAPI_JWT_SECRET", "dev-secret-change-me")
+os.environ.setdefault("LIGHTAPI_JWT_SECRET", "dev-secret-change-me-at-least-32-bytes-long")
 
 
 def login_validator(username: str, password: str):
