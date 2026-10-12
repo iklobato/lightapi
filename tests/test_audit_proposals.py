@@ -182,3 +182,40 @@ class TestB7001BasicValidatorOffTheLoop:
 
         assert response.status_code == 200
         assert seen["on_loop"] is False
+
+
+class TestB7002LoginValidatorOffTheLoop:
+    """B7-002: a sync `login_validator` ran on the event loop at /auth/login."""
+
+    def test_sync_login_validator_runs_in_a_worker_thread(self, monkeypatch):
+        monkeypatch.setenv(
+            "LIGHTAPI_JWT_SECRET", "audit-proposals-secret-32-bytes-long!"
+        )
+        seen: dict[str, bool] = {}
+
+        def validator(username, password):
+            try:
+                asyncio.get_running_loop()
+                seen["on_loop"] = True
+            except RuntimeError:
+                seen["on_loop"] = False
+            return {"username": username}
+
+        class AuditLoginGuarded(RestEndpoint):
+            text: str = Field(min_length=1)
+
+            class Meta:
+                table = "audit_offloop_login"
+                authentication = Authentication(
+                    backend=JWTAuthentication, permission=IsAuthenticated
+                )
+
+        app = LightApi(engine=_memory_engine(), login_validator=validator)
+        app.register({"/loginguarded": AuditLoginGuarded})
+        with TestClient(app.build_app()) as client:
+            response = client.post(
+                "/auth/login", json={"username": "u", "password": "p"}
+            )
+
+        assert response.status_code == 200
+        assert seen["on_loop"] is False
