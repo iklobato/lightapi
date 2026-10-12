@@ -3,155 +3,120 @@
 from __future__ import annotations
 
 import base64
+import inspect
 import json
 import logging
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.constants import (
-    RESPONSE_KEY_DETAIL,
-    RESPONSE_KEY_TOKEN,
-    RESPONSE_KEY_USER,
-    HTTPStatus,
-)
+from lightapi.constants import ApiError
 
-# JWTAuthentication imported locally where needed to avoid circular import
+if TYPE_CHECKING:
+    from lightapi.authentication.base import BaseAuthentication, LoginValidator
+    from lightapi.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
 
 class LoginRequest(BaseModel):
-    """Request body for POST /auth/login and /auth/token."""
+    """Credentials of POST /auth/login and /auth/token: JSON body or Basic header."""
 
     model_config = ConfigDict(frozen=True)
 
     username: str = Field(min_length=1)
     password: str = Field(min_length=1)
 
+    @classmethod
+    async def from_request(cls, request: Request) -> LoginRequest | None:
+        """The credentials sent, or None for a malformed Basic header (a 401).
 
-def _parse_basic_header(auth_header: str) -> tuple[str, str] | None:
-    """
-    Decode Authorization: Basic header.
+        Without a Basic header the JSON body is validated, so a bad body raises
+        ValidationError (a 422). Basic credentials are taken as sent, unvalidated,
+        as they always were.
+        """
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Basic "):
+            parsed = cls.parse_basic_header(auth_header)
+            if parsed is None:
+                return None
+            return cls.model_construct(username=parsed[0], password=parsed[1])
 
-    Returns (username, password) or None if malformed.
-    """
-    if not auth_header.lower().startswith("basic "):
-        return None
-    try:
-        token = auth_header.split(" ", 1)[1]
-        decoded = base64.b64decode(token).decode("utf-8")
-    except (ValueError, IndexError, UnicodeDecodeError):
-        return None
-    parts = decoded.split(":", 1)
-    if len(parts) != 2:
-        return None
-    return parts[0], parts[1]
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            body = {}
+        return cls.model_validate(body if body else {})
 
-
-async def _parse_credentials(request: Request) -> tuple[str, str] | None:
-    """
-    Extract (username, password) from request.
-
-    - If Authorization: Basic present: returns (u, p) or None if malformed.
-    - If no Basic header: reads body, validates with LoginRequest.
-      Returns (u, p) if valid. Raises ValidationError for body (caller returns 422).
-    - None means malformed Basic (caller returns 401).
-    """
-    auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Basic "):
-        return _parse_basic_header(auth_header)
-
-    body = await _read_body(request)
-    parsed = LoginRequest.model_validate(body if body else {})
-    return parsed.username, parsed.password
-
-
-async def _read_body(request: Request) -> dict[str, Any]:
-    """Read JSON body; return {} on empty or invalid."""
-    try:
-        body = await request.body()
-        return json.loads(body) if body else {}
-    except (json.JSONDecodeError, TypeError):
-        return {}
+    @staticmethod
+    def parse_basic_header(auth_header: str) -> tuple[str, str] | None:
+        """(username, password) of an ``Authorization: Basic`` header; None if bad."""
+        if not auth_header.lower().startswith("basic "):
+            return None
+        try:
+            token = auth_header.split(" ", 1)[1]
+            decoded = base64.b64decode(token).decode("utf-8")
+        except (ValueError, IndexError, UnicodeDecodeError):
+            return None
+        parts = decoded.split(":", 1)
+        if len(parts) != 2:
+            return None
+        return parts[0], parts[1]
 
 
-async def login_handler(
-    request: Request,
-    *,
-    has_jwt: bool,
-    jwt_expiration: int | None = None,
-    jwt_extra_claims: list[str] | None = None,
-    jwt_algorithm: str | None = None,
-    rate_limiter: Optional[Any] = None,
-    auth_backend: Optional[Any] = None,
-) -> JSONResponse:
-    """
-    Handle POST /auth/login and POST /auth/token.
+class LoginEndpoint:
+    """POST /auth/login and POST /auth/token.
 
     Returns 422 for body validation, 401 for malformed Basic, invalid credentials,
-    or any exception raised by the validator; 200 with token+user (JWT) or user (Basic).
+    or any exception raised while validating; 200 with whatever the backend puts
+    in a login response (token and user for JWT, user for Basic).
     """
-    # Apply rate limiting if a rate limiter is provided
-    if rate_limiter is not None:
-        is_limited, window = rate_limiter.is_rate_limited(request, endpoint="auth")
-        if is_limited:
-            return rate_limiter.get_rate_limit_response(request, window)
 
-    if request.method != "POST":
-        return JSONResponse(
-            {RESPONSE_KEY_DETAIL: "method not allowed"},
-            status_code=HTTPStatus.METHOD_NOT_ALLOWED,
-            headers={"Allow": "POST"},
+    def __init__(
+        self,
+        backend: BaseAuthentication,
+        login_validator: LoginValidator | None,
+        rate_limiter: RateLimiter,
+    ) -> None:
+        self._backend = backend
+        self._login_validator = login_validator
+        self._rate_limiter = rate_limiter
+
+    async def handle(self, request: Request) -> JSONResponse:
+        # The limiter names the exhausted window; None when the request passes.
+        _, exhausted_window = self._rate_limiter.is_rate_limited(
+            request, endpoint="auth"
         )
+        if exhausted_window is not None:
+            return self._rate_limiter.get_rate_limit_response(request, exhausted_window)
 
-    try:
-        creds = await _parse_credentials(request)
-    except ValidationError as exc:
-        return JSONResponse(
-            {RESPONSE_KEY_DETAIL: exc.errors()},
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-        )
-
-    if creds is None:
-        return JSONResponse(
-            {RESPONSE_KEY_DETAIL: "Invalid credentials"},
-            status_code=HTTPStatus.UNAUTHORIZED,
-        )
-
-    username, password = creds
-
-    # Use auth_backend's validate_credentials if provided
-    payload = None
-    if auth_backend is not None:
         try:
-            payload = auth_backend.validate_credentials(username, password)
-        except Exception as e:
-            logger.warning("validate_credentials raised: %s", e)
-            return JSONResponse(
-                {RESPONSE_KEY_DETAIL: "Invalid credentials"},
-                status_code=HTTPStatus.UNAUTHORIZED,
+            credentials = await LoginRequest.from_request(request)
+        except ValidationError as exc:
+            return ApiError.validation_failed(exc.errors())
+
+        user = None
+        if credentials is not None:
+            user = await self._validated_user(
+                credentials.username, credentials.password
             )
+        if user is None:
+            return ApiError.INVALID_CREDENTIALS.response()
+        return JSONResponse(self._backend.login_response(user))
 
-    if payload is None:
-        return JSONResponse(
-            {RESPONSE_KEY_DETAIL: "Invalid credentials"},
-            status_code=HTTPStatus.UNAUTHORIZED,
-        )
-
-    if has_jwt:
-        from lightapi.authentication import JWTAuthentication
-
-        jwt_auth = JWTAuthentication(algorithm=jwt_algorithm)
-        if jwt_extra_claims and isinstance(payload, dict):
-            token_payload = {k: payload[k] for k in jwt_extra_claims if k in payload}
-            if not token_payload:
-                token_payload = payload
-        else:
-            token_payload = payload
-        token = jwt_auth.generate_token(token_payload, expiration=jwt_expiration)
-        return JSONResponse({RESPONSE_KEY_TOKEN: token, RESPONSE_KEY_USER: payload})
-
-    return JSONResponse({RESPONSE_KEY_USER: payload})
+    async def _validated_user(
+        self, username: str, password: str
+    ) -> dict[str, Any] | None:
+        """The app's login_validator wins; otherwise the backend's own override."""
+        validate = self._login_validator or self._backend.validate_credentials
+        try:
+            user = validate(username, password)
+            # The README shows `async def validate_credentials` on a subclass.
+            if inspect.isawaitable(user):
+                user = await user
+        except Exception:  # noqa: BLE001  documented contract: any error is a 401
+            logger.warning("validate_credentials raised", exc_info=True)
+            return None
+        return user

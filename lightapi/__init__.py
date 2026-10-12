@@ -13,12 +13,7 @@ from lightapi.cache import RedisCache
 from lightapi.config import Authentication, Cache, Filtering, Pagination, Serializer
 
 # Backward-compatible re-exports from core.py
-from lightapi.core import (
-    AuthenticationMiddleware,
-    CORSMiddleware,
-    Middleware,
-    Response,
-)
+from lightapi.core import AuthenticationMiddleware, CORSMiddleware, Middleware, Response
 from lightapi.exceptions import ConfigurationError, SerializationError
 from lightapi.fields import Field
 from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
@@ -27,46 +22,37 @@ from lightapi.methods import HttpMethod
 from lightapi.rate_limiter import RateLimiter
 from lightapi.rest import RestEndpoint
 from lightapi.schema import SchemaFactory
-from lightapi.session import get_async_session, get_sync_session  # noqa: E402
+from lightapi.session import get_async_session, get_sync_session
 
 __all__ = [
-    # Core
-    "LightApi",
-    "RestEndpoint",
-    "Field",
-    "HttpMethod",
-    # Config
+    "AllowAny",
     "Authentication",
-    "Cache",
-    "Filtering",
-    "Pagination",
-    "Serializer",
-    # Auth
+    "AuthenticationMiddleware",
     "BaseAuthentication",
     "BasePermission",
     "BasicAuthentication",
-    "JWTAuthentication",
-    "AllowAny",
-    "IsAuthenticated",
-    "IsAdminUser",
-    # Rate Limiter
-    "RateLimiter",
-    # Filters
-    "FieldFilter",
-    "SearchFilter",
-    "OrderingFilter",
-    # Schema
-    "SchemaFactory",
-    # Middleware (backward-compat)
-    "Middleware",
     "CORSMiddleware",
-    "AuthenticationMiddleware",
-    "Response",
-    "RedisCache",
-    # Exceptions
+    "Cache",
     "ConfigurationError",
+    "Field",
+    "FieldFilter",
+    "Filtering",
+    "HttpMethod",
+    "IsAdminUser",
+    "IsAuthenticated",
+    "JWTAuthentication",
+    "LightApi",
+    "Middleware",
+    "OrderingFilter",
+    "Pagination",
+    "RateLimiter",
+    "RedisCache",
+    "Response",
+    "RestEndpoint",
+    "SchemaFactory",
+    "SearchFilter",
     "SerializationError",
-    # Session helpers
-    "get_sync_session",
+    "Serializer",
     "get_async_session",
+    "get_sync_session",
 ]

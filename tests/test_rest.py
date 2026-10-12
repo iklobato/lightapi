@@ -49,10 +49,9 @@ class TestAnnotationTypeMap:
 
     def test_optional_annotation_nullable_column(self):
         """Optional[str] produces nullable=True column."""
-        from typing import Optional
 
         class OptionalEndpoint(RestEndpoint):
-            name: Optional[str] = LField()
+            name: str | None = LField()
 
         engine = create_engine(
             "sqlite:///:memory:",
@@ -201,12 +200,9 @@ class TestAutoFields:
         assert "updated_at" in table.c
         assert "version" in table.c
 
-    @pytest.mark.xfail(
-        reason="Framework may not yet reject redeclared auto fields (FR-2)"
-    )
     def test_redeclare_auto_field_raises(self):
         """Declaring id (or other auto field) raises ConfigurationError."""
-        with pytest.raises(ConfigurationError, match="id|auto"):
+        with pytest.raises(ConfigurationError, match=r"id|auto"):
 
             class BadIdEndpoint(RestEndpoint):
                 id: int = LField()

@@ -91,64 +91,42 @@ testpaths = [
 ]
 python_files = "test_*.py"
 asyncio_mode = "auto"
+xfail_strict = true
+markers = [
+    "integration: needs a real Postgres/Redis, skipped unless LIGHTAPI_TEST_PG_SYNC etc. are set",
+]
+# Any warning the library or the tests raise fails the run; a warning a test
+# expects goes through pytest.warns(). ResourceWarning keeps Python's default
+# (ignored): the tests build throwaway engines they never dispose().
 filterwarnings = [
+    "error",
+    "ignore::ResourceWarning",
     "ignore::pytest.PytestCollectionWarning",
 ]
 
 [tool.ruff]
 line-length = 88
 target-version = "py310"
-exclude = [
-    "tests/test_caching_example.py",
-    "tests/test_custom_snippet.py",
-    "tests/test_filtering_pagination_example.py",
-]
 
 [tool.ruff.lint]
 select = [
-    "E",
-    "F",
-    "W",
-    "I",
+    "E", "F", "W", "I", "B", "BLE", "S", "TRY", "SIM", "ASYNC", "DTZ", "PTH",
+    "T20", "G", "LOG", "ARG", "ERA", "RUF", "UP", "C4", "PERF", "RET", "SLF",
+    "PGH", "ANN401", "C901",
 ]
+ignore = ["TRY003"]
 
 [tool.ruff.lint.per-file-ignores]
-"lightapi/auth.py" = [
-    "E501",
-]
-"lightapi/cache.py" = [
-    "E501",
-]
-"lightapi/swagger.py" = [
-    "E501",
-]
-"lightapi/lightapi.py" = [
-    "E501",
-]
-"lightapi/base_endpoint.py" = [
-    "E501",
-]
-"lightapi/core.py" = [
-    "E501",
-]
-"lightapi/database.py" = [
-    "E501",
-]
-"lightapi/handlers.py" = [
-    "E501",
-]
-"lightapi/models.py" = [
-    "E501",
-]
-"examples/*.py" = [
-    "E501",
-]
-"tests/*.py" = [
-    "E501",
-]
-"lightapi/session.py" = [
-    "E501",
-]
+# Tests assert, reach into the objects they test, take fixtures they do not
+# use, spell credentials out, and keep long one-line assertions.
+"tests/**/*.py" = ["S101", "SLF001", "ARG", "ANN401", "S105", "S106", "S107", "E501"]
+# Examples bind every interface, print, assert as smoke checks, show demo
+# credentials, write `type(self)._model_class` the way the docs teach, keep the
+# documented `queryset(self, request)` signature, and quote curl commands.
+"examples/*.py" = ["S104", "T20", "S101", "S105", "SLF001", "ARG002", "E501"]
+# The e2e apps are user code too: `type(self)._model_class` in a queryset and the
+# documented `queryset(self, request)` / `process(self, request, response)` signatures.
+"tools/e2e/apps/*.py" = ["SLF001", "ARG002", "T20"]
 
 [tool.mypy]
 python_version = "3.10"
@@ -171,47 +149,10 @@ module = [
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = [
-    "lightapi.auth",
-    "lightapi.cache",
-    "lightapi.swagger",
-    "lightapi.lightapi",
-    "lightapi.base_endpoint",
-    "lightapi.core",
-    "lightapi.database",
-    "lightapi.handlers",
-    "lightapi.models",
-]
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = [
-    "lightapi.rest",
-    "lightapi.schema",
-    "lightapi.fields",
-    "lightapi.filters",
-    "lightapi.config",
-    "lightapi.pagination",
-    "lightapi.yaml_loader",
-    "lightapi._dict_config_loader",
-    "lightapi._login",
-    "lightapi.auth_checker",
-    "lightapi.auth_strategy",
-    "lightapi.cache_handler",
-    "lightapi.cache_helper",
-    "lightapi.cache_service",
-    "lightapi.crud_async",
-    "lightapi.crud_sync",
-    "lightapi.handler_factory",
-    "lightapi.http_dispatcher",
-    "lightapi.middleware_pipeline",
-    "lightapi.middleware_runner",
-    "lightapi.queryset",
-    "lightapi.response_wrapper",
-    "lightapi.route_builder",
-    "lightapi.session_manager",
-    "lightapi.table_mapping",
-]
+# redis-py types every reply of its sync client as "Awaitable | Any" (ResponseT),
+# so get/set/ping can never type-check here; RedisCache is FROZEN and takes no
+# narrowing casts. Every other module is checked.
+module = ["lightapi.cache"]
 ignore_errors = true
 
 [dependency-groups]

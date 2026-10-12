@@ -241,7 +241,7 @@ Every field in `fields:` requires a `type` key. All other keys are forwarded as 
 | `unique`        | any               | Adds a UNIQUE constraint to the database column. |
 | `index`         | any               | Adds an index to the database column.            |
 | `foreign_key`   | `int` (usually)   | SQLAlchemy foreign key (e.g. `"users.id"`).      |
-| `decimal_places`| `Decimal`         | Number of decimal places for `Decimal` columns.  |
+| `decimal_places`| `Decimal`         | A value with more decimal places is rejected (422). |
 
 ### Complete field example
 
@@ -706,7 +706,7 @@ Any exception raised inside `login_validator` — regardless of type — causes 
 | `endpoints[].fields.<name>.unique` | bool | `false` | Adds a UNIQUE database constraint. |
 | `endpoints[].fields.<name>.index` | bool | `false` | Adds a database index. |
 | `endpoints[].fields.<name>.foreign_key` | string | — | Foreign key reference (e.g. `"users.id"`). |
-| `endpoints[].fields.<name>.decimal_places` | int | — | Decimal precision. `Decimal` only. |
+| `endpoints[].fields.<name>.decimal_places` | int | — | More decimal places than this is a 422. `Decimal` only. |
 | `endpoints[].meta.methods` | list[string] or dict | `[]` | HTTP verbs as list, or dict of `{VERB: {authentication: ...}}`. |
 | `endpoints[].meta.authentication.backend` | string | — | Auth backend override for this endpoint. |
 | `endpoints[].meta.authentication.permission` | string | — | Permission class override for this endpoint. |

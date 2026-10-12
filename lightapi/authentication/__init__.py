@@ -14,11 +14,11 @@ from lightapi.authentication.basic import BasicAuthentication
 from lightapi.authentication.jwt import JWTAuthentication
 
 __all__ = [
+    "AllowAny",
     "BaseAuthentication",
     "BasePermission",
-    "AllowAny",
-    "IsAuthenticated",
-    "IsAdminUser",
     "BasicAuthentication",
+    "IsAdminUser",
+    "IsAuthenticated",
     "JWTAuthentication",
 ]

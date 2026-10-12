@@ -1,0 +1,9 @@
+---
+# Scenario 16: the document the container serves; mounted at /app/lightapi.yaml.
+database:
+  url: "sqlite:////tmp/e2e.sqlite"
+
+endpoints:
+  - route: /books
+    fields:
+      title: {type: str, min_length: 1}

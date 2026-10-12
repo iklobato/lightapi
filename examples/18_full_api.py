@@ -22,7 +22,6 @@ This is similar to the existing v2_full_demo.py but organized as a numbered exam
 
 import os
 import time
-from typing import Optional
 
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
@@ -115,7 +114,7 @@ class AuthorEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
     """GET + POST only - JWT protected."""
 
     name: str = Field(min_length=1, max_length=150)
-    bio: Optional[str] = None
+    bio: str | None = None
 
     class Meta:
         authentication = Authentication(

@@ -11,54 +11,61 @@ from lightapi.auth import AllowAny
 from lightapi.config import Authentication
 
 
-def _make_app(endpoint_cls):
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+def _make_app(endpoint_cls, engine):
     app = LightApi(engine=engine, mode="async")
     app.register({"/items": endpoint_cls})
     return app.build_app()
 
 
+class ActiveItem(RestEndpoint):
+    """An async def queryset that filters active=True only."""
+
+    name: str = PydanticField(min_length=1)
+    active: bool = PydanticField(default=True)
+
+    class Meta:
+        authentication = Authentication(permission=AllowAny)
+
+    async def queryset(self, request):
+        return sa_select(type(self)._model_class).where(
+            type(self)._model_class.active.is_(True)
+        )
+
+
+class SyncQSItem(RestEndpoint):
+    """A sync queryset on an async-engine app."""
+
+    name: str = PydanticField(min_length=1)
+
+    class Meta:
+        authentication = Authentication(permission=AllowAny)
+
+    def queryset(self, request):
+        return sa_select(type(self)._model_class)
+
+
 @pytest_asyncio.fixture
 async def async_queryset_client():
     """App with an async def queryset that filters active=True only."""
-
-    class ActiveItem(RestEndpoint):
-        name: str = PydanticField(min_length=1)
-        active: bool = PydanticField(default=True)
-
-        class Meta:
-            authentication = Authentication(permission=AllowAny)
-
-        async def queryset(self, request):
-            return sa_select(type(self)._model_class).where(
-                type(self)._model_class.active.is_(True)
-            )
-
-    starlette_app = _make_app(ActiveItem)
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    starlette_app = _make_app(ActiveItem, engine)
     async with AsyncClient(
         transport=ASGITransport(app=starlette_app), base_url="http://test"
     ) as c:
         yield c
+    await engine.dispose()
 
 
 @pytest_asyncio.fixture
 async def sync_queryset_async_app_client():
     """Async-engine app with a sync queryset."""
-
-    class SyncQSItem(RestEndpoint):
-        name: str = PydanticField(min_length=1)
-
-        class Meta:
-            authentication = Authentication(permission=AllowAny)
-
-        def queryset(self, request):
-            return sa_select(type(self)._model_class)
-
-    starlette_app = _make_app(SyncQSItem)
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    starlette_app = _make_app(SyncQSItem, engine)
     async with AsyncClient(
         transport=ASGITransport(app=starlette_app), base_url="http://test"
     ) as c:
         yield c
+    await engine.dispose()
 
 
 async def test_async_queryset_is_awaited(async_queryset_client):

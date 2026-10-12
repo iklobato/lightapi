@@ -89,6 +89,7 @@ celerybeat.pid
 *.sage.py
 .env
 .venv
+.venv310/
 env/
 venv/
 ENV/
@@ -108,3 +109,5 @@ cython_debug/
 .idea
 alembic
 *.db
+
+tools/e2e/.out/

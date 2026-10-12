@@ -1,153 +1,128 @@
-"""Simple programmatic configuration loader for LightAPI.
+"""Programmatic configuration from a plain dict (``LightApi.from_dict``, deprecated).
 
-Provides a simpler alternative to YAML config for programmatic setup.
+Removed in 0.2.0 together with ``from_dict``; nothing else imports this module.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from enum import Enum
+from typing import TYPE_CHECKING, Any
+
+from lightapi.authentication import (
+    AllowAny,
+    BaseAuthentication,
+    BasicAuthentication,
+    JWTAuthentication,
+)
+from lightapi.config import Authentication, Filtering, Pagination
+from lightapi.constants import HTTP_METHOD_MIXINS
+from lightapi.rest import RestEndpoint
+
+if TYPE_CHECKING:
+    from lightapi.lightapi import LightApi
 
 
-def load_from_dict(
-    app_cls: type,
-    config: dict[str, Any],
-    **overrides: Any,
-) -> Any:
-    """Load LightApi configuration from a Python dictionary.
+class DictAuthKind(str, Enum):
+    """The ``auth:`` values a dict config accepts; anything else is ignored."""
 
-    Args:
-        app_cls: LightApi class
-        config: Configuration dictionary with keys:
-            - database_url: str
-            - mode: "sync" | "async"
-            - cors: list[str]
-            - endpoints: dict[str, dict]
-            - login_validator: callable
-        overrides: Additional kwargs to override config values
+    JWT = "jwt"
+    BASIC = "basic"
 
-    Example::
+    @property
+    def backend(self) -> type[BaseAuthentication]:
+        if self is DictAuthKind.BASIC:
+            return BasicAuthentication
+        return JWTAuthentication
 
-        config = {
-            "database_url": "sqlite:///db.sqlite3",
-            "endpoints": {
-                "/books": {
-                    "fields": {"title": str, "author": str},
-                    "auth": "jwt",
-                },
-            },
-        }
+
+@dataclass(frozen=True)
+class DictConfig:
+    """A LightApi configuration given as a dict.
+
+    Keys: ``database_url``, ``mode`` ("sync" or "async"), ``cors`` (list of origins),
+    ``endpoints`` ({route: {fields, auth, paginate, filters, methods}}) and
+    ``login_validator`` (callable).
     """
-    from lightapi import RestEndpoint
-    from lightapi.auth import AllowAny, JWTAuthentication
-    from lightapi.config import Authentication, Pagination
 
-    database_url = config.get("database_url")
-    mode = config.get("mode", "sync")
-    cors_origins = config.get("cors")
-    endpoints_config = config.get("endpoints", {})
-    login_validator = config.get("login_validator")
+    config: dict[str, Any]
 
-    # Create app instance
-    constructor_kwargs: dict[str, Any] = {
-        "database_url": database_url,
-        "mode": mode,
-        "cors_origins": cors_origins,
-        "login_validator": login_validator,
-    }
-    constructor_kwargs.update(overrides)
+    def build(
+        self,
+        app_cls: type[LightApi],
+        **overrides: Any,  # noqa: ANN401  LightApi constructor kwargs, forwarded
+    ) -> LightApi:
+        """A configured ``app_cls`` instance with every endpoint registered."""
+        constructor_kwargs: dict[str, Any] = {
+            "database_url": self.config.get("database_url"),
+            "mode": self.config.get("mode", "sync"),
+            "cors_origins": self.config.get("cors"),
+            "login_validator": self.config.get("login_validator"),
+        }
+        constructor_kwargs.update(overrides)
+        instance = app_cls(**constructor_kwargs)
 
-    instance = app_cls(**constructor_kwargs)
+        mapping = {
+            route: self._endpoint_class(route, spec)
+            for route, spec in self.config.get("endpoints", {}).items()
+        }
+        if mapping:
+            instance.register(mapping)
+        return instance
 
-    # Build endpoint classes from config
-    mapping: dict[str, type] = {}
+    @classmethod
+    def _endpoint_class(cls, route: str, spec: dict[str, Any]) -> type:
+        # __annotations__ is what RestEndpointMeta reads for field names; a value
+        # that is not a type is replaced by its type.
+        annotations = {
+            name: value if isinstance(value, type) else type(value)
+            for name, value in spec.get("fields", {}).items()
+        }
+        class_attrs: dict[str, Any] = {
+            "__annotations__": annotations,
+            "Meta": type("Meta", (), cls._meta_attributes(spec)),
+        }
+        # HttpMethod mixins must be real bases: RestEndpointMeta scans the MRO.
+        bases = (RestEndpoint, *cls._method_mixins(spec.get("methods")))
+        return type(cls._class_name(route), bases, class_attrs)
 
-    for route, endpoint_config in endpoints_config.items():
-        fields = endpoint_config.get("fields", {})
-        auth = endpoint_config.get("auth")
-        paginate = endpoint_config.get("paginate")
-        filters = endpoint_config.get("filters")
-        methods = endpoint_config.get("methods")
-
-        # Build class attributes
-        class_attrs: dict[str, Any] = {}
-
-        # Add fields — __annotations__ is required for RestEndpointMeta to
-        # detect field names; values must be Field() instances (or absent).
-        annotations: dict[str, Any] = {}
-        for field_name, field_type in fields.items():
-            if isinstance(field_type, type):
-                annotations[field_name] = field_type
-            else:
-                annotations[field_name] = type(field_type)
-        class_attrs["__annotations__"] = annotations
-
-        # Build Meta class
-        meta_attrs: dict[str, Any] = {}
-
+    @staticmethod
+    def _meta_attributes(spec: dict[str, Any]) -> dict[str, Any]:
+        attrs: dict[str, Any] = {}
+        auth = spec.get("auth")
         if auth:
-            if auth == "jwt":
-                meta_attrs["authentication"] = Authentication(
-                    backend=JWTAuthentication,
-                    permission=AllowAny,
-                )
-            elif auth == "basic":
-                from lightapi.auth import BasicAuthentication
-
-                meta_attrs["authentication"] = Authentication(
-                    backend=BasicAuthentication,
-                    permission=AllowAny,
+            try:
+                kind = DictAuthKind(auth)
+            except ValueError:
+                kind = None
+            if kind is not None:
+                attrs["authentication"] = Authentication(
+                    backend=kind.backend, permission=AllowAny
                 )
 
-        if paginate:
-            if isinstance(paginate, dict):
-                meta_attrs["pagination"] = Pagination(**paginate)
-            elif paginate is True:
-                meta_attrs["pagination"] = Pagination()
+        paginate = spec.get("paginate")
+        if isinstance(paginate, dict):
+            attrs["pagination"] = Pagination(**paginate)
+        elif paginate is True:
+            attrs["pagination"] = Pagination()
 
-        if filters:
-            from lightapi.config import Filtering
+        filters = spec.get("filters")
+        if isinstance(filters, dict):
+            attrs["filtering"] = Filtering(**filters)
+        elif isinstance(filters, list):
+            attrs["filtering"] = Filtering(backends=filters)
+        return attrs
 
-            if isinstance(filters, dict):
-                meta_attrs["filtering"] = Filtering(**filters)
-            elif isinstance(filters, list):
-                meta_attrs["filtering"] = Filtering(backends=filters)
+    @staticmethod
+    def _method_mixins(methods: list[str] | None) -> list[type]:
+        """The mixins of the named methods; an unknown name is skipped, as always."""
+        if not methods:
+            return []
+        mixins = (HTTP_METHOD_MIXINS.get(method.upper()) for method in methods)
+        return [mixin for mixin in mixins if mixin is not None]
 
-        Meta = type("Meta", (), meta_attrs)
-        class_attrs["Meta"] = Meta
-
-        # Resolve HttpMethod mixin bases so _allowed_methods is set correctly.
-        # Setting class_attrs["__bases__"] has no effect on type(); the bases
-        # must be passed as the second argument to type().
-        http_bases: list[type] = []
-        if methods:
-            from lightapi.methods import HttpMethod
-
-            _method_map = {
-                "GET": HttpMethod.GET,
-                "POST": HttpMethod.POST,
-                "PUT": HttpMethod.PUT,
-                "PATCH": HttpMethod.PATCH,
-                "DELETE": HttpMethod.DELETE,
-            }
-            for method in methods:
-                mixin = _method_map.get(method.upper())
-                if mixin is not None:
-                    http_bases.append(mixin)
-
-        # Create endpoint class — include HttpMethod mixins in bases so that
-        # RestEndpointMeta._process picks them up via the MRO scan.
-        class_name = _route_to_class_name(route)
-        endpoint_cls = type(class_name, (RestEndpoint, *http_bases), class_attrs)
-
-        mapping[route] = endpoint_cls
-
-    if mapping:
-        instance.register(mapping)
-
-    return instance
-
-
-def _route_to_class_name(route: str) -> str:
-    """Convert /books to BooksEndpoint."""
-    parts = route.strip("/").split("/")
-    return "".join(part.capitalize() for part in parts) + "Endpoint"
+    @staticmethod
+    def _class_name(route: str) -> str:
+        """Convert /books to BooksEndpoint."""
+        parts = route.strip("/").split("/")
+        return "".join(part.capitalize() for part in parts) + "Endpoint"

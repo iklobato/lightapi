@@ -1,5 +1,7 @@
 """Tests for US7: Middleware processing chain."""
 
+from typing import ClassVar
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
@@ -17,7 +19,7 @@ class AuditEndpoint(RestEndpoint):
 
 
 class LoggingMiddleware(Middleware):
-    calls: list = []
+    calls: ClassVar[list] = []
 
     def process(self, request: Request, response: Response | None) -> Response | None:
         LoggingMiddleware.calls.append(

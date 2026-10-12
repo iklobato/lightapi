@@ -13,7 +13,7 @@ def test_from_env_requires_config() -> None:
 
 def test_from_env_applies_defaults() -> None:
     cmd = ServerCommand.from_env({"LIGHTAPI_CONFIG": "/etc/lightapi/lightapi.yaml"})
-    assert cmd._host == "0.0.0.0"
+    assert cmd._host == "0.0.0.0"  # noqa: S104  the default under test
     assert cmd._port == 8000
 
 

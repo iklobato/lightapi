@@ -1,110 +1,96 @@
-"""Session management abstraction for LightAPI.
-
-Replaces the global registry pattern with proper dependency injection.
-Provides both sync and async session management with proper cleanup.
-"""
+"""Engine, registry and metadata holder for one LightApi app."""
 
 from __future__ import annotations
 
-import contextlib
+import logging
 import threading
-from typing import Any, Protocol, Union, runtime_checkable
+from collections.abc import Callable
+from typing import Any, TypeVar
 
-from sqlalchemy import MetaData
-from sqlalchemy.orm import Session, registry
+from sqlalchemy import Engine, MetaData
+from sqlalchemy.orm import registry
+from sqlalchemy.pool import SingletonThreadPool, StaticPool
+from starlette.concurrency import run_in_threadpool
 
-# Thread-local storage for test isolation
-_thread_local = threading.local()
+logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
 
-def _get_test_metadata():
-    """Get or create test-specific metadata."""
-    if not hasattr(_thread_local, "metadata"):
-        _thread_local.metadata = MetaData()
-    return _thread_local.metadata
-
-
-def _get_test_registry():
-    """Get or create test-specific registry."""
-    if not hasattr(_thread_local, "registry"):
-        _thread_local.registry = registry(metadata=_get_test_metadata())
-    return _thread_local.registry
+# In-memory SQLite runs on one of these. SingletonThreadPool gives every thread
+# its own empty database, and StaticPool shares a single connection that is not
+# safe to use from two threads at once.
+_SINGLE_CONNECTION_POOLS = (SingletonThreadPool, StaticPool)
 
 
-def get_unique_table_name(base_name: str) -> str:
-    """Get a unique table name for test isolation."""
-    import logging
+class _ThreadState(threading.local):
+    """Metadata, registry and table-name counters of one thread (test isolation).
 
-    logger = logging.getLogger(__name__)
+    ``threading.local`` runs ``__init__`` again on first use from each thread.
+    """
 
-    if not hasattr(_thread_local, "table_counter"):
-        _thread_local.table_counter = {}
-
-    if base_name not in _thread_local.table_counter:
-        _thread_local.table_counter[base_name] = 0
-
-    _thread_local.table_counter[base_name] += 1
-    counter = _thread_local.table_counter[base_name]
-
-    # For the first table, use the base name, for subsequent ones add counter
-    if counter == 1:
-        result = base_name
-    else:
-        result = f"{base_name}_{counter}"
-
-    logger.debug(f"get_unique_table_name: {base_name} -> {result} (counter: {counter})")
-    return result
+    def __init__(self) -> None:
+        self.metadata = MetaData()
+        self.registry = registry(metadata=self.metadata)
+        self.table_counter: dict[str, int] = {}
 
 
-def clear_test_registries():
-    """Clear test-specific registries and metadata."""
-    if hasattr(_thread_local, "metadata"):
-        delattr(_thread_local, "metadata")
-    if hasattr(_thread_local, "registry"):
-        _thread_local.registry.dispose()
-        delattr(_thread_local, "registry")
-    if hasattr(_thread_local, "table_counter"):
-        delattr(_thread_local, "table_counter")
+class _GlobalState:
+    """Process-wide SQLAlchemy metadata/registry, plus a thread-local copy.
 
+    Every non-isolated SessionManager shares the one `metadata`/`registry`
+    pair below. `use_test_isolation=True` gets a separate pair per thread
+    instead (plus per-thread table-name counters), so tests running in
+    parallel don't map two different classes onto the same table name.
+    """
 
-# Global shared metadata for all endpoints (backward compatibility)
-_GLOBAL_METADATA = MetaData()
-_GLOBAL_REGISTRY = registry(metadata=_GLOBAL_METADATA)
+    def __init__(self) -> None:
+        self._local = _ThreadState()
+        self.reset()
 
+    def reset(self) -> None:
+        """Start over with fresh global metadata/registry.
 
-class EngineProtocol(Protocol):
-    """Protocol for SQLAlchemy engines (sync or async)."""
-
-    def dispose(self) -> None: ...
+        Lets a test that redefines an endpoint class under a name already
+        used by a previous test (see tests/test_examples_e2e.py) map it
+        without inheriting columns from that earlier mapping.
+        """
+        self.metadata = MetaData()
+        self.registry = registry(metadata=self.metadata)
 
     @property
-    def url(self) -> Any: ...
-
-
-@runtime_checkable
-class AsyncEngineProtocol(Protocol):
-    """Protocol for SQLAlchemy async engines."""
-
-    def dispose(self) -> None: ...
+    def test_metadata(self) -> MetaData:
+        return self._local.metadata
 
     @property
-    def url(self) -> Any: ...
+    def test_registry(self) -> registry:
+        return self._local.registry
 
-    @property
-    def sync_engine(self) -> Any: ...
+    def unique_table_name(self, base_name: str) -> str:
+        """A table name unique to this thread, for parallel test isolation."""
+        counter = self._local.table_counter.get(base_name, 0) + 1
+        self._local.table_counter[base_name] = counter
+        result = base_name if counter == 1 else f"{base_name}_{counter}"
+        logger.debug(
+            "unique_table_name: %s -> %s (counter: %s)", base_name, result, counter
+        )
+        return result
 
 
-EngineType = Union[EngineProtocol, AsyncEngineProtocol, Any]
+_state = _GlobalState()
 
 
 class SessionManager:
-    """Manages SQLAlchemy sessions and registry for LightAPI.
+    """Holds the engine plus the registry and metadata endpoints are mapped into.
 
-    Replaces the global registry pattern with instance-based management.
+    Sessions are opened by the CRUD code itself, not here.
     Supports both sync and async engines.
     """
 
-    def __init__(self, engine: EngineType, use_test_isolation: bool = False) -> None:
+    def __init__(
+        self,
+        engine: Any,  # noqa: ANN401  an Engine or an AsyncEngine; which is a runtime fact
+        use_test_isolation: bool = False,
+    ) -> None:
         """Initialize with an engine (sync or async).
 
         Args:
@@ -117,16 +103,35 @@ class SessionManager:
 
         # Use test-specific or global metadata based on configuration
         if use_test_isolation:
-            self._metadata = _get_test_metadata()
-            self._registry = _get_test_registry()
+            self._metadata = _state.test_metadata
+            self._registry = _state.test_registry
         else:
-            self._metadata = _GLOBAL_METADATA
-            self._registry = _GLOBAL_REGISTRY
+            self._metadata = _state.metadata
+            self._registry = _state.registry
 
     @property
-    def engine(self) -> EngineType:
+    def engine(self) -> Any:  # noqa: ANN401  an Engine or an AsyncEngine (see is_async)
         """Get the engine."""
         return self._engine
+
+    @property
+    def sync_engine(self) -> Engine:
+        """The engine sync code can use: an AsyncEngine's underlying sync one."""
+        engine: Engine = self._engine.sync_engine if self._is_async else self._engine
+        return engine
+
+    async def run_blocking(
+        self,
+        fn: Callable[..., T],
+        *args: Any,  # noqa: ANN401  passed through to fn
+    ) -> T:
+        """Run a blocking database call in a worker thread so the event loop stays free.
+
+        An engine on a single-connection pool runs the call in place instead.
+        """
+        if isinstance(self.sync_engine.pool, _SINGLE_CONNECTION_POOLS):
+            return fn(*args)
+        return await run_in_threadpool(fn, *args)
 
     @property
     def metadata(self) -> MetaData:
@@ -140,88 +145,15 @@ class SessionManager:
 
     @property
     def is_async(self) -> bool:
-        """Check if engine is async."""
         return self._is_async
 
-    def get_registry_and_metadata(self) -> tuple[registry, MetaData]:
-        """Get registry and metadata (compatibility with old API)."""
-        return self._registry, self._metadata
+    def table_name_for(self, base_name: str) -> str:
+        """The table name to use; test isolation gives every mapping a fresh one."""
+        if self._use_test_isolation:
+            return _state.unique_table_name(base_name)
+        return base_name
 
-    @contextlib.contextmanager
-    def session(self):
-        """Get a sync session context manager.
-
-        Yields:
-            SQLAlchemy Session
-        """
-        if self._is_async:
-            # For async engines, use the sync engine
-            from sqlalchemy.ext.asyncio import AsyncEngine
-
-            async_engine = self._engine
-            if isinstance(async_engine, AsyncEngine):
-                engine = async_engine.sync_engine
-            else:
-                raise TypeError(f"Expected AsyncEngine, got {type(async_engine)}")
-        else:
-            engine = self._engine
-
-        with Session(engine) as session:
-            yield session
-
-    @contextlib.asynccontextmanager
-    async def async_session(self):
-        """Get an async session context manager.
-
-        Yields:
-            SQLAlchemy AsyncSession
-        """
+    def create_tables_now(self) -> None:
+        """Create missing tables on a sync engine; async engines wait for the loop."""
         if not self._is_async:
-            raise TypeError("Cannot create async session from sync engine")
-
-        from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
-
-        if not isinstance(self._engine, AsyncEngine):
-            raise TypeError(f"Expected AsyncEngine, got {type(self._engine)}")
-
-        async with AsyncSession(self._engine) as session:
-            yield session
-
-    def dispose(self) -> None:
-        """Dispose the engine."""
-        self._engine.dispose()
-
-
-class LoginValidator:
-    """Manages login validation functions."""
-
-    def __init__(self, validator: Any = None) -> None:
-        """Initialize with optional validator function.
-
-        Args:
-            validator: Function that accepts (username, password) and returns
-                      user payload dict or None
-        """
-        self._validator = validator
-
-    def set_validator(self, validator: Any) -> None:
-        """Set the validator function."""
-        self._validator = validator
-
-    def get_validator(self) -> Any:
-        """Get the validator function."""
-        return self._validator
-
-    def __call__(self, username: str, password: str) -> dict[str, Any] | None:
-        """Validate credentials using the registered validator.
-
-        Args:
-            username: Username
-            password: Password
-
-        Returns:
-            User payload dict or None if validation fails
-        """
-        if self._validator is None:
-            return None
-        return self._validator(username, password)
+            self._metadata.create_all(self._engine)

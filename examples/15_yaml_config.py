@@ -16,8 +16,8 @@ Run with:
 The equivalent YAML config is in examples/config.yaml
 """
 
-import os
 import tempfile
+from pathlib import Path
 
 from lightapi import LightApi
 
@@ -66,7 +66,7 @@ endpoints:
         print(f"Registered routes: {[r.path for r in app._routes]}")
         app.run(host="0.0.0.0", port=8000, debug=True)
     finally:
-        os.unlink(config_path)
+        Path(config_path).unlink()
 
 
 if __name__ == "__main__":

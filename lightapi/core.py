@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from http import HTTPStatus
+from typing import TYPE_CHECKING, Any, Final
 
 from starlette.responses import JSONResponse
+
+from lightapi.constants import HttpVerb
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+    from starlette.responses import Response as StarletteResponse
 
 
 class Response(JSONResponse):
@@ -18,9 +25,9 @@ class Response(JSONResponse):
 
     def __init__(
         self,
-        content: Any = None,
-        status_code: int = 200,
-        headers: Dict | None = None,
+        content: Any = None,  # noqa: ANN401  any JSON value
+        status_code: int = HTTPStatus.OK,
+        headers: dict[str, str] | None = None,
         media_type: str | None = None,
         content_type: str | None = None,
     ):
@@ -52,7 +59,11 @@ class Middleware:
     and responses before they are returned to the client.
     """
 
-    def process(self, request: Any, response: Any) -> Any:
+    def process(
+        self,
+        request: Request,  # noqa: ARG002  override point
+        response: StarletteResponse | None,
+    ) -> StarletteResponse | None:
         """
         Process a request or response.
 
@@ -77,6 +88,14 @@ class CORSMiddleware(Middleware):
     Handles CORS preflight requests and adds appropriate headers to responses.
     """
 
+    _DEFAULT_ALLOW_METHODS: Final = (
+        HttpVerb.GET,
+        HttpVerb.POST,
+        HttpVerb.PUT,
+        HttpVerb.DELETE,
+        HttpVerb.OPTIONS,
+    )
+
     def __init__(
         self,
         allow_origins: list[str] | None = None,
@@ -86,7 +105,7 @@ class CORSMiddleware(Middleware):
         if allow_origins is None:
             allow_origins = ["*"]
         if allow_methods is None:
-            allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+            allow_methods = [verb.value for verb in self._DEFAULT_ALLOW_METHODS]
         if allow_headers is None:
             allow_headers = ["Authorization", "Content-Type"]
 
@@ -94,12 +113,14 @@ class CORSMiddleware(Middleware):
         self.allow_methods = allow_methods
         self.allow_headers = allow_headers
 
-    def process(self, request: Any, response: Any) -> Any:
+    def process(
+        self, request: Request, response: StarletteResponse | None
+    ) -> StarletteResponse | None:
         if response is None:
-            if request.method == "OPTIONS":
+            if request.method == HttpVerb.OPTIONS:
                 return JSONResponse(
                     {},
-                    status_code=200,
+                    status_code=HTTPStatus.OK,
                     headers={
                         "Access-Control-Allow-Origin": ", ".join(self.allow_origins),
                         "Access-Control-Allow-Methods": ", ".join(self.allow_methods),
@@ -140,10 +161,14 @@ class AuthenticationMiddleware(Middleware):
         else:
             self.authenticator = None
 
-    def process(self, request: Any, response: Any) -> Any:
+    def process(
+        self, request: Request, response: StarletteResponse | None
+    ) -> StarletteResponse | None:
         if response is None and self.authenticator:
             if not self.authenticator.authenticate(request):
-                return JSONResponse({"error": "not allowed"}, status_code=403)
+                return JSONResponse(
+                    {"error": "not allowed"}, status_code=HTTPStatus.FORBIDDEN
+                )
             return None
 
         return response

@@ -42,9 +42,9 @@ def client():
     )
     app = LightApi(
         engine=engine,
-        login_validator=lambda u, p: {"sub": "1", "username": u}
-        if u == "admin" and p == "secret"
-        else None,
+        login_validator=lambda u, p: (
+            {"sub": "1", "username": u} if u == "admin" and p == "secret" else None
+        ),
         use_test_isolation=True,
     )
     app.register({"/books": BookEndpoint})

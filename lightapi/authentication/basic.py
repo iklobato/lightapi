@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from http import HTTPStatus
+from typing import TYPE_CHECKING, Any
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi._login import _parse_basic_header
-from lightapi.authentication.base import BaseAuthentication
+from lightapi._login import LoginRequest
+from lightapi.authentication.base import BaseAuthentication, LoginValidator
+from lightapi.constants import HttpVerb
 
 if TYPE_CHECKING:
+    from lightapi.config import Authentication
     from lightapi.rate_limiter import RateLimiter
 
 
@@ -23,21 +27,34 @@ class BasicAuthentication(BaseAuthentication):
 
     def __init__(
         self,
-        rate_limiter: "RateLimiter | None" = None,
+        rate_limiter: RateLimiter | None = None,
         login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
     ) -> None:
         self.rate_limiter = rate_limiter
         self._login_validator = login_validator
 
+    @classmethod
+    def from_config(
+        cls,
+        authentication: Authentication,
+        login_validator: LoginValidator | None = None,
+    ) -> BasicAuthentication:
+        # A subclass with its own constructor keeps being built without arguments.
+        if cls.__init__ is not BasicAuthentication.__init__:
+            return cls()
+        return cls(
+            rate_limiter=authentication.rate_limiter, login_validator=login_validator
+        )
+
     def authenticate(self, request: Request) -> bool:
-        if request.method == "OPTIONS":
+        if request.method == HttpVerb.OPTIONS:
             return True
 
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             return False
 
-        credentials = _parse_basic_header(auth_header)
+        credentials = LoginRequest.parse_basic_header(auth_header)
         if credentials is None:
             return False
 
@@ -50,10 +67,13 @@ class BasicAuthentication(BaseAuthentication):
         request.state.user = payload
         return True
 
-    def get_auth_error_response(self, request: Request) -> JSONResponse:
+    def get_auth_error_response(
+        self,
+        request: Request,  # noqa: ARG002  public signature
+    ) -> JSONResponse:
         return JSONResponse(
             {"error": "authentication failed"},
-            status_code=401,
+            status_code=HTTPStatus.UNAUTHORIZED,
             headers={"WWW-Authenticate": 'Basic realm="Restricted Area"'},
         )
 

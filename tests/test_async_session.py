@@ -55,7 +55,7 @@ def test_get_sync_session_rollback_on_exception(sync_engine):
     try:
         with get_sync_session(sync_engine) as session:
             session.add(_Note(body="should_rollback"))
-            raise ValueError("forced")
+            raise ValueError("forced")  # noqa: TRY301  forces the rollback path
     except ValueError:
         pass
 
@@ -83,7 +83,7 @@ async def test_get_async_session_rollback_on_exception(async_engine):
     try:
         async with get_async_session(async_engine) as session:
             session.add(_Note(body="async_rollback"))
-            raise ValueError("forced")
+            raise ValueError("forced")  # noqa: TRY301  forces the rollback path
     except ValueError:
         pass
 
@@ -113,7 +113,7 @@ async def test_missing_asyncio_extra_raises_config_error(monkeypatch, async_engi
     import importlib
 
     from lightapi.exceptions import ConfigurationError
-    from lightapi.lightapi import _validate_async_dependencies
+    from lightapi.lightapi import LightApi
 
     real_import = importlib.import_module
 
@@ -125,7 +125,7 @@ async def test_missing_asyncio_extra_raises_config_error(monkeypatch, async_engi
     monkeypatch.setattr(importlib, "import_module", mock_import)
 
     with pytest.raises(ConfigurationError, match="sqlalchemy\\[asyncio\\]"):
-        _validate_async_dependencies(async_engine)
+        LightApi._validate_async_dependencies(async_engine)
 
 
 async def test_missing_dialect_driver_raises_config_error(monkeypatch, async_engine):
@@ -133,7 +133,7 @@ async def test_missing_dialect_driver_raises_config_error(monkeypatch, async_eng
     import importlib
 
     from lightapi.exceptions import ConfigurationError
-    from lightapi.lightapi import _validate_async_dependencies
+    from lightapi.lightapi import LightApi
 
     real_import = importlib.import_module
 
@@ -145,4 +145,4 @@ async def test_missing_dialect_driver_raises_config_error(monkeypatch, async_eng
     monkeypatch.setattr(importlib, "import_module", mock_import)
 
     with pytest.raises(ConfigurationError, match="aiosqlite"):
-        _validate_async_dependencies(async_engine)
+        LightApi._validate_async_dependencies(async_engine)

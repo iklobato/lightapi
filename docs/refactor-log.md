@@ -1,0 +1,341 @@
+# Refactor log: second OO pass (branch `refactor/oo-second-pass`)
+
+Working notes for the refactor described in the plan of 2026-10-10. One entry per step:
+what was done, how it was verified, what comes next. If the work is interrupted, resume
+from the last "Next" line.
+
+Base: `origin/test/release-validation` (PR #44) with `origin/refactor/group-loose-symbols`
+(PR #45) and `origin/fix/edge-case-500s` (PR #46) merged in. The only merge conflict was the
+`lightapi.constants` import line in `lightapi/rest.py`: kept the `ResponseKey` import from
+#45 and the `TypeAdapter` import from #46.
+
+## Phase 0: baseline (merged base, commit d24c7f3)
+
+Commands (run from the repo root; `--frozen` keeps `uv.lock` untouched):
+
+```
+uv run --frozen --extra dev pytest tests/ -q
+uv run --isolated --frozen --python 3.10 --extra dev pytest tests/ -q --cov=lightapi
+uv run --frozen --extra dev ruff check lightapi
+uv run --frozen --extra dev ruff format --check lightapi
+uv run --frozen --extra dev mypy lightapi
+uv build && uvx twine check dist/*
+```
+
+| Measure | Baseline |
+|---|---|
+| pytest, Python 3.13 (local `.venv`) | 547 passed, 19 skipped, 1 xfailed, 2 xpassed, 656 warnings |
+| pytest, Python 3.10 (`--isolated`) | 547 passed, 19 skipped, 1 xfailed, 2 xpassed, 657 warnings |
+| coverage (`--cov=lightapi`, 3.10) | 90% (2136 statements, 213 missed) |
+| ruff check / ruff format --check | clean / 35 files formatted |
+| mypy lightapi | 0 errors (35 files; `[tool.mypy]` has `ignore_errors` for 18 modules) |
+| `uv build` + `twine check` | wheel + sdist built (0.1.27 on this branch; `master` is 0.1.29), both PASSED |
+| `lightapi/` size | 35 files, 4647 lines, 69 classes, 2 enums, 72 module-level functions |
+
+The 19 skipped tests are the Postgres/Redis integration tests (`tests/integration/`), which
+need `LIGHTAPI_TEST_PG_SYNC`, `LIGHTAPI_TEST_PG_ASYNC` and `LIGHTAPI_REDIS_URL`.
+
+Module-level functions at baseline, by file: `yaml_loader.py` 11, `rest.py` 10,
+`schema.py` 7, `lightapi.py` 7, `endpoint_handler.py` 6, `cache.py` 5, `table_mapping.py` 4,
+`_login.py` 3, `pagination.py` 3, `session.py` 3, `yaml_names.py` 3, `_dict_config_loader.py`
+2, `middleware_runner.py` 2, `repository.py` 2, `fields.py` 1, `filters.py` 1, `server.py` 1,
+`yaml_schema.py` 1. Of these, `Field`, `get_sync_session`, `get_async_session`,
+`server.main`, `filters._coerce_filter_value` and `cache.invalidate_cache_prefix` are public
+or documented and stay.
+
+### HTTP snapshot (Phase 0 step 4)
+
+`examples/18_full_api.py` served by a real uvicorn on 127.0.0.1:18080 (port 8000 was taken
+by Docker; the launcher reproduces the example's `__main__` block on another port). 41
+requests recorded (status, `content-type`/`allow`/`www-authenticate` headers, raw body with
+timestamps and JWTs normalised): `/healthz`, list, create, get, PUT, PATCH, DELETE, 404 (missing
+and oversized id), 409 (PUT and PATCH), 422 (missing version, bad version type, empty body,
+malformed JSON on POST and PUT), 401 (no token, bad token, bad login), 403, 405 (HEAD on a
+collection, PUT on a GET/POST endpoint, POST on a GET-only endpoint, GET on `/auth/login`),
+cursor page with a bad cursor, `?page=abc`, filters. Recorded twice: identical. Kept outside
+the repo (session scratchpad, `http-before/run.json`) and diffed again in Phase 3.
+
+Differential harness: wheel of this base installed in its own venv, `tools/differential/
+record.py` -> 412 steps (`run-base.json`, source fingerprint f11296220501). Phase 3 compares
+the final wheel against it with `compare.py`.
+
+## Step 1: characterization tests
+
+`tests/test_second_pass_characterization.py`, 16 tests, all green before any code change:
+`WWW-Authenticate: Bearer` on the 401 of JWT and Basic endpoints; a method missing from a
+permission dict is public; `/auth/login` GET is 405 with `Allow: POST`; `mode="sync"`
+accepted; exact messages for an unknown mode, pagination style and JWT algorithm;
+`reflect = "full"` behaves like `True`; malformed JSON on POST and PUT gives the current 422
+shapes; an invalid cursor is ignored; HEAD on a detail route is 405 with `Allow`; async PATCH
+409 and 422; cached GET and POST still answer when the Redis client raises `ConnectionError`.
+
+## Step 2: leftover dead code
+
+`rest.py` only: dropped the never-read `_meta["reflect"]` key, moved the stdlib and
+pydantic imports that lived inside `_is_optional`, `_field_annotations`, `_declared_columns`
+and `_parsed_meta` to the module top (no cycle existed), and with them the
+`# type: ignore[attr-defined]` on `types.UnionType`. 563 passed, ruff and mypy clean.
+
+## Step 3: enums and the standard library (one commit each)
+
+### 3a. `http.HTTPStatus`
+
+Deleted the `HTTPStatus(int, Enum)` copy in `constants.py`; `rest.py`, `endpoint_handler.py`,
+`auth_checker.py` and `_login.py` import the stdlib enum. The raw status integers in
+`authentication/basic.py` (401), `core.py` (200, 403), `rate_limiter.py` (429) and
+`cache_helper.py` (`== 200`) became members too. `Response.__init__(status_code: int = 200)`
+in `core.py` is a public signature and stays. Starlette and h11 take the `IntEnum` as an int,
+so the bytes on the wire are the same. 563 passed, ruff and mypy clean.
+
+### 3b. `HttpVerb`
+
+`constants.HttpVerb(str, Enum)` (GET, POST, PUT, PATCH, DELETE, OPTIONS) with `HttpVerb.of()`
+for request methods the API never serves (HEAD), and `CRUD_VERBS` replacing
+`rest._ALL_METHODS`. Verb dictionaries in `endpoint_handler.py` are keyed by the enum; the
+`request.method == "..."` comparisons in `cache_helper.py`, `_login.py`, `core.py` and
+`authentication/basic.py` compare against members; `CORSMiddleware` keeps its default list as
+a class constant. `RestEndpoint._allowed_methods` stays a set of plain strings (documented
+that way) and `HttpMethod.GET._http_method` stays `"GET"` (public marker): the metaclass
+validates them through `HttpVerb(...)` and keeps `.value`. Members are never formatted
+(`f"{member}"` differs between Python 3.10 and 3.11+). `jwt.py:65` keeps its literal
+(FROZEN). Left for Step 8: the name registries in `yaml_names.py` and `_dict_config_loader.py`
+that map YAML/dict method names to `HttpMethod` mixins. 563 passed, ruff and mypy clean.
+
+### 3c. `ExecutionMode`
+
+`constants.ExecutionMode(str, Enum)` (SYNC, ASYNC) with `from_user()` keeping the exact
+`mode must be 'sync' or 'async', got '...'` text. `LightApi._mode` holds the member;
+`AppContext.mode` replaces `is_async: bool`; `EndpointHandler` compares
+`self._mode is ExecutionMode.ASYNC` in its two branches (no generic sync/async executor, as
+the prompt asks). `_checked_mode` is gone. The deprecated `_dict_config_loader.py` still reads
+`config.get("mode", "sync")`; it is reworked in Step 8.
+
+### 3d. `PaginationStyle`
+
+`pagination.PaginationStyle(str, Enum)` (PAGE_NUMBER, CURSOR) with `build(page_size)`
+replaces `VALID_PAGINATION_STYLES` and the `PAGINATORS` dict. `Pagination.style` is
+normalised to the member in `__post_init__` (frozen dataclass idiom, `object.__setattr__` in
+that one place) with the same error text, and `Pagination.paginator` is a `cached_property`:
+the paginator is built once per configuration instead of once per list request
+(`rest.py` uses a module `_NO_PAGINATION` when no pagination is configured). The YAML
+`PaginationConfig` defaults come from the enum and `DEFAULT_PAGE_SIZE`.
+
+Trap hit twice in 3b-3d: the user-level PostToolUse hook runs `ruff --fix` after every edit
+and strips an import whose use is not in the file yet. Order of work that survives it: edit
+the usages first (ruff reports F821, changes nothing), then the import line.
+
+### 3e. `TableReflection`
+
+`constants.TableReflection(str, Enum)` (FULL, PARTIAL) with `from_meta()`: `True` -> FULL,
+`False`/`None` -> no reflection, the two strings -> their member, anything else ->
+`ConfigurationError` (decision 1 of the plan; before, an unknown truthy value silently built a
+table with only the automatic columns). `ReflectedTable` takes the member instead of a
+`partial: bool`. One regression test added to the characterization file; CHANGELOG `Changed`.
+
+### 3f. `RateLimitWindow`
+
+`rate_limiter.RateLimitWindow(str, Enum)` (MINUTE, HOUR, DAY) carries `seconds`;
+`RateLimiter._limit_for(window)` replaces the two if-chains and the tuple list. Store keys and
+the window name returned by `is_rate_limited` use `.value` (plain strings, identical on every
+Python). `get_rate_limit_response(window: str)` keeps its public signature and still answers an
+unknown name as the minute window.
+
+### 3g. `JwtAlgorithm`
+
+`constants.JwtAlgorithm(str, Enum)` with the nine names and `validated(name) -> str`
+replaces `VALID_JWT_ALGORITHMS`; `Config.jwt_algorithm_value` delegates to it and still returns
+the plain string PyJWT receives (`jwt.py` is FROZEN). Same error text.
+
+### 3h. `ApiError`
+
+`constants.ApiError(Enum)` holds the fixed error replies (status, detail, extra headers):
+`NOT_FOUND`, `VERSION_CONFLICT`, `AUTHENTICATION_REQUIRED` (with `WWW-Authenticate: Bearer`),
+`INSUFFICIENT_PERMISSIONS`, `INVALID_CREDENTIALS`, `LOGIN_METHOD_NOT_ALLOWED` (with
+`Allow: POST`), plus `validation_failed(errors)` for the 422 shape. `rest.py`, `_login.py` and
+`auth_checker.py` build their error responses through it; the dynamic 405 of
+`EndpointHandler` (lists the allowed verbs) stays where it is. Texts, status codes and headers
+are byte-identical (characterization tests and the HTTP snapshot pin them).
+
+## Step 4: authentication
+
+- Cycle `config.py` <-> `authentication/` broken by Tell-Don't-Ask:
+  `BasePermission.requires_authentication: ClassVar[bool] = True`,
+  `AllowAny.requires_authentication = False`. `Authentication.permission_for` returns the
+  configured class or `None`; `requires_login` asks the permission. `config.py` no longer
+  imports `lightapi.authentication` at runtime (the two in-function imports are gone).
+  Visible only to a subclass of `AllowAny` used as a permission (decision 2 of the plan):
+  CHANGELOG `Changed`, regression test added.
+- `EndpointGuard` now exists only for endpoints with an `Authentication` (`EndpointHandler`
+  keeps `None` otherwise) and builds the backend once, lazily, as a `cached_property`: eager
+  construction would break `tests/test_login_auth.py:857` (`backend=AllowAny`, no
+  `from_config`, never requested). Regression test counts `from_config` calls across two
+  requests. CHANGELOG `Changed`.
+- `_login.py`: `_parse_basic_header`, `_parse_credentials` and `_read_body` became
+  `LoginRequest.parse_basic_header` (also used by `BasicAuthentication`) and
+  `LoginRequest.from_request` (Basic header -> `model_construct`, unvalidated as before; JSON
+  body -> `request.json()` validated). The body read now catches `JSONDecodeError` and
+  `UnicodeDecodeError` (before: `JSONDecodeError, TypeError`), so a login body that is not
+  UTF-8 is a 422 instead of a 500: CHANGELOG `Changed`, regression test added.
+- `_login.py:137` keeps `except Exception` on purpose: a `login_validator` that raises is a
+  401 by documented contract (CHANGELOG 0.1.24).
+
+## Step 5: request path, cache, body, specific exceptions
+
+### 5a. Handler
+
+`endpoint_handler.py` now holds everything that serves one route: `MiddlewareChain`
+(frozen dataclass over the app's middleware list, `before`/`after`, replacing the two
+functions of `middleware_runner.py`), `EndpointGuard` (from `auth_checker.py`),
+`_CrudArgument` + `_Verb.call_arguments` (replacing the five argument-adapter functions) and
+`EndpointHandler._json_body` (replacing `_read_body`, now `request.json()` with
+`except (json.JSONDecodeError, UnicodeDecodeError)`: an empty or malformed body is still `{}`
+and a 422; a dropped connection propagates). `auth_checker.py` and `middleware_runner.py`
+deleted (CHANGELOG `Removed`, `[tool.mypy]` list trimmed). `endpoint_handler.py` is fully
+type-checked by mypy, so the moved code is typed.
+
+### 5b. Cache
+
+`cache.EndpointCache(endpoint_name, config)` replaces `cache_helper.ResponseCache(cls)` and is
+built once per route in `EndpointHandler.__init__` (before: up to three instances per request).
+It reaches Redis through `RedisCacheBackend.shared()` (a `@classmethod` + `functools.cache`,
+replacing `_default_backend`; still lazy, so `LIGHTAPI_REDIS_URL` set after import counts) on
+every call, never binding the client early: tests build the app before patching. The Redis
+boundary is `RedisCacheBackend`, which now catches only `redis.RedisError` (plus
+`json.JSONDecodeError`/`UnicodeDecodeError` on `get`, `ValueError` on `from_url`) and keeps
+the "no Redis, no cache, requests still answered" contract; `EndpointCache` has no
+`try/except` (the body it stores is JSON it produced). `get_cached`, `set_cached`,
+`_ping_redis` and `cache_helper.py` are gone; `invalidate_cache_prefix` stays (documented).
+Tests that patched the old module functions now patch `RedisCacheBackend.get/set/
+invalidate_prefix/ping`; the "Redis down" tests use a fake client raising
+`redis.ConnectionError` under `patch("lightapi.cache.redis.from_url")` with
+`RedisCacheBackend.shared.cache_clear()` around them; `test_cache_backend_lazy.py` sets the
+fake client's `get` to return None (its truthy MagicMock only passed before because the
+`TypeError` from `json.loads` was swallowed). `[tool.mypy]` list trimmed; CHANGELOG `Removed`.
+
+### 5c. Pagination and filters
+
+`pagination.Cursor` (`@dataclass(frozen=True, slots=True)`, `last_id: int`, `encode()`,
+`Cursor.decode(text)`) replaces `encode_cursor`/`decode_cursor`; `Cursor.INVALID` names the
+exceptions a client-supplied cursor can fail with, and `CursorPaginator.paginate` catches only
+those (before: `except Exception: pass` around decode and the column lookup, which is now a
+plain `getattr(qs, "columns_clause_froms", ())`). `_current_page` (PR #46) is a static method
+of `PageNumberPaginator`. `filters.py`: SQLAlchemy imports at the top;
+`_coerce_filter_value` catches `(ValueError, AttributeError, IndexError)`. `test_paginate_async`
+reads the cursor through `Cursor.decode(...).last_id`.
+
+### 5d. Session and repository
+
+`SessionManager` gains `sync_engine` (unwraps an `AsyncEngine`, by its own `is_async`) and
+`run_blocking(fn, *args)` (from `session.py`; the single-connection-pool rule moves with it).
+`RestEndpoint._session_manager_or_raise()` is the one place that raises the "No
+session_manager configured" error; `_get_engine` and `_get_async_engine` (documented) delegate
+to it, and the per-request `AsyncEngine` import in `_get_engine` is gone. `session.py` keeps
+only the two public context managers (the in-function `AsyncSession` import stays: optional
+extra). `repository.py`: `_utcnow` and `_in_pk_range` (PR #46) are methods of `Repository`,
+with the 64-bit bounds as class constants.
+
+### 5e. Remaining broad excepts
+
+`lightapi.py`: `_create_tables` catches `SQLAlchemyError` (the warning on a failed
+`create_all` stays; a programming error now propagates); the async branch is its own method
+that returns early when no loop is running instead of wrapping the whole thread hand-off in
+`except RuntimeError`. B19 (asyncio.run on a worker thread) is unchanged. `rest.py`:
+`get_type_hints` fallback catches `(NameError, TypeError, SyntaxError, AttributeError)`.
+Remaining `except Exception` in the package, all deliberate: `_login.py` (validator raised ->
+401, documented), `session.py` (rollback + re-raise), FROZEN `RedisCache` body.
+
+## Step 7: `rest.py`
+
+- `_get_queryset_async` reuses `_get_queryset` and awaits an awaitable result (the two
+  copies differed only by that `await`).
+- `schema.FieldProjection(NamedTuple)` (fields, read, write) with `from_serializer`,
+  `for_method`, `apply` replaces `normalise_serializer`, `resolve_fields` and
+  `_apply_fields`; `_meta["serializer_normalised"]` is still the same tuple.
+  `SchemaFactory.row_to_dict`, `SchemaFactory.patch_schema` (same `lru_cache`),
+  `_schema_pair` and `_reflected_annotation` are methods. `RestEndpoint._fields_for(verb)`
+  resolves the projection once per request instead of once per serialized row. Tests
+  `test_pipeline.py`, `test_serializer.py`, `test_repository.py` call the methods (same
+  assertions).
+- Column building moved to its owner: `DeclaredTable.from_endpoint(cls, name, namespace)`
+  with `_field_annotations`, `_column_for`, `_is_optional`, `_auto_columns` and the
+  annotation-to-column `_TYPE_MAP` in `table_mapping.py`. `TableSource` is now an ABC holding
+  the two helpers both sources share (`_table_name`, `_strip_field_infos`); `_reflect_sync`
+  and `_reflect_async` are `ReflectedTable` static methods. `RestEndpointMeta` keeps
+  `_reject_redeclared_auto_fields`, `_parsed_meta` and `_allowed_methods` as its own
+  methods. `rest.py` has no module-level function left.
+
+## Step 8: `LightApi` and the configuration loaders
+
+- `lightapi.py`: the seven module-level helpers are `LightApi` methods
+  (`_engine_from_url`, `_as_rate_limiter`, `_require_rest_endpoint`, `_has_async_handlers`,
+  `_require_async_engine`, `_validate_async_dependencies`; `_checked_mode` had already become
+  `ExecutionMode.from_user`). `_LOGIN_RATE_LIMITS` and `_ASYNC_HANDLER_NAMES` (derived from
+  `CRUD_VERBS`) are class constants; the dialect-to-driver map is a module `Final`.
+  `RateLimiter.from_limits(limits, defaults)` builds a limiter from a dict.
+  `tests/test_async_session.py` calls `LightApi._validate_async_dependencies`.
+- `yaml_config.py` replaces `yaml_loader.py` + `yaml_names.py` + `yaml_schema.py`: the eleven
+  loader functions are methods of the pydantic models that hold the data
+  (`AuthConfig.to_authentication`/`resolved_permission`, `FilteringConfig.to_filtering`,
+  `PaginationConfig.to_pagination`, `MetaConfig.build_meta_class`/`endpoint_bases`,
+  `FieldSpec.annotation`/`field_info`, `EndpointConfig.build_endpoint_class`,
+  `LightAPIConfig.from_file`/`build_app`/`resolve_name`/`resolve_callable`); the name registry
+  is a module `Final` built with top-level imports (no cycle: none of those modules import
+  `yaml_config` or `lightapi.lightapi`); `HTTP_METHOD_MIXINS` in `constants.py` maps verb
+  names to the public `HttpMethod` mixins for both config loaders. Every error text is
+  unchanged. `tests/test_yaml_config.py` imports from `yaml_config` and calls
+  `entry.build_endpoint_class(...)` / `LightAPIConfig.resolve_name(...)`.
+- `_dict_config_loader.py` (deprecated path, Henry asked to include it): `DictConfig`
+  (frozen dataclass over the dict, `build`) and `DictAuthKind(str, Enum)` replace
+  `load_from_dict`, `_route_to_class_name` and the `"jwt"/"basic"` literals; an unknown
+  `auth:` value is still ignored. Imports come from submodules, never from the `lightapi`
+  package, because `lightapi.py` now imports this module at the top.
+- `[tool.mypy]`: `yaml_loader` -> `yaml_config`. CHANGELOG `Removed`.
+
+## Phase 3: production readiness
+
+### Found by the differential harness, fixed
+
+Recording the final wheel crashed in the `async-no-mode` scenario (an `AsyncEngine` passed
+to `LightApi` without `mode="async"` and without async handlers, which the README calls a
+one-line swap): `_create_tables` ran `metadata.create_all(bind=AsyncEngine)`, whose
+`AttributeError` the old `except Exception` turned into a warning, and the two requests were
+recorded as 500s. With the narrowed `except SQLAlchemyError` the error reached `build_app()`.
+Fix: `_create_tables` skips table creation for an `AsyncEngine` on a sync app and logs a
+warning naming the cause, so the app builds and behaves as before (the two 500s). Regression
+test added (`caplog`); 3.11 run before the fix: 567 passed.
+
+### Measurements (final commit of the pass vs the merged base d24c7f3)
+
+| Measure | Base (d24c7f3) | Final |
+|---|---|---|
+| pytest 3.10 (`--isolated`) | 547 passed, 19 skipped, 1 xfailed, 2 xpassed | 568 passed, 19 skipped, 1 xfailed, 2 xpassed |
+| pytest 3.11 / 3.12 / 3.13 | 547 passed (3.13 measured) | 567 (3.11, before the last fix), 568, 568 |
+| coverage (3.10) | 90% (2136 statements, 213 missed) | 92% (2174 statements, 176 missed) |
+| ruff check / format | clean | clean |
+| mypy lightapi | 0 errors, 35 files | 0 errors, 30 files |
+| build + twine | PASSED | PASSED |
+| `lightapi/` files / lines | 35 / 4647 | 30 / 4675 |
+| classes / enums | 69 / 2 | 81 / 10 |
+| module-level functions | 72 | 6 (`Field`, `get_sync_session`, `get_async_session`, `server.main`, `_coerce_filter_value`, `invalidate_cache_prefix`: all public or documented) |
+| `except Exception` | 16 | 3 (`_login.py` documented 401; two rollback-and-reraise in `session.py`) |
+| in-function imports | ~30 | 2 (both the optional `sqlalchemy[asyncio]` extra) |
+| HTTP snapshot (`18_full_api.py`, 41 requests) | recorded | 41/41 identical |
+| differential harness vs base | 412 steps | 412/412 identical |
+| differential harness vs published 0.1.29 | | 404 identical, 6 declared (#44's), 2 undeclared that come from PR #46 (`?page=abc`, `?page=0`; not in `compare.py`'s `ALLOWED` nor in the CHANGELOG) |
+| warnings in the suite | 656 (547 tests) | 714 (568 tests); same four kinds: SQLAlchemy class-name reuse, `Column.copy()` deprecation, pytest `env` option, Starlette `on_startup` deprecation |
+| `mkdocs build --strict` | | passes with the two new pages (not in `docs/.pages`, on purpose) |
+
+Lines: the dead code was removed in PR #44, so this pass is structure, not deletion. Files
+that grew and why: `constants.py` +122 (six enums and `ApiError` that replaced literals in
+nine modules), `table_mapping.py` +133 (took the column building from `rest.py`, which lost
+154), `endpoint_handler.py` +109 (absorbed `auth_checker.py` and `middleware_runner.py`,
+together 87 lines), `cache.py` +60 (absorbed `cache_helper.py`, 82 lines, minus the removed
+module functions), `yaml_config.py` 553 (replaces 664 lines of three modules).
+
+Not done, on purpose (plan "Pare e anote"): `_meta` stays a dict (documented); `partial: bool`
+in the public `update()` stays; `Cache.vary_on`, `Config.jwt_expiration` and
+`Authentication.rate_limiter` are public fields that nothing reads; FROZEN bodies untouched
+(`jwt.py:65` literal `"OPTIONS"`, raw 401s in `base.py`/`jwt.py`); B19, B20, T8-01 untouched.
+
+Not pushed. The prompt forbids `git push`; the stacked PR on `test/release-validation` waits
+for Henry's go-ahead.

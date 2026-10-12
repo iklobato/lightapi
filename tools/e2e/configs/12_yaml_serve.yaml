@@ -1,0 +1,76 @@
+---
+# Scenario 12: everything the YAML format offers, served by `lightapi serve`.
+# @DB@ is replaced by the script with the run's SQLite URL.
+database:
+  url: "@DB@"
+
+mode: sync
+
+auth:
+  auth_path: /auth
+  login_validator: validators.check_login
+
+defaults:
+  pagination:
+    style: page_number
+    page_size: 3
+
+endpoints:
+  - route: /books
+    fields:
+      title:
+        type: str
+        min_length: 1
+        max_length: 40
+      genre:
+        type: str
+        default: general
+      pages:
+        type: int
+        optional: true
+      rating:
+        type: float
+        ge: 0
+        le: 5
+        default: 0
+    meta:
+      filtering:
+        backends: [FieldFilter, SearchFilter, OrderingFilter]
+        fields: [genre]
+        search: [title]
+        ordering: [pages]
+
+  - route: /notes
+    fields:
+      text:
+        type: str
+        min_length: 1
+    meta:
+      methods: [GET]
+
+  - route: /secrets
+    fields:
+      text:
+        type: str
+    meta:
+      authentication:
+        backend: JWTAuthentication
+        permission: IsAuthenticated
+
+  - route: /mixed
+    fields:
+      text:
+        type: str
+    meta:
+      authentication:
+        backend: JWTAuthentication
+      methods:
+        GET:
+          authentication:
+            permission: AllowAny
+        POST:
+          authentication:
+            permission: IsAuthenticated
+        DELETE:
+          authentication:
+            permission: IsAdminUser

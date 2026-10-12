@@ -1,12 +1,15 @@
+from typing import Any
+
 from pydantic import Field as _pydantic_Field
-from pydantic.fields import FieldInfo
 
 _LIGHTAPI_KWARGS: frozenset[str] = frozenset(
     {"foreign_key", "unique", "index", "exclude", "decimal_places"}
 )
 
 
-def Field(**kwargs: object) -> FieldInfo:  # type: ignore[return]
+def Field(
+    **kwargs: Any,  # noqa: ANN401  pydantic Field kwargs, forwarded as given
+) -> Any:  # noqa: ANN401  typed like pydantic.Field, so `x: int = Field()` type-checks
     """LightAPI Field wrapper.
 
     Accepts all standard Pydantic Field kwargs plus LightAPI-specific column kwargs
@@ -14,12 +17,12 @@ def Field(**kwargs: object) -> FieldInfo:  # type: ignore[return]
     stored in json_schema_extra so RestEndpointMeta can read them; they are stripped
     before Pydantic processes the field definition.
     """
-    lightapi_meta: dict[str, object] = {
-        k: kwargs.pop(k)  # type: ignore[misc]
-        for k in list(kwargs)
-        if k in _LIGHTAPI_KWARGS
-    }
-    existing_extra: dict[str, object] = kwargs.pop("json_schema_extra", None) or {}  # type: ignore[assignment]
+    lightapi_meta = {k: kwargs.pop(k) for k in list(kwargs) if k in _LIGHTAPI_KWARGS}
+    if "decimal_places" in lightapi_meta:
+        # Pydantic enforces the places at the edge: Numeric(scale=N) alone renders
+        # as plain NUMERIC on every dialect, so the column cannot.
+        kwargs["decimal_places"] = lightapi_meta["decimal_places"]
+    existing_extra: dict[str, Any] = kwargs.pop("json_schema_extra", None) or {}
     return _pydantic_Field(
         **kwargs, json_schema_extra={**existing_extra, **lightapi_meta}
-    )  # type: ignore[return-value]
+    )

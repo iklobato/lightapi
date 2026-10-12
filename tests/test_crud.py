@@ -14,6 +14,11 @@ class BookEndpoint(RestEndpoint):
     author: str = LField(min_length=1)
 
 
+class NoteEndpoint(RestEndpoint):
+    title: str = LField(min_length=1)
+    subtitle: str | None = LField(default=None)
+
+
 @pytest.fixture
 def client():
     engine = create_engine(
@@ -22,7 +27,7 @@ def client():
         poolclass=StaticPool,
     )
     app_instance = LightApi(engine=engine)
-    app_instance.register({"/books": BookEndpoint})
+    app_instance.register({"/books": BookEndpoint, "/notes": NoteEndpoint})
     app = app_instance.build_app()
     return TestClient(app)
 
@@ -79,6 +84,10 @@ class TestGETDetail:
         resp = client.get("/books/999999")
         assert resp.status_code == 404
 
+    def test_retrieve_id_beyond_a_64_bit_int_is_404_not_500(self, client):
+        resp = client.get(f"/books/{2**63}")
+        assert resp.status_code == 404
+
 
 class TestPUT:
     def test_update_returns_200(self, client):
@@ -123,6 +132,27 @@ class TestPUT:
         )
         assert resp.status_code == 404
 
+    def test_update_version_as_numeric_string_is_coerced(self, client):
+        """A client sending version as "1" instead of 1 used to crash with a
+        500 (str + int in the repository's version arithmetic)."""
+        post_resp = client.post("/books", json={"title": "V", "author": "A"})
+        book = post_resp.json()
+        resp = client.put(
+            f"/books/{book['id']}",
+            json={"title": "V2", "author": "A", "version": str(book["version"])},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["version"] == 2
+
+    def test_update_non_numeric_version_is_422_not_500(self, client):
+        post_resp = client.post("/books", json={"title": "V", "author": "A"})
+        book = post_resp.json()
+        resp = client.put(
+            f"/books/{book['id']}",
+            json={"title": "V2", "author": "A", "version": "not-a-number"},
+        )
+        assert resp.status_code == 422
+
 
 class TestPATCH:
     def test_patch_partial_update_returns_200(self, client):
@@ -159,6 +189,42 @@ class TestPATCH:
             json={"title": "X", "version": 1},
         )
         assert resp.status_code == 404
+
+    def test_patch_null_clears_a_nullable_column(self, client):
+        note = client.post("/notes", json={"title": "T", "subtitle": "original"}).json()
+
+        resp = client.patch(
+            f"/notes/{note['id']}",
+            json={"subtitle": None, "version": note["version"]},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["subtitle"] is None
+        assert resp.json()["title"] == "T"
+
+    def test_patch_null_on_a_required_column_is_ignored(self, client):
+        note = client.post("/notes", json={"title": "T", "subtitle": "s"}).json()
+
+        resp = client.patch(
+            f"/notes/{note['id']}",
+            json={"title": None, "version": note["version"]},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "T"  # unchanged, null on non-nullable ignored
+        assert resp.json()["version"] == note["version"] + 1
+
+    def test_patch_omitted_field_does_not_change(self, client):
+        note = client.post("/notes", json={"title": "Original", "subtitle": "s"}).json()
+
+        resp = client.patch(
+            f"/notes/{note['id']}",
+            json={"subtitle": "updated", "version": note["version"]},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "Original"  # not sent, stays as-is
+        assert resp.json()["subtitle"] == "updated"
 
 
 class TestDELETE:
