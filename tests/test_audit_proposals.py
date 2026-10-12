@@ -317,3 +317,35 @@ class TestB13002FilterBackendBuiltOnce:
                 assert client.get("/once").status_code == 200
 
         assert CountingFilter.instances == 1
+
+
+class TestB15002AuthenticationRateLimiter:
+    """B15-002: `Authentication(rate_limiter=...)` was stored on the backend and
+    never read; the login route used the app-wide limiter or the defaults."""
+
+    def test_login_route_uses_the_endpoint_rate_limiter(self, monkeypatch):
+        monkeypatch.setenv(
+            "LIGHTAPI_JWT_SECRET", "audit-proposals-secret-32-bytes-long!"
+        )
+
+        class AuditLimitedLogin(RestEndpoint):
+            text: str = Field(min_length=1)
+
+            class Meta:
+                table = "audit_limited_login"
+                authentication = Authentication(
+                    backend=JWTAuthentication,
+                    permission=AllowAny,
+                    rate_limiter=RateLimiter(requests_per_minute=1),
+                )
+
+        app = LightApi(
+            engine=_memory_engine(), login_validator=lambda u, p: {"username": u}
+        )
+        app.register({"/limited": AuditLimitedLogin})
+        with TestClient(app.build_app()) as client:
+            first = client.post("/auth/login", json={"username": "u", "password": "p"})
+            second = client.post("/auth/login", json={"username": "u", "password": "p"})
+
+        assert first.status_code == 200
+        assert second.status_code == 429

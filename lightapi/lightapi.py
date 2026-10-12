@@ -196,8 +196,12 @@ class LightApi:
         if backend is None:
             return []
 
-        rate_limiter = self._rate_limiter_global or RateLimiter(
-            **self._LOGIN_RATE_LIMITS
+        # The endpoint's Authentication(rate_limiter=...) wins over the app-wide
+        # one, which wins over the defaults (B15-002: the first was never read).
+        rate_limiter = (
+            getattr(backend, "rate_limiter", None)
+            or self._rate_limiter_global
+            or RateLimiter(**self._LOGIN_RATE_LIMITS)
         )
         login = LoginEndpoint(backend, self._login_validator, rate_limiter)
         auth_path = self._auth_path.rstrip("/")
