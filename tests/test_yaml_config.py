@@ -10,8 +10,7 @@ from pydantic import ValidationError
 
 from lightapi.exceptions import ConfigurationError
 from lightapi.lightapi import LightApi
-from lightapi.yaml_loader import LightAPIConfig
-from lightapi.yaml_names import resolve_name
+from lightapi.yaml_config import LightAPIConfig
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -102,12 +101,10 @@ class TestDeclarativeFormat:
         return app._endpoint_map[route_path]
 
     def test_nested_database_block(self):
-        app = _from_str(
-            """\
+        app = _from_str("""\
             database:
               url: "sqlite:///:memory:"
-            """
-        )
+            """)
         assert app is not None
 
     def test_dynamic_fields_create_endpoint_class(self):
@@ -268,15 +265,10 @@ class TestDeclarativeFormat:
         We test the class builder directly because register() would attempt
         actual DB table inspection (requires a running engine).
         """
-        from lightapi.yaml_loader import (
-            DefaultsConfig,
-            EndpointConfig,
-            MetaConfig,
-            _build_endpoint_class,
-        )
+        from lightapi.yaml_config import DefaultsConfig, EndpointConfig, MetaConfig
 
         entry = EndpointConfig(route="/legacy", reflect=True, meta=MetaConfig())
-        cls = _build_endpoint_class(entry, DefaultsConfig())
+        cls = entry.build_endpoint_class(DefaultsConfig())
         assert cls.Meta.reflect is True
 
     def test_middleware_resolved_by_name(self):
@@ -475,18 +467,18 @@ class TestResolveName:
     def test_builtin_names_resolve(self):
         from lightapi.auth import IsAuthenticated
 
-        assert resolve_name("IsAuthenticated") is IsAuthenticated
+        assert LightAPIConfig.resolve_name("IsAuthenticated") is IsAuthenticated
 
     def test_dotted_path_resolves(self):
-        cls = resolve_name("lightapi.auth.AllowAny")
+        cls = LightAPIConfig.resolve_name("lightapi.auth.AllowAny")
         from lightapi.auth import AllowAny
 
         assert cls is AllowAny
 
     def test_unknown_name_raises(self):
         with pytest.raises(ConfigurationError, match="Unknown class name"):
-            resolve_name("CompletlyUnknownClass")
+            LightAPIConfig.resolve_name("CompletlyUnknownClass")
 
     def test_bad_dotted_path_raises(self):
         with pytest.raises(ConfigurationError):
-            resolve_name("non.existent.module.Foo")
+            LightAPIConfig.resolve_name("non.existent.module.Foo")

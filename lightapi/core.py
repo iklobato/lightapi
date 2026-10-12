@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from http import HTTPStatus
+from typing import Any, Dict, Final
 
 from starlette.responses import JSONResponse
+
+from lightapi.constants import HttpVerb
 
 
 class Response(JSONResponse):
@@ -77,6 +80,14 @@ class CORSMiddleware(Middleware):
     Handles CORS preflight requests and adds appropriate headers to responses.
     """
 
+    _DEFAULT_ALLOW_METHODS: Final = (
+        HttpVerb.GET,
+        HttpVerb.POST,
+        HttpVerb.PUT,
+        HttpVerb.DELETE,
+        HttpVerb.OPTIONS,
+    )
+
     def __init__(
         self,
         allow_origins: list[str] | None = None,
@@ -86,7 +97,7 @@ class CORSMiddleware(Middleware):
         if allow_origins is None:
             allow_origins = ["*"]
         if allow_methods is None:
-            allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+            allow_methods = [verb.value for verb in self._DEFAULT_ALLOW_METHODS]
         if allow_headers is None:
             allow_headers = ["Authorization", "Content-Type"]
 
@@ -96,10 +107,10 @@ class CORSMiddleware(Middleware):
 
     def process(self, request: Any, response: Any) -> Any:
         if response is None:
-            if request.method == "OPTIONS":
+            if request.method == HttpVerb.OPTIONS:
                 return JSONResponse(
                     {},
-                    status_code=200,
+                    status_code=HTTPStatus.OK,
                     headers={
                         "Access-Control-Allow-Origin": ", ".join(self.allow_origins),
                         "Access-Control-Allow-Methods": ", ".join(self.allow_methods),
@@ -143,7 +154,9 @@ class AuthenticationMiddleware(Middleware):
     def process(self, request: Any, response: Any) -> Any:
         if response is None and self.authenticator:
             if not self.authenticator.authenticate(request):
-                return JSONResponse({"error": "not allowed"}, status_code=403)
+                return JSONResponse(
+                    {"error": "not allowed"}, status_code=HTTPStatus.FORBIDDEN
+                )
             return None
 
         return response

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -87,6 +87,9 @@ class BasePermission:
     is allowed to access a particular endpoint.
     """
 
+    # Whether the endpoint's backend must authenticate the request first.
+    requires_authentication: ClassVar[bool] = True
+
     def has_permission(self, request: Request) -> bool:
         """Check if the request has permission.
 
@@ -101,6 +104,8 @@ class BasePermission:
 
 class AllowAny(BasePermission):
     """Permits all requests regardless of authentication state."""
+
+    requires_authentication = False
 
     def has_permission(self, request: Request) -> bool:
         return True

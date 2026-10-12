@@ -14,12 +14,45 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `RestEndpoint` subclasses with `register()`, or `from_config()` with a YAML file.
 
 ### Changed
+- **The authentication backend is built once per route**, on the first request that needs
+  it, instead of once per request. A backend subclass with its own `__init__` is therefore
+  instantiated once. JWT settings and the secret are still read on every request.
+- **A permission class decides whether login is required**: `BasePermission` has
+  `requires_authentication = True` and `AllowAny` sets it to `False`. The only visible
+  difference: a subclass of `AllowAny` used as a permission no longer forces authentication
+  (before, only `AllowAny` itself, by identity, made a method public).
+- **`/auth/login` with a body that is not valid UTF-8 returns 422** (it was a 500); a body
+  that is not JSON still returns the same 422.
+- **`Meta.reflect` rejects unknown values**: anything other than `True`, `False`, `"full"`
+  or `"partial"` now raises `ConfigurationError` when the class is defined. Before, a value
+  such as `"yes"` was silently treated as "not reflected" and produced a table with only the
+  automatic columns.
 - **Sync CRUD runs in a worker thread**: with a sync `Engine`, `list`, `retrieve`,
   `create`, `update`, `destroy` and the response-cache calls ran on the event loop
   thread, so one slow query held up every other request on that worker. They now
   go through `starlette.concurrency.run_in_threadpool`. Engines on `StaticPool` or
   `SingletonThreadPool` (in-memory SQLite) still run in place, because those pools
   cannot be shared across threads.
+
+### Removed (internal, no public name affected)
+- `RestEndpoint._meta["reflect"]`: the key was written but never read; `Meta.reflect` is
+  read from the class itself.
+- `lightapi.constants.HTTPStatus`: a copy of eleven members of the standard library's
+  `http.HTTPStatus`, which the package now uses directly. Status codes in responses are
+  unchanged.
+- `lightapi.auth_checker` and `lightapi.middleware_runner`: `EndpointGuard` and the
+  middleware runner (now `MiddlewareChain`) live in `lightapi.endpoint_handler`, the only
+  module that used them.
+- `lightapi.cache_helper` and the module functions `lightapi.cache.get_cached`,
+  `set_cached` and `_ping_redis`: the response cache is `lightapi.cache.EndpointCache`
+  (built once per route) over `RedisCacheBackend.shared()`, the process-wide client that is
+  still created on first use. `lightapi.cache.invalidate_cache_prefix` stays.
+- `lightapi.yaml_loader`, `lightapi.yaml_names` and `lightapi.yaml_schema`: the YAML
+  document's models and the code that turns them into endpoints now live together in
+  `lightapi.yaml_config` (`LightAPIConfig.from_file(...).build_app(...)`,
+  `LightAPIConfig.resolve_name`). The YAML format is unchanged.
+- `lightapi._dict_config_loader.load_from_dict`: `LightApi.from_dict` (deprecated) now goes
+  through `DictConfig` in the same module.
 
 ### Fixed
 - **`Meta.cache` was ignored on async engines**: cached GETs and cache invalidation

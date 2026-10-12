@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import math
-from typing import TYPE_CHECKING, Any, Callable, Protocol
+from dataclasses import dataclass
+from enum import Enum
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Protocol
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -15,12 +18,34 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
-def encode_cursor(last_id: int) -> str:
-    return base64.urlsafe_b64encode(json.dumps({"id": last_id}).encode()).decode()
+@dataclass(frozen=True, slots=True)
+class Cursor:
+    """Position of a keyset page: the id of the last row the client saw."""
 
+    last_id: int
 
-def decode_cursor(cursor: str) -> int:
-    return json.loads(base64.urlsafe_b64decode(cursor.encode()))["id"]
+    # What a client-supplied cursor can fail with; the paginator ignores such a cursor.
+    INVALID: ClassVar[tuple[type[Exception], ...]] = (
+        binascii.Error,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        KeyError,
+        TypeError,
+        ValueError,
+    )
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.last_id, int):
+            raise TypeError(f"cursor id must be an int, got {self.last_id!r}")
+
+    def encode(self) -> str:
+        return base64.urlsafe_b64encode(
+            json.dumps({"id": self.last_id}).encode()
+        ).decode()
+
+    @classmethod
+    def decode(cls, text: str) -> Cursor:
+        return cls(json.loads(base64.urlsafe_b64decode(text.encode()))["id"])
 
 
 RowSerializer = Callable[[Any], dict[str, Any]]
@@ -32,6 +57,18 @@ class Paginator(Protocol):
     def render(
         self, request: Request, qs: Any, session: Session, serialize: RowSerializer
     ) -> dict[str, Any]: ...
+
+
+class PaginationStyle(str, Enum):
+    """How a list response is split; the value is what `Pagination(style=...)` takes."""
+
+    PAGE_NUMBER = "page_number"
+    CURSOR = "cursor"
+
+    def build(self, page_size: int) -> Paginator:
+        if self is PaginationStyle.CURSOR:
+            return CursorPaginator(page_size)
+        return PageNumberPaginator(page_size)
 
 
 class NoPagination:
@@ -54,7 +91,7 @@ class PageNumberPaginator:
         self, request: Request, qs: Any, session: Session, serialize: RowSerializer
     ) -> dict[str, Any]:
         rows, total = self.paginate(request, qs, session, self.page_size)
-        page = int(request.query_params.get(PAGE_PARAM, 1))
+        page = self._current_page(request)
         results = [serialize(row) for row in rows]
         return self.wrap(request, results, total, page, self.page_size)
 
@@ -65,7 +102,7 @@ class PageNumberPaginator:
         session: Session,
         page_size: int,
     ) -> tuple[list[Any], int]:
-        page = max(1, int(request.query_params.get(PAGE_PARAM, 1)))
+        page = self._current_page(request)
         offset = (page - 1) * page_size
         count_stmt = select(func.count()).select_from(qs.subquery())
         total: int = session.execute(count_stmt).scalar_one()
@@ -83,6 +120,15 @@ class PageNumberPaginator:
         return await session.run_sync(
             lambda sync_session: self.paginate(request, qs, sync_session, page_size)
         )
+
+    @staticmethod
+    def _current_page(request: Request) -> int:
+        """The requested page, clamped to at least 1; a non-numeric value is page 1."""
+        try:
+            page = int(request.query_params.get(PAGE_PARAM, 1))
+        except ValueError:
+            return 1
+        return max(1, page)
 
     def wrap(
         self,
@@ -131,30 +177,23 @@ class CursorPaginator:
         session: Session,
         page_size: int,
     ) -> tuple[list[Any], str | None]:
-        cursor_str = request.query_params.get(CURSOR_PARAM)
-        if cursor_str:
+        cursor_text = request.query_params.get(CURSOR_PARAM)
+        if cursor_text:
             try:
-                last_id = decode_cursor(cursor_str)
-                # Extract entity from the select and filter on its id column
-                entity = (
-                    qs.columns_clause_froms[0]
-                    if hasattr(qs, "columns_clause_froms")
-                    else None
-                )
-                id_col = None
-                if entity is not None:
-                    id_col = entity.c.get("id")
-                if id_col is not None:
-                    qs = qs.where(id_col > last_id)
-            except Exception:
-                pass
+                cursor: Cursor | None = Cursor.decode(cursor_text)
+            except Cursor.INVALID:
+                cursor = None
+            # The id column of the entity being selected, when the query has one.
+            froms = getattr(qs, "columns_clause_froms", ())
+            id_col = froms[0].c.get("id") if froms else None
+            if cursor is not None and id_col is not None:
+                qs = qs.where(id_col > cursor.last_id)
         rows = session.execute(qs.order_by("id").limit(page_size)).scalars().all()
         next_cursor = None
         if len(rows) == page_size:
-            last_obj = rows[-1]
-            last_row_id = getattr(last_obj, "id", None)
+            last_row_id = getattr(rows[-1], "id", None)
             if last_row_id is not None:
-                next_cursor = encode_cursor(last_row_id)
+                next_cursor = Cursor(last_row_id).encode()
         return list(rows), next_cursor
 
     async def paginate_async(
@@ -180,9 +219,3 @@ class CursorPaginator:
             ResponseKey.PREVIOUS: prev_cursor,
             ResponseKey.RESULTS: results,
         }
-
-
-PAGINATORS: dict[str, type[PageNumberPaginator] | type[CursorPaginator]] = {
-    "page_number": PageNumberPaginator,
-    "cursor": CursorPaginator,
-}

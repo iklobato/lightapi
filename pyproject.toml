@@ -172,12 +172,9 @@ module = [
     "lightapi.filters",
     "lightapi.config",
     "lightapi.pagination",
-    "lightapi.yaml_loader",
+    "lightapi.yaml_config",
     "lightapi._dict_config_loader",
     "lightapi._login",
-    "lightapi.auth_checker",
-    "lightapi.cache_helper",
-    "lightapi.middleware_runner",
     "lightapi.session_manager",
     "lightapi.table_mapping",
 ]

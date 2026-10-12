@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from sqlalchemy import MetaData
 from sqlalchemy.orm import registry
+from sqlalchemy.pool import SingletonThreadPool, StaticPool
+from starlette.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+# In-memory SQLite runs on one of these. SingletonThreadPool gives every thread
+# its own empty database, and StaticPool shares a single connection that is not
+# safe to use from two threads at once.
+_SINGLE_CONNECTION_POOLS = (SingletonThreadPool, StaticPool)
 
 
 class _GlobalState:
@@ -93,6 +102,20 @@ class SessionManager:
     def engine(self) -> Any:
         """Get the engine."""
         return self._engine
+
+    @property
+    def sync_engine(self) -> Any:
+        """The engine sync code can use: an AsyncEngine's underlying sync one."""
+        return self._engine.sync_engine if self._is_async else self._engine
+
+    async def run_blocking(self, fn: Callable[..., T], *args: Any) -> T:
+        """Run a blocking database call in a worker thread so the event loop stays free.
+
+        An engine on a single-connection pool runs the call in place instead.
+        """
+        if isinstance(self.sync_engine.pool, _SINGLE_CONNECTION_POOLS):
+            return fn(*args)
+        return await run_in_threadpool(fn, *args)
 
     @property
     def metadata(self) -> MetaData:

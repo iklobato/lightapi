@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import asc, desc
+from sqlalchemy import Boolean, Float, Integer, Numeric, asc, desc, or_
 from starlette.requests import Request
 
 
@@ -31,10 +31,12 @@ class BaseFilter:
 
     @staticmethod
     def _coerce_filter_value(col: Any, value: str) -> Any:
-        """Coerce a query-string value to match the column's Python type."""
-        try:
-            from sqlalchemy import Boolean, Float, Integer, Numeric
+        """Coerce a query-string value to match the column's Python type.
 
+        A value the column type cannot parse, or an attribute that is not a
+        column, is passed through as the string it came in as.
+        """
+        try:
             col_type = (
                 col.property.columns[0].type if hasattr(col, "property") else None
             )
@@ -47,7 +49,7 @@ class BaseFilter:
                 return int(value)
             if isinstance(col_type, (Numeric, Float)):
                 return float(value)
-        except Exception:
+        except (ValueError, AttributeError, IndexError):
             pass
         return value
 
@@ -96,8 +98,6 @@ class SearchFilter(BaseFilter):
         search_fields: list[str] = (filtering_cfg.search or []) if filtering_cfg else []
         if not search_fields:
             return queryset
-
-        from sqlalchemy import or_
 
         cls = type(view)
         clauses = []

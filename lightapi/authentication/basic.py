@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Callable
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi._login import _parse_basic_header
+from lightapi._login import LoginRequest
 from lightapi.authentication.base import BaseAuthentication, LoginValidator
+from lightapi.constants import HttpVerb
 
 if TYPE_CHECKING:
     from lightapi.config import Authentication
@@ -44,14 +46,14 @@ class BasicAuthentication(BaseAuthentication):
         )
 
     def authenticate(self, request: Request) -> bool:
-        if request.method == "OPTIONS":
+        if request.method == HttpVerb.OPTIONS:
             return True
 
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             return False
 
-        credentials = _parse_basic_header(auth_header)
+        credentials = LoginRequest.parse_basic_header(auth_header)
         if credentials is None:
             return False
 
@@ -67,7 +69,7 @@ class BasicAuthentication(BaseAuthentication):
     def get_auth_error_response(self, request: Request) -> JSONResponse:
         return JSONResponse(
             {"error": "authentication failed"},
-            status_code=401,
+            status_code=HTTPStatus.UNAUTHORIZED,
             headers={"WWW-Authenticate": 'Basic realm="Restricted Area"'},
         )
 

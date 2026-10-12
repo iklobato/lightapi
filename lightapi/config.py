@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, Callable
 
 from lightapi.constants import (
@@ -9,14 +10,13 @@ from lightapi.constants import (
     DEFAULT_JWT_ALGORITHM,
     DEFAULT_JWT_EXPIRATION,
     DEFAULT_PAGE_SIZE,
-    VALID_JWT_ALGORITHMS,
-    VALID_PAGINATION_STYLES,
+    JwtAlgorithm,
 )
 from lightapi.exceptions import ConfigurationError
-from lightapi.pagination import PAGINATORS, Paginator
+from lightapi.pagination import PaginationStyle, Paginator
 
 if TYPE_CHECKING:
-    from lightapi.authentication import BaseAuthentication
+    from lightapi.authentication.base import BaseAuthentication, BasePermission
     from lightapi.rate_limiter import RateLimiter
 
 
@@ -42,12 +42,7 @@ class Config:
         algorithm = self.jwt_algorithm or os.environ.get(
             "LIGHTAPI_JWT_ALGORITHM", DEFAULT_JWT_ALGORITHM
         )
-        if algorithm not in VALID_JWT_ALGORITHMS:
-            raise ConfigurationError(
-                f"Invalid JWT algorithm '{algorithm}'. "
-                f"Valid algorithms are: {sorted(VALID_JWT_ALGORITHMS)}"
-            )
-        return algorithm
+        return JwtAlgorithm.validated(algorithm)
 
 
 # Default global config instance for backward compatibility
@@ -66,28 +61,25 @@ class Authentication:
     jwt_algorithm: str | None = None
     rate_limiter: "RateLimiter | None" = field(default=None, repr=False)
 
-    def permission_for(self, method: str) -> type:
-        """Permission class for an HTTP method; AllowAny when none is set for it."""
-        # lightapi.authentication imports this module, so this cannot be a top import.
-        from lightapi.authentication import AllowAny
-
+    def permission_for(self, method: str) -> type[BasePermission] | None:
+        """Permission class set for an HTTP method; None when none is set for it."""
         if isinstance(self.permission, dict):
-            return self.permission.get(method) or AllowAny
-        return self.permission or AllowAny
+            return self.permission.get(method)
+        return self.permission
 
     def requires_login(self, method: str) -> bool:
         """Whether the backend has to authenticate a request with this method.
 
-        A backend with no permission set still authenticates. An AllowAny
-        permission, for every method or for this one, makes the request public.
+        A backend with no permission set still authenticates. A permission that
+        does not require authentication (AllowAny), for every method or for this
+        one, makes the request public.
         """
-        from lightapi.authentication import AllowAny
-
         if self.backend is None:
             return False
         if self.permission is None:
             return True
-        return self.permission_for(method) is not AllowAny
+        permission = self.permission_for(method)
+        return permission is not None and permission.requires_authentication
 
     def build_backend(
         self, login_validator: Callable[[str, str], Any] | None = None
@@ -109,20 +101,26 @@ class Filtering:
 class Pagination:
     """Pagination configuration for a RestEndpoint."""
 
-    style: str = "page_number"
+    style: PaginationStyle = PaginationStyle.PAGE_NUMBER
     page_size: int = DEFAULT_PAGE_SIZE
 
-    def __post_init__(self):
-        if self.style not in VALID_PAGINATION_STYLES:
+    def __post_init__(self) -> None:
+        try:
+            style = PaginationStyle(self.style)
+        except ValueError:
             raise ConfigurationError(
                 f"Pagination style '{self.style}' is invalid. "
-                f"Choose from: {VALID_PAGINATION_STYLES}"
-            )
+                f"Choose from: {tuple(valid.value for valid in PaginationStyle)}"
+            ) from None
+        # The documented way to normalise a field of a frozen dataclass.
+        object.__setattr__(self, "style", style)
         if self.page_size < 1:
             raise ConfigurationError("Pagination page_size must be a positive integer.")
 
-    def build_paginator(self) -> Paginator:
-        return PAGINATORS[self.style](self.page_size)
+    @cached_property
+    def paginator(self) -> Paginator:
+        """Built once per configuration; paginators keep no per-request state."""
+        return self.style.build(self.page_size)
 
 
 @dataclass(frozen=True)

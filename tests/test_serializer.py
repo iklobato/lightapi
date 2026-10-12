@@ -9,20 +9,20 @@ from lightapi import LightApi, RestEndpoint
 from lightapi.config import Serializer
 from lightapi.exceptions import ConfigurationError
 from lightapi.fields import Field as LField
-from lightapi.schema import normalise_serializer
+from lightapi.schema import FieldProjection
 
 
 class TestSerializerForm1:
     def test_no_args_returns_all_none(self):
         s = Serializer()
-        f, r, w = normalise_serializer(s)
+        f, r, w = FieldProjection.from_serializer(s)
         assert f is None and r is None and w is None
 
 
 class TestSerializerForm2:
     def test_fields_subset(self):
         s = Serializer(fields=["id", "name"])
-        f, r, w = normalise_serializer(s)
+        f, r, w = FieldProjection.from_serializer(s)
         assert f == ["id", "name"]
         assert r is None and w is None
 
@@ -38,7 +38,7 @@ class TestSerializerForm2:
 class TestSerializerForm3:
     def test_per_verb(self):
         s = Serializer(read=["id", "name", "tag"], write=["id", "name"])
-        f, r, w = normalise_serializer(s)
+        f, r, w = FieldProjection.from_serializer(s)
         assert f is None
         assert r == ["id", "name", "tag"]
         assert w == ["id", "name"]
@@ -50,7 +50,7 @@ class TestSerializerForm4:
             read = ["id", "name", "created_at"]
             write = ["id", "name"]
 
-        f, r, w = normalise_serializer(PubSerializer)
+        f, r, w = FieldProjection.from_serializer(PubSerializer)
         assert f is None
         assert r == ["id", "name", "created_at"]
         assert w == ["id", "name"]
@@ -59,7 +59,7 @@ class TestSerializerForm4:
         class AuditSer(Serializer):
             fields = ["id", "created_at", "updated_at"]
 
-        f, r, w = normalise_serializer(AuditSer)
+        f, r, w = FieldProjection.from_serializer(AuditSer)
         assert f == ["id", "created_at", "updated_at"]
 
     def test_subclass_defines_fields_and_read_raises_at_class_load(self):
@@ -73,7 +73,7 @@ class TestSerializerForm4:
         class EmptySer(Serializer):
             pass
 
-        f, r, w = normalise_serializer(EmptySer)
+        f, r, w = FieldProjection.from_serializer(EmptySer)
         assert f is None and r is None and w is None
 
     def test_shared_subclass_reused_on_two_endpoints(self):
@@ -104,14 +104,14 @@ class TestSerializerValidationGuards:
         from pydantic import BaseModel
 
         with pytest.raises(ConfigurationError):
-            normalise_serializer(BaseModel)
+            FieldProjection.from_serializer(BaseModel)
 
     def test_non_serializer_class_raises(self):
         with pytest.raises(ConfigurationError):
-            normalise_serializer(int)
+            FieldProjection.from_serializer(int)
 
     def test_none_returns_all_none(self):
-        assert normalise_serializer(None) == (None, None, None)
+        assert FieldProjection.from_serializer(None) == (None, None, None)
 
 
 class TestSerializerPipelineIntegration:

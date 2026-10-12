@@ -2,76 +2,47 @@
 
 from __future__ import annotations
 
-import asyncio
-import datetime
+import inspect
 from collections.abc import Callable
-from decimal import Decimal
 from functools import partial
-from typing import TYPE_CHECKING, Any, get_args, get_origin
-from uuid import UUID
+from http import HTTPStatus
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
     from starlette.background import BackgroundTasks
 
-from pydantic import ValidationError
-from sqlalchemy import (
-    Boolean,
-    Column,
-    DateTime,
-    Float,
-    ForeignKey,
-    Integer,
-    Numeric,
-    String,
-    Uuid,
-)
+    from lightapi.session_manager import SessionManager
+
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from sqlalchemy import select as sa_select
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from lightapi.constants import AUTO_FIELDS, HTTPStatus, ResponseKey
+from lightapi.constants import (
+    AUTO_FIELDS,
+    CRUD_VERBS,
+    ApiError,
+    HttpVerb,
+    TableReflection,
+)
 from lightapi.exceptions import ConfigurationError
 from lightapi.pagination import NoPagination
 from lightapi.repository import Repository, RowNotFound, VersionConflict
-from lightapi.schema import (
-    SchemaFactory,
-    _apply_fields,
-    _row_to_dict,
-    normalise_serializer,
-    patch_schema,
-    resolve_fields,
-)
+from lightapi.schema import FieldProjection, SchemaFactory
 from lightapi.session import get_async_session, get_sync_session
 from lightapi.table_mapping import DeclaredTable, ReflectedTable, TableSource
 
 _AUTO_FIELDS = AUTO_FIELDS
 
-_TYPE_MAP: dict[Any, Any] = {
-    str: String,
-    int: Integer,
-    float: Float,
-    bool: Boolean,
-    datetime.datetime: DateTime,
-    Decimal: Numeric,
-    UUID: Uuid,
-}
+# The client's `version` arrives as a raw JSON value (int, numeric string, or
+# whole float); this coerces it the same way pydantic would validate an int
+# field, and rejects anything else with a 422 instead of a TypeError deep in
+# the repository's `expected_version + 1` arithmetic.
+_VERSION_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
 
-_ALL_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
-
-
-def _is_optional(annotation: Any) -> tuple[bool, Any]:
-    """Return (is_optional, inner_type) for an annotation."""
-    import types as _types
-    import typing
-
-    origin = get_origin(annotation)
-    args = get_args(annotation)
-    if origin is typing.Union or origin is _types.UnionType:  # type: ignore[attr-defined]
-        non_none = [a for a in args if a is not type(None)]
-        if len(non_none) == 1 and type(None) in args:
-            return True, non_none[0]
-    return False, annotation
+_NO_PAGINATION: Final = NoPagination()
+_NO_PROJECTION: Final = FieldProjection(None, None, None)
 
 
 class RestEndpointMeta(type):
@@ -93,170 +64,78 @@ class RestEndpointMeta(type):
             "_base_only", False
         )
         if is_base_only:
-            cls._allowed_methods = set(_ALL_METHODS)
+            cls._allowed_methods = {verb.value for verb in CRUD_VERBS}
             cls._meta = {}
             return cls
 
         mcs._process(cls, name, namespace)
         return cls
 
-    @staticmethod
-    def _process(cls: type, name: str, namespace: dict[str, Any]) -> None:
-        _reject_redeclared_auto_fields(name, namespace)
+    @classmethod
+    def _process(mcs, cls: type, name: str, namespace: dict[str, Any]) -> None:
+        mcs._reject_redeclared_auto_fields(name, namespace)
 
         meta_obj = namespace.get("Meta") or getattr(cls, "Meta", None)
-        reflect = getattr(meta_obj, "reflect", False) if meta_obj else False
-        is_reflected = reflect is True or reflect == "full" or reflect == "partial"
+        reflection = TableReflection.from_meta(getattr(meta_obj, "reflect", None))
 
-        cls._meta = _parsed_meta(name, meta_obj)  # type: ignore[attr-defined]
-        cls._allowed_methods = _allowed_methods(cls)  # type: ignore[attr-defined]
+        cls._meta = mcs._parsed_meta(name, meta_obj)  # type: ignore[attr-defined]
+        cls._allowed_methods = mcs._methods_from_mixins(cls)  # type: ignore[attr-defined]
 
-        if is_reflected:
+        if reflection is not None:
             # ReflectedTable.map() builds the schemas once the columns are known.
             cls.__schema_create__ = None  # type: ignore[attr-defined]
             cls.__schema_read__ = None  # type: ignore[attr-defined]
-            cls._table_source = ReflectedTable(partial=reflect == "partial")  # type: ignore[attr-defined]
+            cls._table_source = ReflectedTable(reflection)  # type: ignore[attr-defined]
             return
 
-        columns = [] if reflect else _declared_columns(cls, name, namespace)
         cls.__schema_create__, cls.__schema_read__ = SchemaFactory.build(cls)  # type: ignore[attr-defined]
-        cls._table_source = DeclaredTable(_auto_columns() + columns)  # type: ignore[attr-defined]
+        cls._table_source = DeclaredTable.from_endpoint(cls, name, namespace)  # type: ignore[attr-defined]
 
+    @staticmethod
+    def _reject_redeclared_auto_fields(name: str, namespace: dict[str, Any]) -> None:
+        for auto in AUTO_FIELDS:
+            if auto in namespace.get("__annotations__", {}):
+                raise ConfigurationError(
+                    f"RestEndpoint '{name}': '{auto}' is auto-injected "
+                    "and must not be redeclared."
+                )
 
-def _reject_redeclared_auto_fields(name: str, namespace: dict[str, Any]) -> None:
-    for auto in _AUTO_FIELDS:
-        if auto in namespace.get("__annotations__", {}):
-            raise ConfigurationError(
-                f"RestEndpoint '{name}': '{auto}' is auto-injected "
-                "and must not be redeclared."
-            )
+    @staticmethod
+    def _parsed_meta(name: str, meta_obj: Any) -> dict[str, Any]:
+        raw_serializer = getattr(meta_obj, "serializer", None) if meta_obj else None
 
-
-def _field_annotations(cls: type) -> dict[str, Any]:
-    """Public annotated fields of the class and its bases, with real types."""
-    import typing
-
-    # get_type_hints() resolves the string annotations that
-    # `from __future__ import annotations` leaves behind.
-    try:
-        resolved = typing.get_type_hints(cls)
-    except Exception:
-        resolved = {}
-
-    annotations: dict[str, Any] = {}
-    for base in reversed(cls.__mro__):
-        for field_name, raw in getattr(base, "__annotations__", {}).items():
-            if not field_name.startswith("_") and field_name not in _AUTO_FIELDS:
-                annotations[field_name] = resolved.get(field_name, raw)
-    return annotations
-
-
-def _declared_columns(cls: type, name: str, namespace: dict[str, Any]) -> list[Column]:
-    from pydantic.fields import FieldInfo
-
-    columns: list[Column] = []
-    for field_name, annotation in _field_annotations(cls).items():
-        field_val = namespace.get(field_name) or getattr(cls, field_name, None)
-        field_info = field_val if isinstance(field_val, FieldInfo) else None
-        column = _column_for(name, field_name, annotation, field_info)
-        if column is not None:
-            columns.append(column)
-    return columns
-
-
-def _column_for(
-    endpoint_name: str, field_name: str, annotation: Any, field_info: Any
-) -> Column | None:
-    """The column for one annotated field; None when the field has exclude=True."""
-    extra: dict[str, Any] = (field_info.json_schema_extra or {}) if field_info else {}
-    if extra.get("exclude"):
-        return None
-
-    is_opt, inner = _is_optional(annotation)
-    col_type = _TYPE_MAP.get(inner)
-    if col_type is None:
-        raise ConfigurationError(
-            f"RestEndpoint '{endpoint_name}': annotation '{inner}' on field "
-            f"'{field_name}' is not in the type map. "
-            "Add exclude=True to skip column generation."
-        )
-    if inner is Decimal:
-        col_type = Numeric(scale=extra.get("decimal_places", 10))
-
-    col_args = [ForeignKey(extra["foreign_key"])] if extra.get("foreign_key") else []
-    col_kwargs: dict[str, Any] = {"nullable": is_opt}
-    if extra.get("unique"):
-        col_kwargs["unique"] = True
-    if extra.get("index"):
-        col_kwargs["index"] = True
-    return Column(field_name, col_type, *col_args, **col_kwargs)
-
-
-def _auto_columns() -> list[Column]:
-    """id, created_at, updated_at and version, injected into every declared table."""
-    return [
-        Column("id", Integer, primary_key=True, autoincrement=True),
-        Column("created_at", DateTime, default=datetime.datetime.utcnow),
-        Column(
-            "updated_at",
-            DateTime,
-            default=datetime.datetime.utcnow,
-            onupdate=datetime.datetime.utcnow,
-        ),
-        Column("version", Integer, default=1, nullable=False),
-    ]
-
-
-def _parsed_meta(name: str, meta_obj: Any) -> dict[str, Any]:
-    raw_serializer = getattr(meta_obj, "serializer", None) if meta_obj else None
-
-    # normalise_serializer() rejects every non-Serializer; a pydantic model gets
-    # its own message because it is the mistake people actually make.
-    if isinstance(raw_serializer, type):
-        from pydantic import BaseModel as PydanticBaseModel
-
-        if issubclass(raw_serializer, PydanticBaseModel):
+        # FieldProjection rejects every non-Serializer; a pydantic model gets its
+        # own message because it is the mistake people actually make.
+        if isinstance(raw_serializer, type) and issubclass(raw_serializer, BaseModel):
             raise ConfigurationError(
                 f"Meta.serializer on '{name}' must be a Serializer "
                 "instance or subclass, not a BaseModel subclass."
             )
 
-    return {
-        "authentication": getattr(meta_obj, "authentication", None),
-        "filtering": getattr(meta_obj, "filtering", None),
-        "pagination": getattr(meta_obj, "pagination", None),
-        "serializer_normalised": normalise_serializer(raw_serializer),
-        "cache": getattr(meta_obj, "cache", None),
-        "reflect": getattr(meta_obj, "reflect", False),
-        "table": getattr(meta_obj, "table", None),
-    }
+        return {
+            "authentication": getattr(meta_obj, "authentication", None),
+            "filtering": getattr(meta_obj, "filtering", None),
+            "pagination": getattr(meta_obj, "pagination", None),
+            "serializer_normalised": FieldProjection.from_serializer(raw_serializer),
+            "cache": getattr(meta_obj, "cache", None),
+            "table": getattr(meta_obj, "table", None),
+        }
+
+    @staticmethod
+    def _methods_from_mixins(cls: type) -> set[str]:
+        """HTTP methods named by HttpMethod mixins in the MRO; all when none is."""
+        allowed = {
+            HttpVerb(base._http_method).value
+            for base in cls.__mro__[1:]
+            if getattr(base, "_http_method", None)
+        }
+        return allowed or {verb.value for verb in CRUD_VERBS}
 
 
-def _allowed_methods(cls: type) -> set[str]:
-    """HTTP methods named by HttpMethod mixins in the MRO; all of them when none is."""
-    allowed = {
-        base._http_method
-        for base in cls.__mro__[1:]
-        if getattr(base, "_http_method", None)
-    }
-    return allowed or set(_ALL_METHODS)
-
-
-_ERROR_RESPONSES: dict[type[Exception], tuple[HTTPStatus, str]] = {
-    RowNotFound: (HTTPStatus.NOT_FOUND, "not found"),
-    VersionConflict: (HTTPStatus.CONFLICT, "version conflict"),
+_API_ERRORS: Final[dict[type[Exception], ApiError]] = {
+    RowNotFound: ApiError.NOT_FOUND,
+    VersionConflict: ApiError.VERSION_CONFLICT,
 }
-
-
-def _error_response(error: Exception) -> Response:
-    status, detail = _ERROR_RESPONSES[type(error)]
-    return JSONResponse({ResponseKey.DETAIL: detail}, status_code=status)
-
-
-def _unprocessable(errors: Any) -> Response:
-    return JSONResponse(
-        {ResponseKey.DETAIL: errors}, status_code=HTTPStatus.UNPROCESSABLE_ENTITY
-    )
 
 
 class RestEndpoint(metaclass=RestEndpointMeta):
@@ -287,27 +166,19 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     # ── CRUD helpers ──────────────────────────────────────────────────────────
 
-    def _get_engine(self) -> Any:
-        cls = type(self)
-        session_manager = getattr(cls, "_session_manager", None)
-
+    def _session_manager_or_raise(self) -> SessionManager:
+        """The SessionManager register() bound to this endpoint class."""
+        session_manager = getattr(type(self), "_session_manager", None)
         if session_manager is None:
             raise RuntimeError(
                 "No session_manager configured. "
                 "Ensure LightApi.register() was called with a properly configured app."
             )
+        return session_manager
 
-        engine = session_manager.engine
-
-        # Sync callers use the sync engine; if an AsyncEngine was registered, unwrap it.
-        try:
-            from sqlalchemy.ext.asyncio import AsyncEngine as _AE
-
-            if isinstance(engine, _AE):
-                return engine.sync_engine
-        except ImportError:
-            pass
-        return engine
+    def _get_engine(self) -> Any:
+        """The engine for sync CRUD; an AsyncEngine is unwrapped to its sync one."""
+        return self._session_manager_or_raise().sync_engine
 
     def _get_queryset(self, request: Request) -> Any:
         cls = type(self)
@@ -328,45 +199,45 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             qs = backend_cls().filter_queryset(request, qs, self)
         return qs
 
-    def _serialize_row(self, row: Any, method: str) -> dict[str, Any]:
-        cls = type(self)
-        d = _row_to_dict(row)
-        fields = resolve_fields(cls, method)
-        d = _apply_fields(d, fields)
-        schema = cls.__schema_read__
-        validated = schema.model_validate(d)
+    def _fields_for(self, verb: HttpVerb) -> list[str] | None:
+        """The serializer's field list for a verb, resolved once per request."""
+        projection = self._meta.get("serializer_normalised", _NO_PROJECTION)
+        return projection.for_method(verb)
+
+    def _serialize_row(self, row: Any, fields: list[str] | None) -> dict[str, Any]:
+        d = FieldProjection.apply(SchemaFactory.row_to_dict(row), fields)
+        validated = type(self).__schema_read__.model_validate(d)
         result = validated.model_dump(mode="json")
         # Re-apply projection so Optional fields that aren't in the serializer
         # list don't bleed through as null in the response.
-        if fields is not None:
-            result = {k: v for k, v in result.items() if k in fields}
-        return result
+        return FieldProjection.apply(result, fields)
 
     # ── CRUD core: one implementation, always given an open sync Session ─────
 
     def _list(self, session: Session, request: Request, qs: Any) -> Response:
         pagination = self._meta.get("pagination")
-        paginator = pagination.build_paginator() if pagination else NoPagination()
+        paginator = pagination.paginator if pagination else _NO_PAGINATION
         qs = self._run_filter_backends(request, qs)
-        serialize = partial(self._serialize_row, method="GET")
+        serialize = partial(self._serialize_row, fields=self._fields_for(HttpVerb.GET))
         return JSONResponse(paginator.render(request, qs, session, serialize))
 
     def _retrieve(self, session: Session, pk: int) -> Response:
         try:
             row = self._repository(session).get(pk)
         except RowNotFound as exc:
-            return _error_response(exc)
-        return JSONResponse(self._serialize_row(row, "GET"))
+            return _API_ERRORS[type(exc)].response()
+        return JSONResponse(self._serialize_row(row, self._fields_for(HttpVerb.GET)))
 
     def _create(self, session: Session, data: dict[str, Any]) -> Response:
         try:
             validated = type(self).__schema_create__.model_validate(data)
         except ValidationError as exc:
-            return _unprocessable(exc.errors())
+            return ApiError.validation_failed(exc.errors())
 
         row = self._repository(session).add(validated.model_dump())
         return JSONResponse(
-            self._serialize_row(row, "POST"), status_code=HTTPStatus.CREATED
+            self._serialize_row(row, self._fields_for(HttpVerb.POST)),
+            status_code=HTTPStatus.CREATED,
         )
 
     def _update(
@@ -375,21 +246,25 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         """PUT/PATCH; the client must send the ``version`` it last read."""
         client_version = data.get("version")
         if client_version is None:
-            return _unprocessable(
+            return ApiError.validation_failed(
                 [{"loc": ["version"], "msg": "Field required", "type": "missing"}]
             )
+        try:
+            client_version = _VERSION_ADAPTER.validate_python(client_version)
+        except ValidationError as exc:
+            return ApiError.validation_failed(exc.errors())
 
         repository = self._repository(session)
         try:
             values = self._update_values(data, partial, repository.nullable_columns)
         except ValidationError as exc:
-            return _unprocessable(exc.errors())
+            return ApiError.validation_failed(exc.errors())
 
         try:
             row = repository.update(pk, client_version, values)
         except (RowNotFound, VersionConflict) as exc:
-            return _error_response(exc)
-        return JSONResponse(self._serialize_row(row, "PUT"))
+            return _API_ERRORS[type(exc)].response()
+        return JSONResponse(self._serialize_row(row, self._fields_for(HttpVerb.PUT)))
 
     def _update_values(
         self, data: dict[str, Any], partial: bool, nullable_columns: set[str]
@@ -398,21 +273,21 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         schema_create = type(self).__schema_create__
         if not partial:
             values = schema_create.model_validate(data).model_dump()
-            return {k: v for k, v in values.items() if k not in _AUTO_FIELDS}
+            return {k: v for k, v in values.items() if k not in AUTO_FIELDS}
 
-        sent = patch_schema(schema_create).model_validate(data)
+        sent = SchemaFactory.patch_schema(schema_create).model_validate(data)
         # An explicit null clears a nullable column; on any other column it is ignored.
         return {
             k: v
             for k, v in sent.model_dump(exclude_unset=True).items()
-            if k not in _AUTO_FIELDS and (v is not None or k in nullable_columns)
+            if k not in AUTO_FIELDS and (v is not None or k in nullable_columns)
         }
 
     def _destroy(self, session: Session, pk: int) -> Response:
         try:
             self._repository(session).delete(pk)
         except RowNotFound as exc:
-            return _error_response(exc)
+            return _API_ERRORS[type(exc)].response()
         return Response(status_code=HTTPStatus.NO_CONTENT)
 
     def _repository(self, session: Session) -> Repository:
@@ -448,32 +323,13 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     # ── Async CRUD: the same core, run through AsyncSession.run_sync ──────────
 
     async def _get_queryset_async(self, request: Request) -> Any:
-        """Resolve queryset; await if it is a coroutine function."""
-        cls = type(self)
-        qs_attr = cls.__dict__.get("queryset")
-        if qs_attr is None:
-            qs_attr = getattr(cls, "queryset", None)
-        if qs_attr is None:
-            return sa_select(cls._model_class)
-        if asyncio.iscoroutinefunction(qs_attr):
-            result = await qs_attr(self, request)
-            return result
-        if callable(qs_attr):
-            return qs_attr(self, request)
-        return qs_attr
+        """_get_queryset(), awaiting the result of an ``async def queryset``."""
+        qs = self._get_queryset(request)
+        return await qs if inspect.isawaitable(qs) else qs
 
     def _get_async_engine(self) -> Any:
         """Return the raw (AsyncEngine) engine for async session creation."""
-        cls = type(self)
-        session_manager = getattr(cls, "_session_manager", None)
-
-        if session_manager is None:
-            raise RuntimeError(
-                "No session_manager configured. "
-                "Ensure LightApi.register() was called with a properly configured app."
-            )
-
-        return session_manager.engine
+        return self._session_manager_or_raise().engine
 
     async def _in_async_session(self, work: Callable[[Session], Response]) -> Response:
         async with get_async_session(self._get_async_engine()) as session:

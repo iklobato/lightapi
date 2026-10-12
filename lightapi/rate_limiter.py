@@ -4,9 +4,32 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict
+from enum import Enum
+from http import HTTPStatus
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+
+
+class RateLimitWindow(str, Enum):
+    """A sliding window of the limiter; the value names it in store keys and headers."""
+
+    MINUTE = "minute"
+    HOUR = "hour"
+    DAY = "day"
+
+    @property
+    def seconds(self) -> int:
+        if self is RateLimitWindow.HOUR:
+            return 3600
+        if self is RateLimitWindow.DAY:
+            return 86400
+        return 60
+
+    @classmethod
+    def from_key(cls, key: str) -> "RateLimitWindow":
+        """The window of a store key such as "auth:minute" or "minute"."""
+        return cls(key.rsplit(":", 1)[-1])
 
 
 class RateLimiter:
@@ -32,6 +55,15 @@ class RateLimiter:
         )
         self._cleanup_interval = 300  # Cleanup every 5 minutes
         self._last_cleanup = time.time()
+
+    @classmethod
+    def from_limits(
+        cls, limits: dict[str, int], defaults: dict[str, int]
+    ) -> RateLimiter:
+        """A limiter from ``requests_per_*`` keys; a missing key takes its default."""
+        return cls(
+            **{name: limits.get(name, default) for name, default in defaults.items()}
+        )
 
     def reset(self) -> None:
         """Reset all rate limit tracking. Useful for testing."""
@@ -66,18 +98,15 @@ class RateLimiter:
         self._last_cleanup = current_time
 
     def _get_window_seconds(self, window: str) -> int:
-        """Convert window name to seconds."""
-        # Extract window name from key (e.g., "auth:minute" -> "minute")
-        window_name = window.split(":")[-1] if ":" in window else window
+        """Seconds covered by a store key such as "auth:minute"."""
+        return RateLimitWindow.from_key(window).seconds
 
-        if window_name == "minute":
-            return 60
-        elif window_name == "hour":
-            return 3600
-        elif window_name == "day":
-            return 86400
-        else:
-            return 60
+    def _limit_for(self, window: RateLimitWindow) -> int:
+        if window is RateLimitWindow.HOUR:
+            return self.requests_per_hour
+        if window is RateLimitWindow.DAY:
+            return self.requests_per_day
+        return self.requests_per_minute
 
     def _get_client_ip(self, request: Request) -> str:
         """Extract client IP from request."""
@@ -113,26 +142,18 @@ class RateLimiter:
         client_ip = self._get_client_ip(request)
         current_time = time.time()
 
-        # Check each window
-        windows = [
-            ("minute", self.requests_per_minute),
-            ("hour", self.requests_per_hour),
-            ("day", self.requests_per_day),
-        ]
-
-        for window_name, limit in windows:
-            window_seconds = self._get_window_seconds(window_name)
-            window_key = f"{endpoint}:{window_name}" if endpoint else window_name
+        for window in RateLimitWindow:
+            window_key = f"{endpoint}:{window.value}" if endpoint else window.value
 
             # Count requests in this window
             count = 0
             for timestamp, request_count in self._store[client_ip][window_key].items():
-                if current_time - timestamp < window_seconds:
+                if current_time - timestamp < window.seconds:
                     count += request_count
 
-            if count >= limit:
+            if count >= self._limit_for(window):
                 # Don't count this request since it's being blocked
-                return (True, window_name)
+                return (True, window.value)
 
             # Add current request
             self._store[client_ip][window_key][current_time] = (
@@ -142,33 +163,25 @@ class RateLimiter:
         return (False, None)
 
     def get_rate_limit_response(
-        self, request: Request, window: str = "minute"
+        self, request: Request, window: str = RateLimitWindow.MINUTE.value
     ) -> JSONResponse:
         """Get standard rate limit exceeded response."""
-        # Determine window-specific values
-        if window == "hour":
-            limit = self.requests_per_hour
-            retry_after = 3600
-            reset_seconds = 3600
-        elif window == "day":
-            limit = self.requests_per_day
-            retry_after = 86400
-            reset_seconds = 86400
-        else:  # minute
-            limit = self.requests_per_minute
-            retry_after = 60
-            reset_seconds = 60
+        try:
+            exceeded = RateLimitWindow(window)
+        except ValueError:
+            # An unknown window name has always been answered as the minute window.
+            exceeded = RateLimitWindow.MINUTE
 
         return JSONResponse(
             {
                 "error": "rate_limit_exceeded",
                 "detail": "Too many requests. Please try again later.",
             },
-            status_code=429,
+            status_code=HTTPStatus.TOO_MANY_REQUESTS,
             headers={
-                "Retry-After": str(retry_after),
-                "X-RateLimit-Limit": str(limit),
+                "Retry-After": str(exceeded.seconds),
+                "X-RateLimit-Limit": str(self._limit_for(exceeded)),
                 "X-RateLimit-Remaining": "0",
-                "X-RateLimit-Reset": str(int(time.time() + reset_seconds)),
+                "X-RateLimit-Reset": str(int(time.time() + exceeded.seconds)),
             },
         )

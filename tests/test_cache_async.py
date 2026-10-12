@@ -34,8 +34,8 @@ async def client():
 async def test_async_get_list_cache_hit_returns_cached_body(client):
     cached_body = {"results": [{"id": 1, "name": "from-cache"}]}
 
-    with patch("lightapi.cache_helper.get_cached", return_value=cached_body):
-        with patch("lightapi.cache_helper.set_cached") as mock_set:
+    with patch("lightapi.cache.RedisCacheBackend.get", return_value=cached_body):
+        with patch("lightapi.cache.RedisCacheBackend.set") as mock_set:
             response = await client.get("/asynccached")
 
     assert response.status_code == 200
@@ -44,8 +44,8 @@ async def test_async_get_list_cache_hit_returns_cached_body(client):
 
 
 async def test_async_get_list_cache_miss_stores_response_with_ttl(client):
-    with patch("lightapi.cache_helper.get_cached", return_value=None):
-        with patch("lightapi.cache_helper.set_cached") as mock_set:
+    with patch("lightapi.cache.RedisCacheBackend.get", return_value=None):
+        with patch("lightapi.cache.RedisCacheBackend.set") as mock_set:
             response = await client.get("/asynccached")
 
     assert response.status_code == 200
@@ -56,7 +56,7 @@ async def test_async_get_list_cache_miss_stores_response_with_ttl(client):
 
 
 async def test_async_post_invalidates_the_endpoint_prefix(client):
-    with patch("lightapi.cache_helper.invalidate_cache_prefix") as mock_invalidate:
+    with patch("lightapi.cache.RedisCacheBackend.invalidate_prefix") as mock_invalidate:
         response = await client.post("/asynccached", json={"name": "fresh"})
 
     assert response.status_code == 201
@@ -64,9 +64,11 @@ async def test_async_post_invalidates_the_endpoint_prefix(client):
 
 
 async def test_async_get_does_not_invalidate(client):
-    with patch("lightapi.cache_helper.get_cached", return_value=None):
-        with patch("lightapi.cache_helper.set_cached"):
-            with patch("lightapi.cache_helper.invalidate_cache_prefix") as mock_inv:
+    with patch("lightapi.cache.RedisCacheBackend.get", return_value=None):
+        with patch("lightapi.cache.RedisCacheBackend.set"):
+            with patch(
+                "lightapi.cache.RedisCacheBackend.invalidate_prefix"
+            ) as mock_inv:
                 await client.get("/asynccached")
 
     mock_inv.assert_not_called()

@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.constants import HTTPStatus, ResponseKey
+from lightapi.constants import ApiError, HttpVerb
 
 if TYPE_CHECKING:
     from lightapi.authentication.base import BaseAuthentication, LoginValidator
@@ -22,58 +22,48 @@ logger = logging.getLogger(__name__)
 
 
 class LoginRequest(BaseModel):
-    """Request body for POST /auth/login and /auth/token."""
+    """Credentials of POST /auth/login and /auth/token: JSON body or Basic header."""
 
     model_config = ConfigDict(frozen=True)
 
     username: str = Field(min_length=1)
     password: str = Field(min_length=1)
 
+    @classmethod
+    async def from_request(cls, request: Request) -> LoginRequest | None:
+        """The credentials sent, or None for a malformed Basic header (a 401).
 
-def _parse_basic_header(auth_header: str) -> tuple[str, str] | None:
-    """
-    Decode Authorization: Basic header.
+        Without a Basic header the JSON body is validated, so a bad body raises
+        ValidationError (a 422). Basic credentials are taken as sent, unvalidated,
+        as they always were.
+        """
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Basic "):
+            parsed = cls.parse_basic_header(auth_header)
+            if parsed is None:
+                return None
+            return cls.model_construct(username=parsed[0], password=parsed[1])
 
-    Returns (username, password) or None if malformed.
-    """
-    if not auth_header.lower().startswith("basic "):
-        return None
-    try:
-        token = auth_header.split(" ", 1)[1]
-        decoded = base64.b64decode(token).decode("utf-8")
-    except (ValueError, IndexError, UnicodeDecodeError):
-        return None
-    parts = decoded.split(":", 1)
-    if len(parts) != 2:
-        return None
-    return parts[0], parts[1]
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            body = {}
+        return cls.model_validate(body if body else {})
 
-
-async def _parse_credentials(request: Request) -> tuple[str, str] | None:
-    """
-    Extract (username, password) from request.
-
-    - If Authorization: Basic present: returns (u, p) or None if malformed.
-    - If no Basic header: reads body, validates with LoginRequest.
-      Returns (u, p) if valid. Raises ValidationError for body (caller returns 422).
-    - None means malformed Basic (caller returns 401).
-    """
-    auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Basic "):
-        return _parse_basic_header(auth_header)
-
-    body = await _read_body(request)
-    parsed = LoginRequest.model_validate(body if body else {})
-    return parsed.username, parsed.password
-
-
-async def _read_body(request: Request) -> dict[str, Any]:
-    """Read JSON body; return {} on empty or invalid."""
-    try:
-        body = await request.body()
-        return json.loads(body) if body else {}
-    except (json.JSONDecodeError, TypeError):
-        return {}
+    @staticmethod
+    def parse_basic_header(auth_header: str) -> tuple[str, str] | None:
+        """(username, password) of an ``Authorization: Basic`` header; None if bad."""
+        if not auth_header.lower().startswith("basic "):
+            return None
+        try:
+            token = auth_header.split(" ", 1)[1]
+            decoded = base64.b64decode(token).decode("utf-8")
+        except (ValueError, IndexError, UnicodeDecodeError):
+            return None
+        parts = decoded.split(":", 1)
+        if len(parts) != 2:
+            return None
+        return parts[0], parts[1]
 
 
 class LoginEndpoint:
@@ -101,27 +91,21 @@ class LoginEndpoint:
         if is_limited:
             return self._rate_limiter.get_rate_limit_response(request, window)
 
-        if request.method != "POST":
-            return JSONResponse(
-                {ResponseKey.DETAIL: "method not allowed"},
-                status_code=HTTPStatus.METHOD_NOT_ALLOWED,
-                headers={"Allow": "POST"},
-            )
+        if request.method != HttpVerb.POST:
+            return ApiError.LOGIN_METHOD_NOT_ALLOWED.response()
 
         try:
-            creds = await _parse_credentials(request)
+            credentials = await LoginRequest.from_request(request)
         except ValidationError as exc:
-            return JSONResponse(
-                {ResponseKey.DETAIL: exc.errors()},
-                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            )
+            return ApiError.validation_failed(exc.errors())
 
-        user = await self._validated_user(*creds) if creds is not None else None
-        if user is None:
-            return JSONResponse(
-                {ResponseKey.DETAIL: "Invalid credentials"},
-                status_code=HTTPStatus.UNAUTHORIZED,
+        user = None
+        if credentials is not None:
+            user = await self._validated_user(
+                credentials.username, credentials.password
             )
+        if user is None:
+            return ApiError.INVALID_CREDENTIALS.response()
         return JSONResponse(self._backend.login_response(user))
 
     async def _validated_user(
