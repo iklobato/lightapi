@@ -88,3 +88,42 @@ class TestB1011TableCreationFailureRaises:
             app.build_app()
 
         assert isinstance(info.value.__cause__, OperationalError)
+
+
+class AuditVaried(RestEndpoint):
+    label: str = Field(min_length=1)
+
+    class Meta:
+        table = "audit_varied"
+        cache = Cache(ttl=60, vary_on=["page"])
+
+
+class TestB6002CacheVaryOn:
+    """B6-002: `Cache(vary_on=[...])` is documented as "only the listed query
+    parameters contribute to the key" and was never read: the key held the whole
+    query string."""
+
+    def _keys_for(self, *paths: str) -> list[str]:
+        app = LightApi(engine=_memory_engine())
+        app.register({"/varied": AuditVaried})
+        with patch("lightapi.cache.RedisCacheBackend.ping", return_value=True):
+            client = TestClient(app.build_app())
+        with (
+            patch("lightapi.cache.RedisCacheBackend.get", return_value=None),
+            patch("lightapi.cache.RedisCacheBackend.set") as mock_set,
+        ):
+            for path in paths:
+                assert client.get(path).status_code == 200
+        return [call.args[0] for call in mock_set.call_args_list]
+
+    def test_unlisted_parameters_do_not_change_the_key(self):
+        keys = self._keys_for(
+            "/varied?page=1&q=a", "/varied?page=1&q=b", "/varied?page=1"
+        )
+
+        assert keys[0] == keys[1] == keys[2]
+
+    def test_listed_parameter_still_changes_the_key(self):
+        keys = self._keys_for("/varied?page=1", "/varied?page=2")
+
+        assert keys[0] != keys[1]
