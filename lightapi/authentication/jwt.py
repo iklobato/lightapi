@@ -124,7 +124,9 @@ class JWTAuthentication(BaseAuthentication):
             raise ValueError("JWT secret not configured")
 
         if expiration is None:
-            expiration = self.expiration or 3600
+            # The backend's own setting, else the app-wide Config.jwt_expiration
+            # (B6-003: that field existed and was never read).
+            expiration = self.expiration or config.jwt_expiration
 
         payload_copy = payload.copy()
         payload_copy["exp"] = datetime.now(timezone.utc) + timedelta(seconds=expiration)

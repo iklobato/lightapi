@@ -92,12 +92,32 @@ jobs:
             with open('pyproject.toml', 'wb') as f:
                 tomli_w.dump(data, f)
 
+        def published(version):
+            # True when PyPI already serves this version.
+            import urllib.error
+            import urllib.request
+            url = f"https://pypi.org/pypi/lightapi/{version}/json"
+            try:
+                with urllib.request.urlopen(url, timeout=20) as response:
+                    return response.status == 200
+            except urllib.error.HTTPError as exc:
+                if exc.code == 404:
+                    return False
+                raise
+
         if __name__ == "__main__":
             current = get_current_version()
-            new = increment_version(current)
-            update_version(new)
-            print(f"Updated version from {current} to {new}")
-            
+            if published(current):
+                # A merge with no bump of its own: the next patch, as before.
+                new = increment_version(current)
+                update_version(new)
+                print(f"Updated version from {current} to {new}")
+            else:
+                # A deliberate bump in pyproject.toml (0.3.0 after 0.2.1):
+                # publish exactly what the tree declares.
+                new = current
+                print(f"Publishing the declared version {new}")
+
             # Write to GitHub output
             with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                 f.write(f"new_version={new}\n")

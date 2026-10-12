@@ -27,7 +27,7 @@ from lightapi.constants import (
     TableReflection,
 )
 from lightapi.exceptions import ConfigurationError
-from lightapi.filters import FilterValueError
+from lightapi.filters import BaseFilter, FilterValueError
 from lightapi.pagination import NoPagination
 from lightapi.repository import (
     ConstraintViolation,
@@ -162,6 +162,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     """
 
     _model_class: type | None = None
+    _filter_backend_instances: ClassVar[tuple[BaseFilter, ...] | None] = None
     _table_source: TableSource
     _meta: dict[str, Any]
     _allowed_methods: set[str]
@@ -226,12 +227,26 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         return qs_attr
 
     def _run_filter_backends(self, request: Request, qs: Select[Any]) -> Select[Any]:
-        filtering = self._meta.get("filtering")
-        if not filtering or not filtering.backends:
-            return qs
-        for backend_cls in filtering.backends:
-            qs = backend_cls().filter_queryset(request, qs, self)
+        for backend in self._filter_backends():
+            qs = backend.filter_queryset(request, qs, self)
         return qs
+
+    @classmethod
+    def _filter_backends(cls) -> tuple[BaseFilter, ...]:
+        """The Meta.filtering backends, instantiated once per endpoint class.
+
+        Read from the class's own __dict__ so a subclass with its own Meta never
+        serves its parent's instances.
+        """
+        cached = cls.__dict__.get("_filter_backend_instances")
+        if cached is None:
+            filtering = cls._meta.get("filtering")
+            cached = tuple(
+                backend_cls()
+                for backend_cls in (filtering.backends if filtering else None) or ()
+            )
+            cls._filter_backend_instances = cached
+        return cached
 
     def _fields_for(self, verb: HttpVerb) -> list[str] | None:
         """The serializer's field list for a verb, resolved once per request."""

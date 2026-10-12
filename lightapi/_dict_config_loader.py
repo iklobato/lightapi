@@ -17,6 +17,7 @@ from lightapi.authentication import (
 )
 from lightapi.config import Authentication, Filtering, Pagination
 from lightapi.constants import HTTP_METHOD_MIXINS
+from lightapi.exceptions import ConfigurationError
 from lightapi.rest import RestEndpoint
 
 if TYPE_CHECKING:
@@ -94,11 +95,15 @@ class DictConfig:
             try:
                 kind = DictAuthKind(auth)
             except ValueError:
-                kind = None
-            if kind is not None:
-                attrs["authentication"] = Authentication(
-                    backend=kind.backend, permission=AllowAny
-                )
+                # B1-001: an unknown kind used to be dropped, and the endpoint
+                # served with no backend at all.
+                raise ConfigurationError(
+                    f"Unknown auth '{auth}' in the dict config; "
+                    f"valid: {sorted(k.value for k in DictAuthKind)}."
+                ) from None
+            attrs["authentication"] = Authentication(
+                backend=kind.backend, permission=AllowAny
+            )
 
         paginate = spec.get("paginate")
         if isinstance(paginate, dict):

@@ -88,6 +88,7 @@ class LightApi:
         rate_limiter: RateLimiter | dict[str, int] | None = None,
         login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
         use_test_isolation: bool = False,
+        cors_allow_credentials: bool = False,
     ) -> None:
         self._mode = ExecutionMode.from_user(mode)
         # Sync or async is a runtime fact (ExecutionMode), so the attribute is loose.
@@ -115,6 +116,13 @@ class LightApi:
         self._endpoint_map: dict[str, type[RestEndpoint]] = {}
         self._middlewares: list[type[Middleware]] = middlewares or []
         self._cors_origins: list[str] = cors_origins or []
+        if cors_allow_credentials and "*" in self._cors_origins:
+            # The combination browsers reject: a wildcard origin may not carry
+            # credentials (Fetch spec); it used to be the silent default (B11-001).
+            raise ConfigurationError(
+                "cors_allow_credentials=True needs explicit cors_origins, not '*'."
+            )
+        self._cors_allow_credentials = cors_allow_credentials
         self._auth_path = auth_path
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -140,6 +148,11 @@ class LightApi:
         if self._mode is ExecutionMode.ASYNC:
             self._require_async_engine(self._engine)
 
+        for middleware_cls in self._middlewares:
+            # The chain builds a fresh instance per request, so a constructor that
+            # refuses (CORSMiddleware without origins) would be a 500 on the first
+            # request; this makes it a register() error instead.
+            middleware_cls()
         app_context = AppContext(
             MiddlewareChain(self._middlewares), self._mode, self._login_validator
         )
@@ -183,8 +196,12 @@ class LightApi:
         if backend is None:
             return []
 
-        rate_limiter = self._rate_limiter_global or RateLimiter(
-            **self._LOGIN_RATE_LIMITS
+        # The endpoint's Authentication(rate_limiter=...) wins over the app-wide
+        # one, which wins over the defaults (B15-002: the first was never read).
+        rate_limiter = (
+            getattr(backend, "rate_limiter", None)
+            or self._rate_limiter_global
+            or RateLimiter(**self._LOGIN_RATE_LIMITS)
         )
         login = LoginEndpoint(backend, self._login_validator, rate_limiter)
         auth_path = self._auth_path.rstrip("/")
@@ -252,7 +269,7 @@ class LightApi:
             app.add_middleware(
                 StarletteCORSMiddleware,
                 allow_origins=self._cors_origins,
-                allow_credentials=True,
+                allow_credentials=self._cors_allow_credentials,
                 allow_methods=["*"],
                 allow_headers=["*"],
             )
@@ -346,8 +363,8 @@ class LightApi:
             else:
                 metadata.create_all(bind=self._engine)
                 logger.info("Tables created/verified against %s", self._engine.url)
-        except SQLAlchemyError:
-            logger.warning("Table creation warning", exc_info=True)
+        except SQLAlchemyError as exc:
+            raise self._table_creation_failed(exc) from exc
 
     @contextlib.asynccontextmanager
     async def _lifespan(self, _: Starlette) -> AsyncIterator[None]:
@@ -362,9 +379,17 @@ class LightApi:
             async with self._engine.begin() as conn:
                 await conn.run_sync(metadata.create_all)
             logger.info("Tables created/verified against %s", self._engine.url)
-        except SQLAlchemyError:
-            logger.warning("Table creation warning", exc_info=True)
+        except SQLAlchemyError as exc:
+            raise self._table_creation_failed(exc) from exc
         yield
+
+    @staticmethod
+    def _table_creation_failed(exc: SQLAlchemyError) -> ConfigurationError:
+        """B1-011: a DDL failure stops the app instead of serving 500s later."""
+        return ConfigurationError(
+            "Table creation failed; the app cannot serve without its tables. "
+            f"Database said: {exc}"
+        )
 
     def _create_tables_inside_running_loop(self, metadata: MetaData) -> None:
         """build_app() called inside a loop that is already running (pytest-asyncio)

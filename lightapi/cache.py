@@ -182,7 +182,17 @@ class EndpointCache:
         RedisCacheBackend.shared().set(self._key(request), body, self._config.ttl)
 
     def _key(self, request: Request) -> str:
-        query = str(request.query_params)
+        # Cache(vary_on=[...]): only the listed parameters tell responses apart,
+        # as docs/advanced/caching.md promises; without it, the whole query does.
+        vary_on = self._config.vary_on if self._config is not None else ()
+        if vary_on:
+            query = "&".join(
+                f"{name}={value}"
+                for name, value in sorted(request.query_params.multi_items())
+                if name in vary_on
+            )
+        else:
+            query = str(request.query_params)
         return f"lightapi:{self._endpoint_name}:{request.url.path}:{query}"
 
     def _key_prefix(self) -> str:
