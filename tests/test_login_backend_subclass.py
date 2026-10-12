@@ -18,7 +18,7 @@ from lightapi import (
 )
 from lightapi.fields import Field as LField
 
-SECRET = "subclass-login-secret"
+SECRET = "subclass-login-secret-at-least-32-bytes-long"
 EXPIRATION_SECONDS = 120
 
 

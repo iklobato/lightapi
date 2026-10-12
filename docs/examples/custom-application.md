@@ -87,7 +87,7 @@ if __name__ == "__main__":
 ## Testing it
 
 ```bash
-export LIGHTAPI_JWT_SECRET="dev-secret"
+export LIGHTAPI_JWT_SECRET="dev-secret-at-least-32-bytes-long"
 python main.py
 ```
 
@@ -98,7 +98,7 @@ curl http://localhost:8000/items
 # Authenticated POST — requires JWT
 TOKEN=$(python -c "
 from lightapi.authentication import JWTAuthentication
-import os; os.environ['LIGHTAPI_JWT_SECRET']='dev-secret'
+import os; os.environ['LIGHTAPI_JWT_SECRET']='dev-secret-at-least-32-bytes-long'
 auth = JWTAuthentication()
 print(auth.generate_token({'sub': '1', 'is_admin': False}))
 ")

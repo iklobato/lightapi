@@ -236,7 +236,7 @@ from sqlalchemy import create_engine
 from lightapi import LightApi, RestEndpoint, Field, Authentication
 from lightapi.authentication import JWTAuthentication, IsAuthenticated
 
-os.environ["LIGHTAPI_JWT_SECRET"] = "dev-secret"
+os.environ["LIGHTAPI_JWT_SECRET"] = "dev-secret-at-least-32-bytes-long"
 
 class ItemEndpoint(RestEndpoint):
     name:  str   = Field(min_length=1)

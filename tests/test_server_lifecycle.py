@@ -109,7 +109,7 @@ class T407Secret(RestEndpoint):
 
 
 def test_login_rate_limit_returns_429_with_headers(monkeypatch):
-    monkeypatch.setenv("LIGHTAPI_JWT_SECRET", "t407-secret")
+    monkeypatch.setenv("LIGHTAPI_JWT_SECRET", "t407-secret-at-least-32-bytes-long")
 
     def validator(username, password):
         return {"sub": username} if password == "right" else None
@@ -132,7 +132,9 @@ def test_login_rate_limit_returns_429_with_headers(monkeypatch):
 
 
 def test_default_rate_limit_is_generous_for_normal_use(monkeypatch):
-    monkeypatch.setenv("LIGHTAPI_JWT_SECRET", "t407-defaults-secret")
+    monkeypatch.setenv(
+        "LIGHTAPI_JWT_SECRET", "t407-defaults-secret-at-least-32-bytes-long"
+    )
 
     def validator(username, password):
         return {"sub": username}

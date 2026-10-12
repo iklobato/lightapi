@@ -45,7 +45,11 @@ def client():
     )
     app = LightApi(engine=engine)
     app.register({"/cached": CachedEndpoint})
-    return TestClient(app.build_app())
+    # build_app pings Redis; these tests patch the backend's calls, so no server
+    # is needed and the startup warning (an error under the suite's warnings
+    # policy) must not depend on one being around.
+    with patch("lightapi.cache.RedisCacheBackend.ping", return_value=True):
+        return TestClient(app.build_app())
 
 
 class TestCacheGetList:
@@ -136,7 +140,8 @@ class TestCacheVaryOn:
         )
         app = LightApi(engine=engine)
         app.register({"/cached_vary": CachedVaryOnEndpoint})
-        c = TestClient(app.build_app())
+        with patch("lightapi.cache.RedisCacheBackend.ping", return_value=True):
+            c = TestClient(app.build_app())
         c.post("/cached_vary", json={"label": "x"})
 
         with (

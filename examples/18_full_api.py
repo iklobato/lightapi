@@ -12,7 +12,7 @@ Demonstrates:
 
 Notes:
     Uses SQLite by default (swap DATABASE_URL for PostgreSQL).
-    JWT secret defaults to "secret" — override via LIGHTAPI_JWT_SECRET.
+    JWT secret defaults to a 32-byte example value — override via LIGHTAPI_JWT_SECRET.
 
 Run with:
     python examples/18_full_api.py
@@ -47,7 +47,7 @@ from lightapi.fields import Field
 from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
 
 DATABASE_URL = "sqlite:///:memory:"
-os.environ.setdefault("LIGHTAPI_JWT_SECRET", "secret")
+os.environ.setdefault("LIGHTAPI_JWT_SECRET", "example-secret-at-least-32-bytes-long")
 
 
 def login_validator(username: str, password: str):

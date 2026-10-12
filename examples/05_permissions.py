@@ -8,7 +8,7 @@ Demonstrates:
 
 Notes:
     Uses SQLite by default (swap DATABASE_URL for PostgreSQL).
-    JWT secret defaults to "secret" — override via LIGHTAPI_JWT_SECRET.
+    JWT secret defaults to a 32-byte example value — override via LIGHTAPI_JWT_SECRET.
 
 Run with:
     python examples/05_permissions.py
@@ -22,7 +22,7 @@ Then try:
 
     # Admin endpoint - needs JWT with is_admin=true
     # Get admin token:
-    # python -c "import jwt; print(jwt.encode({'sub':'1','is_admin':True}, 'secret', algorithm='HS256'))"
+    # python -c "import jwt; print(jwt.encode({'sub':'1','is_admin':True}, 'example-secret-at-least-32-bytes-long', algorithm='HS256'))"
 """
 
 import os
@@ -42,7 +42,7 @@ from lightapi import (
 )
 
 DATABASE_URL = "sqlite:///:memory:"
-os.environ.setdefault("LIGHTAPI_JWT_SECRET", "secret")
+os.environ.setdefault("LIGHTAPI_JWT_SECRET", "example-secret-at-least-32-bytes-long")
 
 
 def login_validator(username: str, password: str):

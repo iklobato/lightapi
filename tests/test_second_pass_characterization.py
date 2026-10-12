@@ -35,7 +35,9 @@ from lightapi.config import Config
 from lightapi.exceptions import ConfigurationError
 from lightapi.fields import Field as LField
 
-os.environ.setdefault("LIGHTAPI_JWT_SECRET", "second-pass-secret")
+os.environ.setdefault(
+    "LIGHTAPI_JWT_SECRET", "second-pass-secret-at-least-32-bytes-long"
+)
 
 
 def _memory_engine():

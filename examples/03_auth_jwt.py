@@ -43,7 +43,7 @@ from lightapi.fields import Field
 DATABASE_URL = "sqlite:///:memory:"
 
 # Set JWT secret
-os.environ.setdefault("LIGHTAPI_JWT_SECRET", "my-secret")
+os.environ.setdefault("LIGHTAPI_JWT_SECRET", "my-secret-at-least-32-bytes-long")
 
 
 def login_validator(username: str, password: str):

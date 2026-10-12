@@ -303,7 +303,7 @@ import os
 from lightapi import RestEndpoint, Authentication, Field
 from lightapi.authentication import JWTAuthentication, IsAuthenticated, IsAdminUser
 
-os.environ["LIGHTAPI_JWT_SECRET"] = "your-secret-key"
+os.environ["LIGHTAPI_JWT_SECRET"] = "your-secret-key-at-least-32-bytes-long"
 
 class ProtectedEndpoint(RestEndpoint):
     secret: str = Field(min_length=1)
