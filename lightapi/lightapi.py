@@ -294,7 +294,7 @@ class LightApi:
     ) -> LightApi:
         """Create a LightApi instance from a Python dictionary.
 
-        Deprecated: removed in 0.2.0. Declare RestEndpoint subclasses and call
+        Deprecated: removed in 0.3.0. Declare RestEndpoint subclasses and call
         register(), or use from_config() with a YAML file.
 
         Example::
@@ -315,7 +315,7 @@ class LightApi:
             app = LightApi.from_dict(config)
         """
         warnings.warn(
-            "LightApi.from_dict is deprecated and will be removed in 0.2.0. "
+            "LightApi.from_dict is deprecated and will be removed in 0.3.0. "
             "Declare RestEndpoint subclasses and call register(), or use "
             "from_config() with a YAML file.",
             DeprecationWarning,
