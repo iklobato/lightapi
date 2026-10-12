@@ -200,7 +200,15 @@ Enable Cross-Origin Resource Sharing by passing `cors_origins` to `LightApi`:
 app = LightApi(engine=engine, cors_origins=["https://myapp.com", "http://localhost:3000"])
 ```
 
-This wraps the Starlette app with `starlette.middleware.cors.CORSMiddleware`.
+This wraps the Starlette app with `starlette.middleware.cors.CORSMiddleware`. Credentials
+(cookies, `Authorization` on cross-origin calls) are off unless you pass
+`cors_allow_credentials=True`, and that flag refuses a `"*"` origin, the combination
+browsers reject.
+
+The compatibility class `lightapi.core.CORSMiddleware` (a `Middleware` subclass that only
+runs on the endpoint's own verbs) needs its origins spelled out too; a bare
+`CORSMiddleware` in `middlewares=[...]` or a YAML `middleware:` list is a
+`ConfigurationError` at `register()`. Subclass it with the list, or use `cors_origins`.
 
 ### `AuthenticationMiddleware`
 

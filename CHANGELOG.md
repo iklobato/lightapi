@@ -9,7 +9,28 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+- **CORS credentials are opt-in**: `LightApi(cors_origins=[...])` no longer sends
+  `Access-Control-Allow-Credentials: true` by itself; pass `cors_allow_credentials=True`,
+  which refuses a `"*"` origin (browsers reject that pair anyway).
+- **`lightapi.core.CORSMiddleware` needs `allow_origins`**: the compat class defaulted to
+  `"*"`; a bare `CORSMiddleware` in `middlewares=[...]` or a YAML `middleware:` list is now a
+  `ConfigurationError` at `register()`, where every middleware class is instantiated once.
+- **A table-creation failure stops the app**: `build_app()` (and the async lifespan) raise
+  `ConfigurationError` with the database's text instead of logging a warning and serving
+  500s.
+- **An unknown `auth:` kind in a dict config is refused** instead of silently dropped.
+
+### Fixed
+- **`Cache(vary_on=[...])` is honoured**: only the listed query parameters tell cached
+  responses apart, as the caching guide always said. The key held the whole query string.
+- **`Config.jwt_expiration` is read**: a `JWTAuthentication` without its own `expiration`
+  uses it instead of a literal 3600.
+- **`Authentication(rate_limiter=...)` is read**: `/auth/login` uses the login backend's
+  limiter first, then the app-wide one, then the defaults.
+- **Sync validators leave the event loop**: a Basic backend's `validate_credentials` on a
+  protected request, and a sync `login_validator` at `/auth/login`, run in a worker thread.
+- **Filter backends are built once per endpoint class**, not once per request.
 
 ## [0.2.1] - 2026-10-12
 

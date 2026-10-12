@@ -273,13 +273,19 @@ class TestDeclarativeFormat:
         assert cls.Meta.reflect is True
 
     def test_middleware_resolved_by_name(self):
+        """The name resolves to lightapi.core.CORSMiddleware; since B11-002 that
+        class refuses to run without origins, and the message says what to use."""
         content = """\
             database:
               url: "sqlite:///:memory:"
             middleware: [CORSMiddleware]
+            endpoints:
+              - route: /items
+                fields:
+                  name: { type: str }
             """
-        app = _from_str(content)
-        assert app is not None
+        with pytest.raises(ConfigurationError, match="allow_origins"):
+            _from_str(content)
 
     def test_from_config_kwargs_override_yaml(self):
         """LightApi.from_config(path, engine=custom_engine) uses custom engine."""

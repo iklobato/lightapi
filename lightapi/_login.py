@@ -9,6 +9,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -112,10 +113,18 @@ class LoginEndpoint:
         """The app's login_validator wins; otherwise the backend's own override."""
         validate = self._login_validator or self._backend.validate_credentials
         try:
-            user = validate(username, password)
-            # The README shows `async def validate_credentials` on a subclass.
-            if inspect.isawaitable(user):
-                user = await user
+            if inspect.iscoroutinefunction(validate):
+                # The README shows `async def validate_credentials` on a subclass.
+                user = await validate(username, password)
+            else:
+                # A sync validator usually queries a database: off the event loop
+                # (B7-002), the way the sync CRUD path already runs.
+                user = await run_in_threadpool(validate, username, password)
+                if inspect.isawaitable(user):
+                    user = await user
+            if user is not None and not isinstance(user, dict):
+                logger.warning("validate_credentials returned %r, not a dict", user)
+                return None
         except Exception:  # noqa: BLE001  documented contract: any error is a 401
             logger.warning("validate_credentials raised", exc_info=True)
             return None

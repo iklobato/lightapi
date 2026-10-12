@@ -244,10 +244,9 @@ class TestB1SilentErrors:
         record = next(r for r in caplog.records if r.name == "lightapi._login")
         assert record.exc_info and "directory server is down" in str(record.exc_info[1])
 
-    def test_table_creation_failure_at_build_app_is_logged_with_the_traceback(
-        self, caplog
-    ):
-        """B1-010: build_app still returns the app; the warning explains the DDL error."""
+    def test_table_creation_failure_at_build_app_names_the_cause(self):
+        """B1-010 pinned the warning's traceback; B1-011 (2026-10-12) turned the
+        warning into a ConfigurationError at build_app(), cause attached."""
 
         class AuditPlain(RestEndpoint):
             title: str = LField(min_length=1)
@@ -258,13 +257,11 @@ class TestB1SilentErrors:
 
         with (
             patch.object(MetaData, "create_all", side_effect=ddl_error),
-            caplog.at_level(logging.WARNING, logger="lightapi.lightapi"),
+            pytest.raises(ConfigurationError, match="disk full") as info,
         ):
             app.build_app()
 
-        record = next(r for r in caplog.records if r.name == "lightapi.lightapi")
-        assert "Table creation warning" in record.getMessage()
-        assert record.exc_info and "disk full" in str(record.exc_info[1])
+        assert info.value.__cause__ is ddl_error
 
 
 class TestB4HonestTypes:

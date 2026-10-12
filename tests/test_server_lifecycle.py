@@ -84,7 +84,12 @@ def test_cors_via_own_core_middleware_adds_headers_to_allowed_methods():
     Route's methods, so Starlette's router answers 405 before any middleware
     on the endpoint runs (this is the mechanism the docs use for cors_origins
     instead: it wraps the whole ASGI app, outside routing)."""
-    app = LightApi(engine=_memory_engine(), middlewares=[CORSMiddleware])
+
+    class OwnCors(CORSMiddleware):
+        def __init__(self) -> None:
+            super().__init__(allow_origins=["https://app.example.com"])
+
+    app = LightApi(engine=_memory_engine(), middlewares=[OwnCors])
     app.register({"/t406b": T406Own})
     client = TestClient(app.build_app())
 
@@ -98,7 +103,7 @@ def test_cors_via_own_core_middleware_adds_headers_to_allowed_methods():
     normal = client.post("/t406b", json={"name": "x"})
 
     assert preflight.status_code == 405
-    assert normal.headers["access-control-allow-origin"] == "*"
+    assert normal.headers["access-control-allow-origin"] == "https://app.example.com"
 
 
 class T407Secret(RestEndpoint):

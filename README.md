@@ -594,8 +594,8 @@ defaults:
     style: page_number
     page_size: 20
 
-middleware:
-  - CORSMiddleware
+cors_origins:
+  - https://app.example.com
 
 endpoints:
   - route: /products
@@ -894,6 +894,7 @@ LightApi(
     rate_limiter: "RateLimiter | dict[str, int] | None" = None,  # Login rate limiter
     login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
     use_test_isolation: bool = False,         # Enable per-test DB isolation
+    cors_allow_credentials: bool = False,     # Send Access-Control-Allow-Credentials (never with "*")
 )
 ```
 
