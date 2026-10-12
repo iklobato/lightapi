@@ -166,16 +166,19 @@ jobs:
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
     - name: Wait for the release to be installable from PyPI
+      # pip reads the simple index, which lags the JSON API by minutes right
+      # after an upload; the 0.3.0 release polled the JSON, passed, and the
+      # Docker build's pip install then found no 0.3.0. Poll what pip reads.
       run: |
-        for i in $(seq 1 30); do
-          if curl -sfo /dev/null "https://pypi.org/pypi/lightapi/${{ steps.update_version.outputs.new_version }}/json"; then
-            echo "lightapi ${{ steps.update_version.outputs.new_version }} is available on PyPI"
+        for i in $(seq 1 60); do
+          if curl -sf "https://pypi.org/simple/lightapi/" | grep -q "lightapi-${{ steps.update_version.outputs.new_version }}-"; then
+            echo "lightapi ${{ steps.update_version.outputs.new_version }} is on the PyPI simple index"
             exit 0
           fi
-          echo "Waiting for PyPI to serve ${{ steps.update_version.outputs.new_version }}..."
+          echo "Waiting for the PyPI simple index to list ${{ steps.update_version.outputs.new_version }}..."
           sleep 10
         done
-        echo "Timed out waiting for ${{ steps.update_version.outputs.new_version }} on PyPI" >&2
+        echo "Timed out waiting for ${{ steps.update_version.outputs.new_version }} on the PyPI simple index" >&2
         exit 1
 
     - name: Build and push Docker image
