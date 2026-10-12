@@ -13,12 +13,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from lightapi.auth_checker import EndpointGuard
-from lightapi.cache_helper import (
-    invalidate_cache_after_write,
-    maybe_cached,
-    maybe_cached_async,
-)
-from lightapi.constants import RESPONSE_KEY_DETAIL, HTTPStatus
+from lightapi.cache_helper import ResponseCache
+from lightapi.constants import HTTPStatus, ResponseKey
 from lightapi.middleware_runner import run_post_middlewares, run_pre_middlewares
 from lightapi.rest import RestEndpoint
 from lightapi.session import run_blocking
@@ -137,7 +133,7 @@ class EndpointHandler:
             result = await self._serve(verb, endpoint, request)
 
         response = JSONResponse(result) if isinstance(result, dict) else result
-        await invalidate_cache_after_write(self._endpoint_cls, request)
+        await ResponseCache(self._endpoint_cls).invalidate_after_write(request)
 
         if endpoint._background.tasks:
             response.background = endpoint._background
@@ -158,17 +154,16 @@ class EndpointHandler:
         if self._is_async:
             crud_async = getattr(endpoint, verb.async_name)
             if verb.cached:
-                return await maybe_cached_async(
-                    self._endpoint_cls, request, lambda: crud_async(*args)
+                return await ResponseCache(self._endpoint_cls).serve_async(
+                    request, lambda: crud_async(*args)
                 )
             return await crud_async(*args)
 
         crud = getattr(endpoint, verb.sync_name)
         engine = endpoint._get_engine()
         if verb.cached:
-            return await run_blocking(
-                engine, maybe_cached, self._endpoint_cls, request, lambda: crud(*args)
-            )
+            cache = ResponseCache(self._endpoint_cls)
+            return await run_blocking(engine, cache.serve, request, lambda: crud(*args))
         return await run_blocking(engine, crud, *args)
 
     async def _call_override(
@@ -187,7 +182,7 @@ class EndpointHandler:
     def _method_not_allowed(self) -> Response:
         allowed = ", ".join(sorted(self.methods))
         return JSONResponse(
-            {RESPONSE_KEY_DETAIL: f"Method Not Allowed. Allowed: {allowed}"},
+            {ResponseKey.DETAIL: f"Method Not Allowed. Allowed: {allowed}"},
             status_code=HTTPStatus.METHOD_NOT_ALLOWED,
             headers={"Allow": allowed},
         )
