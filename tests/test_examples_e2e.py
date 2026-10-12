@@ -8,6 +8,7 @@ fails.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import runpy
 import warnings
@@ -66,12 +67,29 @@ def _load(example_filename: str) -> LightApi:
     return captured["app"]
 
 
+@contextlib.contextmanager
 def _client(example_filename: str):
-    """Build a TestClient for the example, entered as a context manager."""
+    """A TestClient for the example; its engine is disposed on the app's own loop.
+
+    The async examples run on aiosqlite, whose connection lives on a worker
+    thread bound to the loop TestClient drives. Left open, that thread dies with
+    "Event loop is closed" once the loop stops, and pytest reports the stray
+    thread exception on whichever test runs next (the release CI hit it on
+    test_example_15). Disposing inside the TestClient block closes it cleanly.
+    """
+    from sqlalchemy.ext.asyncio import AsyncEngine
     from starlette.testclient import TestClient
 
     app = _load(example_filename)
-    return TestClient(app.build_app())
+    engine = app._engine
+    with TestClient(app.build_app()) as client:
+        try:
+            yield client
+        finally:
+            if isinstance(engine, AsyncEngine):
+                client.portal.call(engine.dispose)
+            else:
+                engine.dispose()
 
 
 # ─── 01_minimal ──────────────────────────────────────────────────────────────
