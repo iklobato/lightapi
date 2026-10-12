@@ -102,6 +102,9 @@ filterwarnings = [
     "error",
     "ignore::ResourceWarning",
     "ignore::pytest.PytestCollectionWarning",
+    # starlette's TestClient (0.52) still spells anyio.from_thread.BlockingPortal
+    # by its deprecated anyio.abc alias; third-party code, nothing here to fix.
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
 ]
 
 [tool.ruff]
