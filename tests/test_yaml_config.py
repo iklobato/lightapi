@@ -317,7 +317,7 @@ class TestDeclarativeFormat:
 class TestYamlAuthConfig:
     def test_auth_path_from_yaml(self):
         """auth.auth_path in YAML configures login/token route prefix."""
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-at-least-32-bytes-long"
         content = """\
             database:
               url: "sqlite:///:memory:"
@@ -346,7 +346,7 @@ class TestYamlAuthConfig:
 
     def test_login_validator_dotted_path_from_yaml(self):
         """auth.login_validator as dotted path resolves to callable."""
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-at-least-32-bytes-long"
 
         def test_validator(username: str, password: str):
             return {"sub": "test"}
@@ -434,7 +434,7 @@ class TestYamlAuthConfig:
 
     def test_login_validator_invalid_dotted_path_raises(self):
         """Invalid login_validator dotted path raises ConfigurationError."""
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-at-least-32-bytes-long"
         content = """\
             database:
               url: "sqlite:///:memory:"

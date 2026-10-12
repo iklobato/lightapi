@@ -60,7 +60,7 @@ Authenticates requests using a `Bearer` token in the `Authorization` header.
 **Required environment variable:**
 
 ```bash
-export LIGHTAPI_JWT_SECRET="your-secret-key"
+export LIGHTAPI_JWT_SECRET="your-secret-key-at-least-32-bytes-long"  # 32 bytes or more: PyJWT warns on shorter HMAC keys (RFC 7518, 3.2)
 ```
 
 **Token format:**
@@ -251,7 +251,7 @@ from lightapi import (
     IsAuthenticated, IsAdminUser, AllowAny,
 )
 
-os.environ.setdefault("LIGHTAPI_JWT_SECRET", "dev-secret")
+os.environ.setdefault("LIGHTAPI_JWT_SECRET", "dev-secret-at-least-32-bytes-long")
 
 class UserEndpoint(RestEndpoint):
     username: str = Field(min_length=3, unique=True)
@@ -289,7 +289,7 @@ curl -X POST http://localhost:8000/users \
 TOKEN=$(python -c "
 import jwt, datetime
 print(jwt.encode({'sub':'1','is_admin':True,'exp':datetime.datetime.utcnow()+datetime.timedelta(hours=1)},
-    'dev-secret', algorithm='HS256'))
+    'dev-secret-at-least-32-bytes-long', algorithm='HS256'))
 ")
 curl -X POST http://localhost:8000/users \
      -H "Authorization: Bearer $TOKEN" \

@@ -24,8 +24,12 @@ async def client():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     app = LightApi(engine=engine, mode="async")
     app.register({"/asynccached": AsyncCachedEndpoint})
+    # build_app pings Redis; the tests patch the backend's calls, so no server is
+    # needed and the startup warning must not depend on one being around.
+    with patch("lightapi.cache.RedisCacheBackend.ping", return_value=True):
+        asgi = app.build_app()
     async with AsyncClient(
-        transport=ASGITransport(app=app.build_app()), base_url="http://test"
+        transport=ASGITransport(app=asgi), base_url="http://test"
     ) as c:
         yield c
     await engine.dispose()

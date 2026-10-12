@@ -55,7 +55,7 @@ class PerMethodAuthEndpoint(RestEndpoint):
 
 @pytest.fixture(scope="module")
 def jwt_secret(monkeypatch_session=None):
-    secret = "test-secret-key"
+    secret = "test-secret-key-at-least-32-bytes-long"
     os.environ["LIGHTAPI_JWT_SECRET"] = secret
     return secret
 
@@ -67,7 +67,7 @@ def _login_validator(_username: str, _password: str) -> dict[str, Any] | None:
 
 @pytest.fixture(scope="module")
 def client(jwt_secret):
-    os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+    os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -85,7 +85,9 @@ def client(jwt_secret):
     return TestClient(app_instance.build_app())
 
 
-def _make_token(payload: dict, secret: str = "test-secret-key") -> str:
+def _make_token(
+    payload: dict, secret: str = "test-secret-key-at-least-32-bytes-long"
+) -> str:
     import jwt
 
     return jwt.encode(payload, secret, algorithm="HS256")

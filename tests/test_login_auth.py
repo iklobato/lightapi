@@ -57,7 +57,7 @@ class BasicProtectedEndpoint(RestEndpoint):
 
 @pytest.fixture(scope="module")
 def jwt_client():
-    os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+    os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -237,7 +237,9 @@ class TestHttpMethodAndErrorFormat:
 
 class TestConfigurationAndRegistration:
     def test_register_jwt_without_validator_succeeds(self):
-        os.environ.setdefault("LIGHTAPI_JWT_SECRET", "test-secret-key")
+        os.environ.setdefault(
+            "LIGHTAPI_JWT_SECRET", "test-secret-key-at-least-32-bytes-long"
+        )
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -260,7 +262,7 @@ class TestConfigurationAndRegistration:
         assert built_app is not None
 
     def test_auth_path_customization(self):
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -292,7 +294,7 @@ class TestJWTConfigOverrides:
                     jwt_expiration=10,
                 )
 
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -307,7 +309,9 @@ class TestJWTConfigOverrides:
         )
         assert resp.status_code == 200
         token = resp.json()["token"]
-        payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
+        payload = jwt.decode(
+            token, "test-secret-key-at-least-32-bytes-long", algorithms=["HS256"]
+        )
         exp = payload.get("exp")
         assert exp is not None
         import time
@@ -333,7 +337,7 @@ class TestJWTConfigOverrides:
                     jwt_extra_claims=["sub", "email"],
                 )
 
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -348,7 +352,9 @@ class TestJWTConfigOverrides:
         )
         assert resp.status_code == 200
         token = resp.json()["token"]
-        payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
+        payload = jwt.decode(
+            token, "test-secret-key-at-least-32-bytes-long", algorithms=["HS256"]
+        )
         assert "sub" in payload
         assert "email" in payload
         assert "secret" not in payload
@@ -398,7 +404,9 @@ class TestValidatorException:
         def failing_validator(username: str, password: str):
             raise RuntimeError("DB unavailable")
 
-        os.environ.setdefault("LIGHTAPI_JWT_SECRET", "test-secret-key")
+        os.environ.setdefault(
+            "LIGHTAPI_JWT_SECRET", "test-secret-key-at-least-32-bytes-long"
+        )
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -428,7 +436,7 @@ class TestBasicHeaderEdgeCases:
                 return {"sub": "1"}
             return None
 
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -453,7 +461,7 @@ class TestBasicHeaderEdgeCases:
                 return {"sub": "1"}
             return None
 
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -477,7 +485,7 @@ class TestBasicHeaderEdgeCases:
                 return {"sub": "1"}
             return None
 
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -499,7 +507,7 @@ class TestBasicHeaderEdgeCases:
                 return {"sub": "1"}
             return None
 
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -518,7 +526,7 @@ class TestBasicHeaderEdgeCases:
 
     def test_login_basic_header_lowercase_falls_through_to_body(self):
         """Authorization: basic x (lowercase) does not match Basic; falls to body."""
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -536,7 +544,7 @@ class TestBasicHeaderEdgeCases:
         assert resp.status_code == 422
 
     def test_login_basic_header_no_value_returns_401(self):
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -555,7 +563,7 @@ class TestBasicHeaderEdgeCases:
     def test_login_basic_header_multiple_spaces_after_basic(self):
         """Authorization: Basic  <space><base64> - leading space may affect decode."""
         creds = base64.b64encode(b"alice:secret").decode()
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -608,7 +616,7 @@ class TestBodyEdgeCases:
 
 class TestAuthPathEdgeCases:
     def test_auth_path_trailing_slash_normalized(self):
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -629,7 +637,7 @@ class TestAuthPathEdgeCases:
         assert "token" in resp.json()
 
     def test_auth_path_root_routes_at_login_and_token(self):
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -650,7 +658,7 @@ class TestAuthPathEdgeCases:
         assert "token" in resp.json()
 
     def test_auth_path_nested(self):
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -687,7 +695,7 @@ class TestJWTExtraClaimsEdgeCases:
                     jwt_extra_claims=[],
                 )
 
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -702,7 +710,9 @@ class TestJWTExtraClaimsEdgeCases:
         )
         assert resp.status_code == 200
         token = resp.json()["token"]
-        payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
+        payload = jwt.decode(
+            token, "test-secret-key-at-least-32-bytes-long", algorithms=["HS256"]
+        )
         assert "sub" in payload
         assert "email" in payload
 
@@ -721,7 +731,7 @@ class TestJWTExtraClaimsEdgeCases:
                     jwt_extra_claims=["x", "y"],
                 )
 
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -736,7 +746,9 @@ class TestJWTExtraClaimsEdgeCases:
         )
         assert resp.status_code == 200
         token = resp.json()["token"]
-        payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
+        payload = jwt.decode(
+            token, "test-secret-key-at-least-32-bytes-long", algorithms=["HS256"]
+        )
         assert "sub" in payload
 
     def test_jwt_extra_claims_partial_overlap_only_included_in_token(self):
@@ -754,7 +766,7 @@ class TestJWTExtraClaimsEdgeCases:
                     jwt_extra_claims=["sub", "missing"],
                 )
 
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -769,7 +781,9 @@ class TestJWTExtraClaimsEdgeCases:
         )
         assert resp.status_code == 200
         token = resp.json()["token"]
-        payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
+        payload = jwt.decode(
+            token, "test-secret-key-at-least-32-bytes-long", algorithms=["HS256"]
+        )
         assert "sub" in payload
         assert payload["sub"] == "1"
         assert "missing" not in payload
@@ -782,7 +796,7 @@ class TestValidatorReturnShapes:
                 return {}
             return None
 
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -800,7 +814,9 @@ class TestValidatorReturnShapes:
         assert "token" in data
         assert data["user"] == {}
         token = data["token"]
-        payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
+        payload = jwt.decode(
+            token, "test-secret-key-at-least-32-bytes-long", algorithms=["HS256"]
+        )
         assert "exp" in payload
 
     def test_validator_nested_payload_success(self):
@@ -809,7 +825,7 @@ class TestValidatorReturnShapes:
                 return {"sub": "1", "meta": {"role": "admin"}}
             return None
 
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -830,7 +846,7 @@ class TestValidatorReturnShapes:
 
 class TestMixedAppScenarios:
     def test_both_jwt_and_basic_endpoints_returns_token(self):
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -941,7 +957,7 @@ class TestTokenVerification:
                     jwt_expiration=1,
                 )
 
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         engine = create_engine(
             "sqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -961,10 +977,10 @@ class TestTokenVerification:
         assert get_resp.status_code == 401
 
     def test_wrong_secret_token_rejected(self):
-        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key"
+        os.environ["LIGHTAPI_JWT_SECRET"] = "test-secret-key-at-least-32-bytes-long"
         wrong_token = jwt.encode(
             {"sub": "1", "exp": 9999999999},
-            "wrong-secret",
+            "wrong-secret-at-least-32-bytes-long",
             algorithm="HS256",
         )
         engine = create_engine(

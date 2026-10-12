@@ -9,7 +9,7 @@ Role-based access control using per-method authentication, `IsAdminUser`, and JW
 ## Setup
 
 ```bash
-export LIGHTAPI_JWT_SECRET="your-secret-key"
+export LIGHTAPI_JWT_SECRET="your-secret-key-at-least-32-bytes-long"
 ```
 
 ## Full RBAC endpoint

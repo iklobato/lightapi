@@ -48,7 +48,7 @@ from lightapi.exceptions import ConfigurationError
 from lightapi.fields import Field as LField
 from lightapi.yaml_config import LightAPIConfig
 
-os.environ.setdefault("LIGHTAPI_JWT_SECRET", "audit-secret")
+os.environ.setdefault("LIGHTAPI_JWT_SECRET", "audit-secret-at-least-32-bytes-long")
 
 
 def _memory_engine():

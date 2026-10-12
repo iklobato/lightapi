@@ -208,7 +208,7 @@ def test_example_04_basic_auth_flow():
 
 
 def test_example_05_permission_matrix():
-    os.environ["LIGHTAPI_JWT_SECRET"] = "secret"
+    os.environ["LIGHTAPI_JWT_SECRET"] = "example-secret-at-least-32-bytes-long"
     with _client("05_permissions.py") as c:
         # Public: no auth required
         assert c.get("/public").status_code == 200
@@ -536,7 +536,7 @@ def test_example_17_foreign_key_relationship():
 
 
 def test_example_18_full_api_combines_features():
-    os.environ["LIGHTAPI_JWT_SECRET"] = "secret"
+    os.environ["LIGHTAPI_JWT_SECRET"] = "example-secret-at-least-32-bytes-long"
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         with _client("18_full_api.py") as c:
@@ -604,7 +604,7 @@ def test_example_v2_quickstart_basic_crud():
 
 
 def test_example_v2_full_demo_books_and_tags():
-    os.environ["LIGHTAPI_JWT_SECRET"] = "demo-secret-key"
+    os.environ["LIGHTAPI_JWT_SECRET"] = "demo-secret-key-at-least-32-bytes-long"
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         with _client("v2_full_demo.py") as c:

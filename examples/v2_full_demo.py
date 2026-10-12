@@ -22,15 +22,15 @@ Usage
 Generate a regular JWT (for IsAuthenticated endpoints):
     python -c "
     import jwt, os
-    os.environ['LIGHTAPI_JWT_SECRET'] = 'demo-secret-key'
-    token = jwt.encode({'user_id': 1}, 'demo-secret-key', algorithm='HS256')
+    os.environ['LIGHTAPI_JWT_SECRET'] = 'demo-secret-key-at-least-32-bytes-long'
+    token = jwt.encode({'user_id': 1}, 'demo-secret-key-at-least-32-bytes-long', algorithm='HS256')
     print(token)
     "
 
 Generate an admin JWT (for IsAdminUser endpoints):
     python -c "
     import jwt
-    token = jwt.encode({'user_id': 1, 'is_admin': True}, 'demo-secret-key', algorithm='HS256')
+    token = jwt.encode({'user_id': 1, 'is_admin': True}, 'demo-secret-key-at-least-32-bytes-long', algorithm='HS256')
     print(token)
     "
 """
@@ -65,7 +65,7 @@ from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
 DATABASE_URL = "sqlite:///:memory:"
 
 # Set JWT secret before any endpoint class body is evaluated
-os.environ.setdefault("LIGHTAPI_JWT_SECRET", "demo-secret-key")
+os.environ.setdefault("LIGHTAPI_JWT_SECRET", "demo-secret-key-at-least-32-bytes-long")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

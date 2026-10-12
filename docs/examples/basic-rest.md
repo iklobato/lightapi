@@ -113,7 +113,7 @@ class SecurePostEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):
 ```
 
 ```bash
-export LIGHTAPI_JWT_SECRET="my-secret"
+export LIGHTAPI_JWT_SECRET="my-secret-at-least-32-bytes-long"
 ```
 
 ## Using PostgreSQL
