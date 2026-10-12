@@ -88,6 +88,7 @@ class LightApi:
         rate_limiter: RateLimiter | dict[str, int] | None = None,
         login_validator: Callable[[str, str], dict[str, Any] | None] | None = None,
         use_test_isolation: bool = False,
+        cors_allow_credentials: bool = False,
     ) -> None:
         self._mode = ExecutionMode.from_user(mode)
         # Sync or async is a runtime fact (ExecutionMode), so the attribute is loose.
@@ -115,6 +116,13 @@ class LightApi:
         self._endpoint_map: dict[str, type[RestEndpoint]] = {}
         self._middlewares: list[type[Middleware]] = middlewares or []
         self._cors_origins: list[str] = cors_origins or []
+        if cors_allow_credentials and "*" in self._cors_origins:
+            # The combination browsers reject: a wildcard origin may not carry
+            # credentials (Fetch spec); it used to be the silent default (B11-001).
+            raise ConfigurationError(
+                "cors_allow_credentials=True needs explicit cors_origins, not '*'."
+            )
+        self._cors_allow_credentials = cors_allow_credentials
         self._auth_path = auth_path
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -252,7 +260,7 @@ class LightApi:
             app.add_middleware(
                 StarletteCORSMiddleware,
                 allow_origins=self._cors_origins,
-                allow_credentials=True,
+                allow_credentials=self._cors_allow_credentials,
                 allow_methods=["*"],
                 allow_headers=["*"],
             )

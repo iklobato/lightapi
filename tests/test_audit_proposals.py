@@ -219,3 +219,55 @@ class TestB7002LoginValidatorOffTheLoop:
 
         assert response.status_code == 200
         assert seen["on_loop"] is False
+
+
+class AuditCors(RestEndpoint):
+    text: str = Field(min_length=1)
+
+    class Meta:
+        table = "audit_cors"
+
+
+class TestB11001CorsCredentialsOptIn:
+    """B11-001: `cors_origins` switched on `allow_credentials=True` with every
+    method and header; credentials are now opt-in, and `*` with credentials is
+    the invalid combination browsers reject, so it is refused at construction."""
+
+    def _preflight(self, app: LightApi):
+        app.register({"/cors": AuditCors})
+        with TestClient(app.build_app()) as client:
+            return client.options(
+                "/cors",
+                headers={
+                    "Origin": "https://app.example.com",
+                    "Access-Control-Request-Method": "POST",
+                },
+            )
+
+    def test_credentials_are_off_unless_asked_for(self):
+        response = self._preflight(
+            LightApi(engine=_memory_engine(), cors_origins=["https://app.example.com"])
+        )
+
+        assert response.status_code == 200
+        assert (
+            response.headers["access-control-allow-origin"] == "https://app.example.com"
+        )
+        assert "access-control-allow-credentials" not in response.headers
+
+    def test_credentials_on_request(self):
+        response = self._preflight(
+            LightApi(
+                engine=_memory_engine(),
+                cors_origins=["https://app.example.com"],
+                cors_allow_credentials=True,
+            )
+        )
+
+        assert response.headers["access-control-allow-credentials"] == "true"
+
+    def test_wildcard_with_credentials_is_refused(self):
+        with pytest.raises(ConfigurationError, match="credentials"):
+            LightApi(
+                engine=_memory_engine(), cors_origins=["*"], cors_allow_credentials=True
+            )
