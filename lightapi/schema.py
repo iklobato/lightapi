@@ -10,7 +10,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, create_model
 from pydantic.fields import FieldInfo
-from sqlalchemy import Column, Numeric, Table, Uuid
+from sqlalchemy import Column, Float, Numeric, Table, Uuid
 
 from lightapi.config import Serializer
 from lightapi.constants import AUTO_FIELDS, HttpVerb
@@ -156,9 +156,10 @@ class SchemaFactory:
         """Annotation for a reflected column, from SQLAlchemy's own type mapping."""
         # Two answers of python_type differ from what released versions validated,
         # and clients see the difference (a Decimal is a JSON string, a float a JSON
-        # number): Float, Double and REAL are Numeric subclasses and have always
-        # been Decimal here, and a Uuid column is a UUID whatever its as_uuid flag.
-        if isinstance(column.type, Numeric):
+        # number): Float, Double and REAL have always been Decimal here (they were
+        # Numeric subclasses until SQLAlchemy 2.1 split them off, so Float is named
+        # too), and a Uuid column is a UUID whatever its as_uuid flag.
+        if isinstance(column.type, (Numeric, Float)):
             return Decimal
         if isinstance(column.type, Uuid):
             return UUID

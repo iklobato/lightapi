@@ -134,6 +134,10 @@ Nothing yet.
   key, as the configuration guide promises. Before, pydantic dropped the key and the app
   started without the feature. A key under `fields.<name>` that is not a constraint
   (`min_lenght: 3`) is refused the same way; before, the constraint silently vanished.
+- **Reflected `Float`, `Double` and `REAL` columns stay `Decimal` on SQLAlchemy 2.1**: the
+  rule said "Numeric and its subclasses", and SQLAlchemy 2.1 took `Float` out of that
+  hierarchy, so a reflected float column started validating as a JSON number on 2.1 and
+  as a string on 2.0. `Float` is now named next to `Numeric`; the pin test covers both.
 - **Async mode is detected from the engine or the URL**: `LightApi(engine=AsyncEngine)`
   and `LightApi(database_url="sqlite+aiosqlite://...")` (or a YAML document with such a
   URL) run async without `mode="async"`, as the README always said. Before, the sync
