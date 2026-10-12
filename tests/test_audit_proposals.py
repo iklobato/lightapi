@@ -64,3 +64,27 @@ class TestB1001DictConfigUnknownAuth:
             pytest.raises(ConfigurationError, match="oauth"),
         ):
             LightApi.from_dict(document, engine=_memory_engine())
+
+
+class TestB1011TableCreationFailureRaises:
+    """B1-011: a DDL failure at build_app() was a warning and a 500 on every later
+    request; it is a ConfigurationError at build_app(), with the cause attached."""
+
+    def test_build_app_raises_when_create_all_fails(self):
+        class AuditDdl(RestEndpoint):
+            title: str = Field(min_length=1)
+
+            class Meta:
+                table = "audit_ddl_fails"
+
+        app = LightApi(engine=_memory_engine())
+        app.register({"/ddl": AuditDdl})
+        ddl_error = OperationalError("CREATE TABLE", {}, Exception("disk full"))
+
+        with (
+            patch.object(MetaData, "create_all", side_effect=ddl_error),
+            pytest.raises(ConfigurationError, match="disk full") as info,
+        ):
+            app.build_app()
+
+        assert isinstance(info.value.__cause__, OperationalError)

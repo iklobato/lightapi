@@ -346,8 +346,8 @@ class LightApi:
             else:
                 metadata.create_all(bind=self._engine)
                 logger.info("Tables created/verified against %s", self._engine.url)
-        except SQLAlchemyError:
-            logger.warning("Table creation warning", exc_info=True)
+        except SQLAlchemyError as exc:
+            raise self._table_creation_failed(exc) from exc
 
     @contextlib.asynccontextmanager
     async def _lifespan(self, _: Starlette) -> AsyncIterator[None]:
@@ -362,9 +362,17 @@ class LightApi:
             async with self._engine.begin() as conn:
                 await conn.run_sync(metadata.create_all)
             logger.info("Tables created/verified against %s", self._engine.url)
-        except SQLAlchemyError:
-            logger.warning("Table creation warning", exc_info=True)
+        except SQLAlchemyError as exc:
+            raise self._table_creation_failed(exc) from exc
         yield
+
+    @staticmethod
+    def _table_creation_failed(exc: SQLAlchemyError) -> ConfigurationError:
+        """B1-011: a DDL failure stops the app instead of serving 500s later."""
+        return ConfigurationError(
+            "Table creation failed; the app cannot serve without its tables. "
+            f"Database said: {exc}"
+        )
 
     def _create_tables_inside_running_loop(self, metadata: MetaData) -> None:
         """build_app() called inside a loop that is already running (pytest-asyncio)
