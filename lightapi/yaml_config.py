@@ -28,14 +28,23 @@ import datetime
 import importlib
 import inspect
 import os
+from collections.abc import Callable
 from decimal import Decimal
-from typing import Any, Final, Optional, Union
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Final
 
 import yaml
-from pydantic import BaseModel, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from lightapi.authentication import (
     AllowAny,
+    BasePermission,
     BasicAuthentication,
     IsAdminUser,
     IsAuthenticated,
@@ -49,6 +58,11 @@ from lightapi.fields import Field
 from lightapi.filters import FieldFilter, OrderingFilter, SearchFilter
 from lightapi.pagination import PaginationStyle
 from lightapi.rest import RestEndpoint
+
+if TYPE_CHECKING:
+    from pydantic.fields import FieldInfo
+
+    from lightapi.lightapi import LightApi
 
 YAML_FIELD_TYPES: Final[dict[str, type]] = {
     "str": str,
@@ -95,7 +109,17 @@ FIELD_CONSTRAINT_KEYS: Final = frozenset(
 )
 
 
-class DatabaseConfig(BaseModel):
+class _Document(BaseModel):
+    """A block of the YAML document: a key the format does not know is an error.
+
+    The docs promise that a typo fails at load time; pydantic's default would
+    drop it and serve an app without the feature the user thought they configured.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DatabaseConfig(_Document):
     """Nested database block: database: { url: ... }"""
 
     url: str
@@ -116,7 +140,7 @@ class DatabaseConfig(BaseModel):
         return value
 
 
-class AuthLoginConfig(BaseModel):
+class AuthLoginConfig(_Document):
     """Login/auth block: auth: { auth_path: ..., login_validator: ... }.
 
     When using JWTAuthentication or BasicAuthentication, login_validator is required.
@@ -128,11 +152,11 @@ class AuthLoginConfig(BaseModel):
     login_validator: str | None = None
 
 
-class AuthConfig(BaseModel):
+class AuthConfig(_Document):
     """Authentication block used in defaults and per-endpoint meta."""
 
     backend: str | None = None
-    permission: Union[str, dict[str, str], None] = None
+    permission: str | dict[str, str] | None = None
     jwt_expiration: int | None = None
     jwt_extra_claims: list[str] | None = None
     jwt_algorithm: str | None = None
@@ -143,7 +167,9 @@ class AuthConfig(BaseModel):
             return self
         return defaults.model_copy(update=self.model_dump(exclude_none=True))
 
-    def resolved_permission(self) -> Any:
+    def resolved_permission(
+        self,
+    ) -> type[BasePermission] | dict[str, type[BasePermission]] | None:
         """The permission class, or {method: class} for a per-method dict."""
         if isinstance(self.permission, dict):
             return {
@@ -151,10 +177,15 @@ class AuthConfig(BaseModel):
                 for method, name in self.permission.items()
             }
         if isinstance(self.permission, str):
-            return LightAPIConfig.resolve_name(self.permission)
+            permission: type[BasePermission] = LightAPIConfig.resolve_name(
+                self.permission
+            )
+            return permission
         return None
 
-    def to_authentication(self, permission: Any) -> Authentication:
+    def to_authentication(
+        self, permission: type[BasePermission] | dict[str, type[BasePermission]] | None
+    ) -> Authentication:
         return Authentication(
             backend=LightAPIConfig.resolve_name(self.backend) if self.backend else None,
             permission=permission,
@@ -164,7 +195,7 @@ class AuthConfig(BaseModel):
         )
 
 
-class FilteringConfig(BaseModel):
+class FilteringConfig(_Document):
     """Filtering block inside meta."""
 
     backends: list[str] = []
@@ -191,7 +222,7 @@ class FilteringConfig(BaseModel):
         )
 
 
-class PaginationConfig(BaseModel):
+class PaginationConfig(_Document):
     """Pagination block used in defaults and per-endpoint meta."""
 
     style: str = PaginationStyle.PAGE_NUMBER.value
@@ -201,26 +232,26 @@ class PaginationConfig(BaseModel):
         return Pagination(style=self.style, page_size=self.page_size)
 
 
-class DefaultsConfig(BaseModel):
+class DefaultsConfig(_Document):
     """Global defaults applied to all endpoints unless overridden."""
 
     authentication: AuthConfig | None = None
     pagination: PaginationConfig | None = None
 
 
-class MethodAuthConfig(BaseModel):
+class MethodAuthConfig(_Document):
     """Per-method authentication override inside meta.methods dict."""
 
     authentication: AuthConfig | None = None
 
 
-class CacheConfig(BaseModel):
+class CacheConfig(_Document):
     """Cache block inside meta: cache: { ttl: 60 }"""
 
     ttl: int = DEFAULT_CACHE_TTL
 
 
-class SerializerConfig(BaseModel):
+class SerializerConfig(_Document):
     """Serializer block inside meta.
 
     Use ``fields`` for a unified list, or ``read``/``write`` for per-verb lists.
@@ -231,11 +262,11 @@ class SerializerConfig(BaseModel):
     write: list[str] | None = None
 
 
-class MetaConfig(BaseModel):
+class MetaConfig(_Document):
     """meta: block inside a declarative endpoint entry."""
 
     # methods can be a list ["GET", "POST"] or a dict {GET: {...}, DELETE: {...}}
-    methods: Union[list[str], dict[str, MethodAuthConfig | None]] = []
+    methods: list[str] | dict[str, MethodAuthConfig | None] = []
     authentication: AuthConfig | None = None
     filtering: FilteringConfig | None = None
     pagination: PaginationConfig | None = None
@@ -243,7 +274,7 @@ class MetaConfig(BaseModel):
     serializer: SerializerConfig | None = None
     table: str | None = None  # custom table name (required when reflect: true)
 
-    def build_meta_class(self, defaults: DefaultsConfig, reflect: bool) -> type:
+    def build_meta_class(self, defaults: DefaultsConfig, *, reflect: bool) -> type:
         """The ``Meta`` inner class of the endpoint this block describes."""
         attrs: dict[str, Any] = {}
 
@@ -254,7 +285,7 @@ class MetaConfig(BaseModel):
             return type("Meta", (), attrs)
 
         if isinstance(self.methods, dict):
-            auth = self._per_method_authentication(defaults)
+            auth = self._per_method_authentication(self.methods, defaults)
         else:
             auth = self._endpoint_authentication(defaults)
         if auth is not None:
@@ -312,7 +343,7 @@ class MetaConfig(BaseModel):
         return settings.to_authentication(settings.resolved_permission())
 
     def _per_method_authentication(
-        self, defaults: DefaultsConfig
+        self, methods: dict[str, MethodAuthConfig | None], defaults: DefaultsConfig
     ) -> Authentication | None:
         """Authentication for ``methods: {GET: {...}, DELETE: {...}}``.
 
@@ -322,8 +353,7 @@ class MetaConfig(BaseModel):
         default_permission = default_auth.permission if default_auth else None
 
         permissions: dict[str, type] = {}
-        assert isinstance(self.methods, dict)
-        for method, method_cfg in self.methods.items():
+        for method, method_cfg in methods.items():
             method_auth = (method_cfg.authentication if method_cfg else None) or (
                 self.authentication
             )
@@ -367,12 +397,26 @@ class FieldSpec(BaseModel):
             )
         return v
 
-    @property
-    def annotation(self) -> Any:
-        py_type = YAML_FIELD_TYPES[self.type]
-        return Optional[py_type] if self.optional else py_type
+    @model_validator(mode="after")
+    def extra_keys_must_be_constraints(self) -> FieldSpec:
+        """A key that is not a constraint (`min_lenght`) would be dropped silently."""
+        unknown = sorted(
+            set(self.model_extra or ()) - FIELD_CONSTRAINT_KEYS - {"default"}
+        )
+        if unknown:
+            raise ValueError(
+                f"Unknown field option(s) {unknown}. "
+                f"Valid: {sorted(FIELD_CONSTRAINT_KEYS | {'default'})}"
+            )
+        return self
 
-    def field_info(self) -> Any | None:
+    @property
+    def annotation(self) -> object:
+        """The field's type, or ``type | None`` for an optional one."""
+        py_type = YAML_FIELD_TYPES[self.type]
+        return py_type | None if self.optional else py_type
+
+    def field_info(self) -> FieldInfo | None:
         """The Field() for this spec; None for a constraint-less, default-less field.
 
         Such a field stays annotation-only on purpose: an Ellipsis placeholder
@@ -388,7 +432,7 @@ class FieldSpec(BaseModel):
         return Field(**kwargs) if kwargs else None
 
 
-class EndpointConfig(BaseModel):
+class EndpointConfig(_Document):
     """A single endpoint entry."""
 
     route: str
@@ -397,7 +441,7 @@ class EndpointConfig(BaseModel):
     meta: MetaConfig = MetaConfig()
 
     @model_validator(mode="after")
-    def require_route(self) -> "EndpointConfig":
+    def require_route(self) -> EndpointConfig:
         if not self.route:
             raise ValueError("Each endpoint must have a 'route'.")
         return self
@@ -427,7 +471,7 @@ class EndpointConfig(BaseModel):
         return type(self.class_name, self.meta.endpoint_bases(), class_attrs)
 
 
-class LightAPIConfig(BaseModel):
+class LightAPIConfig(_Document):
     """Root YAML document schema."""
 
     database: DatabaseConfig | None = None
@@ -445,16 +489,27 @@ class LightAPIConfig(BaseModel):
     @classmethod
     def from_file(cls, config_path: str) -> LightAPIConfig:
         """The validated document at ``config_path``."""
-        with open(config_path) as fh:
+        with Path(config_path).open() as fh:
             raw: dict[str, Any] = yaml.safe_load(fh) or {}
         try:
             return cls.model_validate(raw)
         except ValidationError as exc:
+            # Location and message only: pydantic's own text prints the input,
+            # and under a typo like `databse:` that input is the database URL.
+            problems = "\n".join(
+                f"  {'.'.join(str(part) for part in error['loc']) or '<root>'}: "
+                f"{error['msg']}"
+                for error in exc.errors(include_input=False, include_url=False)
+            )
             raise ConfigurationError(
-                f"Invalid lightapi.yaml — {exc.error_count()} error(s):\n{exc}"
+                f"Invalid lightapi.yaml — {exc.error_count()} error(s):\n{problems}"
             ) from exc
 
-    def build_app(self, app_cls: type, **overrides: Any) -> Any:
+    def build_app(
+        self,
+        app_cls: type[LightApi],
+        **overrides: Any,  # noqa: ANN401  LightApi constructor kwargs, forwarded
+    ) -> LightApi:
         """A configured ``app_cls`` instance with every endpoint registered.
 
         Kwargs override YAML-derived values (e.g. engine=..., database_url=...).
@@ -485,7 +540,9 @@ class LightAPIConfig(BaseModel):
         return instance
 
     @staticmethod
-    def resolve_name(name: str) -> Any:
+    def resolve_name(
+        name: str,
+    ) -> Any:  # noqa: ANN401  whatever class the dotted path names
         """The class a document names: a built-in by short name, else a dotted path."""
         if name in NAME_REGISTRY:
             return NAME_REGISTRY[name]
@@ -502,7 +559,7 @@ class LightAPIConfig(BaseModel):
         )
 
     @staticmethod
-    def resolve_callable(dotted_path: str) -> Any:
+    def resolve_callable(dotted_path: str) -> Callable[..., Any]:
         """The login validator at a dotted path: sync, takes (username, password)."""
         if "." not in dotted_path:
             raise ConfigurationError(
@@ -528,12 +585,13 @@ class LightAPIConfig(BaseModel):
                 "but sync function required. "
                 "Login validation must be a synchronous function."
             )
+        validator: Callable[..., Any] = fn
 
         try:
             sig = inspect.signature(fn)
         except ValueError:
             # Some callables (e.g., builtins) don't have inspectable signatures
-            return fn
+            return validator
 
         required_params = sum(
             1
@@ -550,4 +608,4 @@ class LightAPIConfig(BaseModel):
                 f"login_validator '{dotted_path}' must accept exactly 2 required "
                 f"positional parameters (username, password), got {required_params}"
             )
-        return fn
+        return validator

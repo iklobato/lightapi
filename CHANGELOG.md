@@ -75,6 +75,115 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`LIGHTAPI_REDIS_URL` was read at import time**: the Redis client behind
   `Meta.cache` was built when `lightapi` was imported, so a URL set afterwards (in
   code, or by a test) was ignored. It is built on the first cache call now.
+- **Redis failures are logged**: a cache read, write, invalidation or ping that fails
+  still falls back to the database as before, but now leaves a warning with the
+  traceback (`lightapi.cache`) instead of nothing. A `login_validator` that raises still
+  answers `401`, and the exception is logged with its traceback (`lightapi._login`), as is
+  a failed `CREATE TABLE` at `build_app()`.
+- **The Redis client has a read timeout**: `socket_timeout=1` next to the existing
+  `socket_connect_timeout=1`, so a Redis that accepts the connection and hangs costs one
+  second and a cache miss, not a stuck worker.
+- **Verb overrides and CRUD functions are resolved once, at `register()`**: a `get`/`post`
+  method assigned to the endpoint class after `register()` is no longer picked up per
+  request. Middleware classes are checked for `async def process` once per class.
+- **`Pagination(style=...)` validates without rewriting the frozen field**; an invalid style
+  raises `ConfigurationError` as before, and `Pagination.style` keeps the value as given
+  (`PaginationStyle` member or its string).
+- **`Authentication().build_backend()` without a backend raises `ConfigurationError`**
+  instead of `AttributeError`; a CRUD call on an endpoint class that was never passed to
+  `register()` raises `RuntimeError` naming the missing call instead of SQLAlchemy's
+  `ArgumentError`.
+- **Async apps create their tables in a Starlette lifespan** instead of the deprecated
+  `on_startup` handler; same moment, no deprecation warning. `created_at`/`updated_at`
+  column defaults no longer use the deprecated `datetime.utcnow()`; the stored value is the
+  same naive UTC.
+- **The container HEALTHCHECK probes `/healthz` over a raw socket**: it hit `/`, which is a
+  404 on every LightAPI app, so `docker inspect` reported every healthy container as
+  unhealthy. The probe also stops importing `urllib.request`, which alone took 1.8 to 2.9 s
+  inside the image on Docker Desktop and blew the 3 s timeout; the socket probe takes 0.7 s.
+- **PATCH validates every field constraint**: the PATCH schema rebuilt each field as an
+  optional copy and dropped its `Field()` constraints, so `min_length`, `ge`,
+  `decimal_places` and the rest applied to POST and PUT but not to PATCH (`{"name": ""}`
+  against `min_length=3` was a 200). A PATCH now meets the same constraints as a PUT and
+  answers 422 like it; only the "every field is optional" part is unchanged.
+- **`decimal_places` on a non-Decimal field is refused when the class is defined**: a
+  `ConfigurationError` names the field. Before this release the option was silently
+  ignored on `float` or `int`; once forwarded to pydantic it would have made every write a
+  500 (`TypeError: Unable to apply constraint`). Same through YAML.
+- **`Field(decimal_places=N)` is enforced**: a `Decimal` with more than N decimal places
+  is a 422. Before, the option reached neither pydantic nor the DDL (`Numeric(scale=N)`
+  without a precision renders as plain `NUMERIC` on every dialect), so "1.999" was stored
+  as sent on a `decimal_places=2` column. The column type is unchanged.
+- **A database constraint violation is a 409**: a duplicate on a `unique=True` column, a
+  DELETE of a row another table still references, or any other `IntegrityError` on POST,
+  PUT, PATCH or DELETE answers `409 {"detail": "constraint violation"}` and leaves the
+  session usable. It was an unhandled 500. The server logs the table and the driver's
+  text at INFO, because a NOT NULL or CHECK failure usually means the schema and the
+  table disagree.
+- **Error messages never echo the database password**: the `ConfigurationError` for a
+  URL without an async driver renders the URL with the password masked, and the YAML
+  load error lists each problem as location and message only, so a typo like `databse:`
+  no longer prints the block it rejected (which held the URL, or `password:`) into the
+  logs.
+- **A YAML key the format does not know fails at load time**: `defaults.filtering`,
+  `meta.paginate` or a misspelt top-level key now raise `ConfigurationError` naming the
+  key, as the configuration guide promises. Before, pydantic dropped the key and the app
+  started without the feature. A key under `fields.<name>` that is not a constraint
+  (`min_lenght: 3`) is refused the same way; before, the constraint silently vanished.
+- **Async mode is detected from the engine or the URL**: `LightApi(engine=AsyncEngine)`
+  and `LightApi(database_url="sqlite+aiosqlite://...")` (or a YAML document with such a
+  URL) run async without `mode="async"`, as the README always said. Before, the sync
+  default never created the tables and every request was a 500 (with a "Table creation
+  skipped" warning); the docs' own async testing fixture hit it verbatim. An explicit
+  `mode="sync"` with an async engine or driver is a `ConfigurationError`.
+- **An `async def validate_credentials` on a Basic backend is refused at `register()`**:
+  the request guard calls it without `await`, and a coroutine is truthy, so every Basic
+  credential used to pass. The error names the backend; `JWTAuthentication` subclasses
+  may keep an async validator (only the login route calls it, and that one awaits).
+- **An integer filter value beyond 64 bits is a 422** (`?pages=99999999999999999999`),
+  like any other value the column cannot hold. It was an `OverflowError` 500 on SQLite.
+- **Async reflection no longer leaves a connection bound to a dead loop in the pool**:
+  `Meta.reflect` on an `AsyncEngine` reflects on a loop of its own at `register()` and now
+  disposes the pool afterwards (not for an in-memory SQLite `StaticPool`, which holds the
+  database), so asyncpg's first request no longer finds a connection from another loop.
+- **`mode="async"` works from a database URL**: `LightApi(database_url=..., mode="async")`
+  and a YAML document with `mode: async` build an `AsyncEngine`, so `lightapi serve` can
+  start an async app. Before, both failed at `register()` with "requires AsyncEngine". A
+  URL without an async driver now raises `ConfigurationError` naming the drivers that work.
+- **Reflected tables accept what the table and the endpoint allow to be absent**: a
+  nullable column of a reflected table is optional on POST (stored as null), and on
+  `reflect = "partial"` a declared `Field(default=...)` or `Field(min_length=...)` is
+  honoured. Before, every non-auto column was required on POST, and the declared
+  `Field()` was dropped once the class was mapped, so `notes: str = Field(default="")`
+  still answered 422 "Field required".
+- **A filter value the column cannot parse is a 422**: `?pages=lots` on an integer
+  column answers `422 {"detail": [{"loc": ["query", "pages"], ...}]}`. Before, the raw
+  string reached the database: an empty list on SQLite, a 500 (`invalid input syntax for
+  type integer`) on Postgres. `lightapi.filters._coerce_filter_value` raises
+  `FilterValueError` for such a value; custom backends that call it get the same.
+- **A protected endpoint's 401 is the backend's own reply**: the guard answered every
+  failed authentication with `{"detail": "Authentication required"}` and
+  `WWW-Authenticate: Bearer`, whatever the backend. It now returns the backend's
+  `get_auth_error_response(request)`, so a JWT endpoint answers the documented
+  `{"detail": "Authentication credentials invalid."}` with `Bearer`, a Basic endpoint
+  answers `{"error": "authentication failed"}` with `Basic realm="Restricted Area"` (the
+  challenge a browser needs to prompt), and a backend subclass that overrides the hook is
+  finally heard. Status 401 unchanged.
+- **A method the endpoint does not allow answers the documented JSON 405**:
+  `{"detail": "Method Not Allowed. Allowed: GET"}` with the `Allow` header, on the CRUD
+  routes and on `/auth/login`. Before, Starlette answered with its `text/plain` "Method
+  Not Allowed" (the JSON reply existed in the code but only `HEAD` ever reached it). The
+  routes still list only the verbs they serve, so two classes may share a path split by
+  method, and a disallowed verb is refused before the authentication guard, the
+  middlewares and the login rate limiter see it. `/auth/login` answers the same body as
+  the CRUD routes; its former `{"detail": "method not allowed"}` is gone. Status and
+  `Allow` are unchanged.
+- **An async app on asyncpg no longer fails its first request after startup** ("Future
+  attached to a different loop"). The startup created the tables on a worker thread with
+  its own event loop, and the connection that did it went back to the pool bound to that
+  loop. The lifespan now runs the DDL on the loop that serves the requests. `build_app()`
+  called from inside an already running loop (a pytest-asyncio test) still uses the worker
+  thread; create the tables yourself in that case.
 
 ## [Unreleased] — 0.1.24
 

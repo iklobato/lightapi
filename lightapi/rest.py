@@ -6,13 +6,13 @@ import inspect
 from collections.abc import Callable
 from functools import partial
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final, cast
 
 if TYPE_CHECKING:
+    from sqlalchemy import Engine, Select
+    from sqlalchemy.ext.asyncio import AsyncEngine
     from sqlalchemy.orm import Session
     from starlette.background import BackgroundTasks
-
-    from lightapi.session_manager import SessionManager
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from sqlalchemy import select as sa_select
@@ -27,10 +27,17 @@ from lightapi.constants import (
     TableReflection,
 )
 from lightapi.exceptions import ConfigurationError
+from lightapi.filters import FilterValueError
 from lightapi.pagination import NoPagination
-from lightapi.repository import Repository, RowNotFound, VersionConflict
+from lightapi.repository import (
+    ConstraintViolation,
+    Repository,
+    RowNotFound,
+    VersionConflict,
+)
 from lightapi.schema import FieldProjection, SchemaFactory
 from lightapi.session import get_async_session, get_sync_session
+from lightapi.session_manager import SessionManager
 from lightapi.table_mapping import DeclaredTable, ReflectedTable, TableSource
 
 _AUTO_FIELDS = AUTO_FIELDS
@@ -53,11 +60,16 @@ class RestEndpointMeta(type):
         name: str,
         bases: tuple[type, ...],
         namespace: dict[str, Any],
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401  class keyword arguments (base_only=...)
     ) -> type:
-        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
+        # Every class made here is RestEndpoint or a subclass; the metaclass fills
+        # in the class attributes RestEndpoint only declares.
+        cls = cast(
+            "type[RestEndpoint]", super().__new__(mcs, name, bases, namespace, **kwargs)
+        )
 
-        if name == "RestEndpoint":
+        if not bases:
+            # RestEndpoint itself: nothing to map.
             return cls
 
         is_base_only = kwargs.get("base_only", False) or namespace.get(
@@ -72,24 +84,27 @@ class RestEndpointMeta(type):
         return cls
 
     @classmethod
-    def _process(mcs, cls: type, name: str, namespace: dict[str, Any]) -> None:
+    def _process(
+        mcs, cls: type[RestEndpoint], name: str, namespace: dict[str, Any]
+    ) -> None:
         mcs._reject_redeclared_auto_fields(name, namespace)
 
         meta_obj = namespace.get("Meta") or getattr(cls, "Meta", None)
         reflection = TableReflection.from_meta(getattr(meta_obj, "reflect", None))
 
-        cls._meta = mcs._parsed_meta(name, meta_obj)  # type: ignore[attr-defined]
-        cls._allowed_methods = mcs._methods_from_mixins(cls)  # type: ignore[attr-defined]
+        cls._meta = mcs._parsed_meta(name, meta_obj)
+        cls._allowed_methods = mcs._methods_from_mixins(cls)
 
         if reflection is not None:
-            # ReflectedTable.map() builds the schemas once the columns are known.
-            cls.__schema_create__ = None  # type: ignore[attr-defined]
-            cls.__schema_read__ = None  # type: ignore[attr-defined]
-            cls._table_source = ReflectedTable(reflection)  # type: ignore[attr-defined]
+            # ReflectedTable.map() builds the schemas once the columns are known,
+            # at register(); until then they are None, as they always were.
+            cls.__schema_create__ = None  # type: ignore[assignment]
+            cls.__schema_read__ = None  # type: ignore[assignment]
+            cls._table_source = ReflectedTable(reflection)
             return
 
-        cls.__schema_create__, cls.__schema_read__ = SchemaFactory.build(cls)  # type: ignore[attr-defined]
-        cls._table_source = DeclaredTable.from_endpoint(cls, name, namespace)  # type: ignore[attr-defined]
+        cls.__schema_create__, cls.__schema_read__ = SchemaFactory.build(cls)
+        cls._table_source = DeclaredTable.from_endpoint(cls, name, namespace)
 
     @staticmethod
     def _reject_redeclared_auto_fields(name: str, namespace: dict[str, Any]) -> None:
@@ -101,7 +116,7 @@ class RestEndpointMeta(type):
                 )
 
     @staticmethod
-    def _parsed_meta(name: str, meta_obj: Any) -> dict[str, Any]:
+    def _parsed_meta(name: str, meta_obj: type | None) -> dict[str, Any]:
         raw_serializer = getattr(meta_obj, "serializer", None) if meta_obj else None
 
         # FieldProjection rejects every non-Serializer; a pydantic model gets its
@@ -122,12 +137,12 @@ class RestEndpointMeta(type):
         }
 
     @staticmethod
-    def _methods_from_mixins(cls: type) -> set[str]:
+    def _methods_from_mixins(cls: type[RestEndpoint]) -> set[str]:
         """HTTP methods named by HttpMethod mixins in the MRO; all when none is."""
         allowed = {
-            HttpVerb(base._http_method).value
+            HttpVerb(method).value
             for base in cls.__mro__[1:]
-            if getattr(base, "_http_method", None)
+            if (method := getattr(base, "_http_method", None))
         }
         return allowed or {verb.value for verb in CRUD_VERBS}
 
@@ -135,6 +150,7 @@ class RestEndpointMeta(type):
 _API_ERRORS: Final[dict[type[Exception], ApiError]] = {
     RowNotFound: ApiError.NOT_FOUND,
     VersionConflict: ApiError.VERSION_CONFLICT,
+    ConstraintViolation: ApiError.CONSTRAINT_VIOLATION,
 }
 
 
@@ -149,8 +165,13 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     _table_source: TableSource
     _meta: dict[str, Any]
     _allowed_methods: set[str]
+    # Built by the metaclass; a reflected table gets them at register().
+    __schema_create__: ClassVar[type[BaseModel]]
+    __schema_read__: ClassVar[type[BaseModel]]
+    # Bound by LightApi.register(); None until then.
+    _session_manager: ClassVar[SessionManager | None] = None
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:  # noqa: ANN401  column values
         self._background: BackgroundTasks | None = None
         self._current_request: Request | None = None
         for k, v in kwargs.items():
@@ -158,7 +179,12 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     # ── Background task support ───────────────────────────────────────────────
 
-    def background(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
+    def background(
+        self,
+        fn: Callable[..., Any],
+        *args: Any,  # noqa: ANN401  passed through to fn
+        **kwargs: Any,  # noqa: ANN401  passed through to fn
+    ) -> None:
         """Schedule fn as a fire-and-forget background task for the current request."""
         if self._background is None:
             raise RuntimeError("background() called outside request handler")
@@ -168,7 +194,7 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     def _session_manager_or_raise(self) -> SessionManager:
         """The SessionManager register() bound to this endpoint class."""
-        session_manager = getattr(type(self), "_session_manager", None)
+        session_manager = self._session_manager
         if session_manager is None:
             raise RuntimeError(
                 "No session_manager configured. "
@@ -176,22 +202,30 @@ class RestEndpoint(metaclass=RestEndpointMeta):
             )
         return session_manager
 
-    def _get_engine(self) -> Any:
+    def _get_engine(self) -> Engine:
         """The engine for sync CRUD; an AsyncEngine is unwrapped to its sync one."""
         return self._session_manager_or_raise().sync_engine
 
-    def _get_queryset(self, request: Request) -> Any:
+    @classmethod
+    def _model_class_or_raise(cls) -> type:
+        """The mapped class; LightApi.register() maps it."""
+        if cls._model_class is None:
+            raise RuntimeError(
+                f"{cls.__name__} is not mapped to a table. "
+                "Ensure LightApi.register() was called with it."
+            )
+        return cls._model_class
+
+    def _get_queryset(self, request: Request) -> Any:  # noqa: ANN401  a Select, or the coroutine of an async def queryset
         cls = type(self)
-        qs_attr = cls.__dict__.get("queryset")
+        qs_attr = getattr(cls, "queryset", None)
         if qs_attr is None:
-            qs_attr = getattr(cls, "queryset", None)
-        if qs_attr is None:
-            return sa_select(cls._model_class)
+            return sa_select(cls._model_class_or_raise())
         if callable(qs_attr):
             return qs_attr(self, request)
         return qs_attr
 
-    def _run_filter_backends(self, request: Request, qs: Any) -> Any:
+    def _run_filter_backends(self, request: Request, qs: Select[Any]) -> Select[Any]:
         filtering = self._meta.get("filtering")
         if not filtering or not filtering.backends:
             return qs
@@ -201,10 +235,12 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     def _fields_for(self, verb: HttpVerb) -> list[str] | None:
         """The serializer's field list for a verb, resolved once per request."""
-        projection = self._meta.get("serializer_normalised", _NO_PROJECTION)
+        projection: FieldProjection = self._meta.get(
+            "serializer_normalised", _NO_PROJECTION
+        )
         return projection.for_method(verb)
 
-    def _serialize_row(self, row: Any, fields: list[str] | None) -> dict[str, Any]:
+    def _serialize_row(self, row: object, fields: list[str] | None) -> dict[str, Any]:
         d = FieldProjection.apply(SchemaFactory.row_to_dict(row), fields)
         validated = type(self).__schema_read__.model_validate(d)
         result = validated.model_dump(mode="json")
@@ -214,10 +250,13 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
     # ── CRUD core: one implementation, always given an open sync Session ─────
 
-    def _list(self, session: Session, request: Request, qs: Any) -> Response:
+    def _list(self, session: Session, request: Request, qs: Select[Any]) -> Response:
         pagination = self._meta.get("pagination")
         paginator = pagination.paginator if pagination else _NO_PAGINATION
-        qs = self._run_filter_backends(request, qs)
+        try:
+            qs = self._run_filter_backends(request, qs)
+        except FilterValueError as exc:
+            return ApiError.validation_failed(exc.errors())
         serialize = partial(self._serialize_row, fields=self._fields_for(HttpVerb.GET))
         return JSONResponse(paginator.render(request, qs, session, serialize))
 
@@ -234,14 +273,17 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         except ValidationError as exc:
             return ApiError.validation_failed(exc.errors())
 
-        row = self._repository(session).add(validated.model_dump())
+        try:
+            row = self._repository(session).add(validated.model_dump())
+        except ConstraintViolation as exc:
+            return _API_ERRORS[type(exc)].response()
         return JSONResponse(
             self._serialize_row(row, self._fields_for(HttpVerb.POST)),
             status_code=HTTPStatus.CREATED,
         )
 
     def _update(
-        self, session: Session, data: dict[str, Any], pk: int, partial: bool
+        self, session: Session, data: dict[str, Any], pk: int, *, partial: bool
     ) -> Response:
         """PUT/PATCH; the client must send the ``version`` it last read."""
         client_version = data.get("version")
@@ -256,18 +298,20 @@ class RestEndpoint(metaclass=RestEndpointMeta):
 
         repository = self._repository(session)
         try:
-            values = self._update_values(data, partial, repository.nullable_columns)
+            values = self._update_values(
+                data, repository.nullable_columns, partial=partial
+            )
         except ValidationError as exc:
             return ApiError.validation_failed(exc.errors())
 
         try:
             row = repository.update(pk, client_version, values)
-        except (RowNotFound, VersionConflict) as exc:
+        except (RowNotFound, VersionConflict, ConstraintViolation) as exc:
             return _API_ERRORS[type(exc)].response()
         return JSONResponse(self._serialize_row(row, self._fields_for(HttpVerb.PUT)))
 
     def _update_values(
-        self, data: dict[str, Any], partial: bool, nullable_columns: set[str]
+        self, data: dict[str, Any], nullable_columns: set[str], *, partial: bool
     ) -> dict[str, Any]:
         """Validated column values for an update, without the auto-managed fields."""
         schema_create = type(self).__schema_create__
@@ -286,12 +330,12 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     def _destroy(self, session: Session, pk: int) -> Response:
         try:
             self._repository(session).delete(pk)
-        except RowNotFound as exc:
+        except (RowNotFound, ConstraintViolation) as exc:
             return _API_ERRORS[type(exc)].response()
         return Response(status_code=HTTPStatus.NO_CONTENT)
 
     def _repository(self, session: Session) -> Repository:
-        return Repository(type(self)._model_class, session)
+        return Repository(self._model_class_or_raise(), session)
 
     # ── Sync CRUD: the core inside a sync Session ─────────────────────────────
 
@@ -300,7 +344,11 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         with get_sync_session(self._get_engine()) as session:
             return self._list(session, request, self._get_queryset(request))
 
-    def retrieve(self, request: Request, pk: int) -> Response:
+    def retrieve(
+        self,
+        request: Request,  # noqa: ARG002  public signature
+        pk: int,
+    ) -> Response:
         """Handle GET /{path}/{id}."""
         with get_sync_session(self._get_engine()) as session:
             return self._retrieve(session, pk)
@@ -313,23 +361,29 @@ class RestEndpoint(metaclass=RestEndpointMeta):
     def update(self, data: dict[str, Any], pk: int, partial: bool = False) -> Response:
         """Handle PUT/PATCH /{path}/{id} with optimistic locking."""
         with get_sync_session(self._get_engine()) as session:
-            return self._update(session, data, pk, partial)
+            return self._update(session, data, pk, partial=partial)
 
-    def destroy(self, request: Request, pk: int) -> Response:
+    def destroy(
+        self,
+        request: Request,  # noqa: ARG002  public signature
+        pk: int,
+    ) -> Response:
         """Handle DELETE /{path}/{id}."""
         with get_sync_session(self._get_engine()) as session:
             return self._destroy(session, pk)
 
     # ── Async CRUD: the same core, run through AsyncSession.run_sync ──────────
 
-    async def _get_queryset_async(self, request: Request) -> Any:
+    async def _get_queryset_async(self, request: Request) -> Select[Any]:
         """_get_queryset(), awaiting the result of an ``async def queryset``."""
-        qs = self._get_queryset(request)
-        return await qs if inspect.isawaitable(qs) else qs
+        raw = self._get_queryset(request)
+        qs: Select[Any] = await raw if inspect.isawaitable(raw) else raw
+        return qs
 
-    def _get_async_engine(self) -> Any:
+    def _get_async_engine(self) -> AsyncEngine:
         """Return the raw (AsyncEngine) engine for async session creation."""
-        return self._session_manager_or_raise().engine
+        engine: AsyncEngine = self._session_manager_or_raise().engine
+        return engine
 
     async def _in_async_session(self, work: Callable[[Session], Response]) -> Response:
         async with get_async_session(self._get_async_engine()) as session:
@@ -340,7 +394,11 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         qs = await self._get_queryset_async(request)
         return await self._in_async_session(lambda s: self._list(s, request, qs))
 
-    async def _retrieve_async(self, request: Request, pk: int) -> Response:
+    async def _retrieve_async(
+        self,
+        request: Request,  # noqa: ARG002  mirrors retrieve()
+        pk: int,
+    ) -> Response:
         return await self._in_async_session(lambda s: self._retrieve(s, pk))
 
     async def _create_async(self, data: dict[str, Any]) -> Response:
@@ -350,8 +408,12 @@ class RestEndpoint(metaclass=RestEndpointMeta):
         self, data: dict[str, Any], pk: int, partial: bool = False
     ) -> Response:
         return await self._in_async_session(
-            lambda s: self._update(s, data, pk, partial)
+            lambda s: self._update(s, data, pk, partial=partial)
         )
 
-    async def _destroy_async(self, request: Request, pk: int) -> Response:
+    async def _destroy_async(
+        self,
+        request: Request,  # noqa: ARG002  mirrors destroy()
+        pk: int,
+    ) -> Response:
         return await self._in_async_session(lambda s: self._destroy(s, pk))

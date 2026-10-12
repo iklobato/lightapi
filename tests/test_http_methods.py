@@ -5,7 +5,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
-from lightapi import HttpMethod, LightApi, RestEndpoint
+from lightapi import (
+    Authentication,
+    HttpMethod,
+    IsAuthenticated,
+    JWTAuthentication,
+    LightApi,
+    Middleware,
+    RestEndpoint,
+)
 from lightapi.fields import Field as LField
 
 
@@ -37,6 +45,87 @@ def client():
         }
     )
     return TestClient(app_instance.build_app())
+
+
+class SharedPathReader(RestEndpoint, HttpMethod.GET):
+    title: str = LField(min_length=1)
+
+    class Meta:
+        table = "shared_path_readers"
+
+
+class SharedPathWriter(RestEndpoint, HttpMethod.POST):
+    title: str = LField(min_length=1)
+
+    class Meta:
+        table = "shared_path_writers"
+
+
+class GuardedReader(RestEndpoint, HttpMethod.GET):
+    title: str = LField(min_length=1)
+
+    class Meta:
+        table = "guarded_readers"
+        authentication = Authentication(
+            backend=JWTAuthentication, permission=IsAuthenticated
+        )
+
+
+def _app(mapping):
+    app = LightApi(
+        engine=create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        ),
+        login_validator=lambda u, p: {"username": u} if p == "pw" else None,
+    )
+    for path, cls in mapping:
+        app.register({path: cls})
+    return TestClient(app.build_app())
+
+
+class TestRoutingByMethod:
+    """Routes carry only the verbs the endpoint allows, so Starlette still routes
+    by method; the JSON 405 is rendered by the app's own 405 handler, ahead of the
+    authentication guard (review finding 1 on the e2e branch)."""
+
+    def test_two_classes_on_one_path_split_by_method(self):
+        client = _app([("/same", SharedPathReader), ("/same", SharedPathWriter)])
+
+        assert client.get("/same").status_code == 200
+        assert client.post("/same", json={"title": "x"}).status_code == 201
+
+    def test_disallowed_method_on_a_protected_endpoint_is_405_not_401(self):
+        client = _app([("/guarded", GuardedReader)])
+
+        resp = client.post("/guarded", json={"title": "x"})
+
+        assert resp.status_code == 405
+        assert resp.headers["Allow"] == "GET"
+        assert resp.json() == {"detail": "Method Not Allowed. Allowed: GET"}
+
+    def test_the_405_reaches_no_middleware(self):
+        seen: list[str] = []
+
+        class Spy(Middleware):
+            def process(self, request, response):
+                seen.append(request.method)
+                return response
+
+        app = LightApi(
+            engine=create_engine(
+                "sqlite:///:memory:",
+                connect_args={"check_same_thread": False},
+                poolclass=StaticPool,
+            ),
+            middlewares=[Spy],
+        )
+        app.register({"/spied": SharedPathReader})
+        client = TestClient(app.build_app())
+
+        assert client.delete("/spied/1").status_code == 405
+        assert seen == []
 
 
 class TestAllowedMethods:
@@ -93,6 +182,19 @@ class Test405AllowHeader:
         assert resp.status_code == 405
         assert "Allow" in resp.headers
         assert "GET" in resp.headers["Allow"]
+
+    def test_405_body_is_the_documented_json(self, client):
+        """README "Error responses": {"detail": "Method Not Allowed. Allowed: GET"}.
+
+        Starlette's route-level method filter used to answer first, with a
+        text/plain body, so the JSON reply the handler builds never left the server.
+        """
+        resp = client.post("/readonly", json={"title": "X"})
+
+        assert resp.status_code == 405
+        assert resp.headers["content-type"].startswith("application/json")
+        assert resp.json() == {"detail": "Method Not Allowed. Allowed: GET"}
+        assert resp.headers["Allow"] == "GET"
 
 
 class TestRouteMerge:

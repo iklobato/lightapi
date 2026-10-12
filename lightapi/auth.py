@@ -1,7 +1,9 @@
 """LightAPI Authentication - Backward compatibility module.
 
 This module re-exports authentication classes from the new authentication submodule.
-For new code, use: from lightapi.authentication import JWTAuthentication, BasicAuthentication
+For new code, use::
+
+    from lightapi.authentication import JWTAuthentication, BasicAuthentication
 """
 
 from lightapi.authentication import (
@@ -15,11 +17,11 @@ from lightapi.authentication import (
 )
 
 __all__ = [
+    "AllowAny",
     "BaseAuthentication",
     "BasePermission",
-    "AllowAny",
-    "IsAuthenticated",
-    "IsAdminUser",
     "BasicAuthentication",
+    "IsAdminUser",
+    "IsAuthenticated",
     "JWTAuthentication",
 ]

@@ -220,9 +220,6 @@ class TestCursorPagination:
         assert "next" in body
         assert "results" in body
 
-    @pytest.mark.xfail(
-        reason="CursorPaginator order_by('id') may not work with SQLite Select shape"
-    )
     def test_cursor_traversal(self, client):
         resp1 = client.get("/cursor_products")
         next_cursor = resp1.json().get("next")

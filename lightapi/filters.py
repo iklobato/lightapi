@@ -1,9 +1,35 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, Float, Integer, Numeric, asc, desc, or_
+from sqlalchemy import Boolean, Float, Integer, Numeric, Select, asc, desc, or_
 from starlette.requests import Request
+
+from lightapi.constants import INT64_MAX, INT64_MIN
+
+if TYPE_CHECKING:
+    from lightapi.rest import RestEndpoint
+
+
+class FilterValueError(ValueError):
+    """A query-string value the column type cannot parse (``?pages=lots``)."""
+
+    def __init__(self, param: str, value: str, expected: str) -> None:
+        super().__init__(f"{param}={value!r} is not a valid {expected}")
+        self.param = param
+        self.value = value
+        self.expected = expected
+
+    def errors(self) -> list[dict[str, Any]]:
+        """The 422 body, shaped like pydantic's error list."""
+        return [
+            {
+                "loc": ["query", self.param],
+                "msg": f"Input should be a valid {self.expected}",
+                "type": f"{self.expected}_parsing",
+                "input": self.value,
+            }
+        ]
 
 
 class BaseFilter:
@@ -16,7 +42,12 @@ class BaseFilter:
     RESERVED_PARAMS = frozenset({"page", "page_size", "cursor", "ordering"})
     LIKE_ESCAPE_CHAR = "\\"
 
-    def filter_queryset(self, request: Request, queryset: Any, view: Any) -> Any:
+    def filter_queryset(
+        self,
+        request: Request,  # noqa: ARG002  interface method
+        queryset: Select[Any],
+        view: RestEndpoint,  # noqa: ARG002  interface method
+    ) -> Select[Any]:
         return queryset
 
     @classmethod
@@ -30,45 +61,65 @@ class BaseFilter:
         )
 
     @staticmethod
-    def _coerce_filter_value(col: Any, value: str) -> Any:
+    def _coerce_filter_value(
+        col: Any,  # noqa: ANN401  a mapped attribute, or whatever a custom backend passes
+        value: str,
+    ) -> bool | int | float | str:
         """Coerce a query-string value to match the column's Python type.
 
-        A value the column type cannot parse, or an attribute that is not a
-        column, is passed through as the string it came in as.
+        An attribute that is not a column passes the value through as the string
+        it came in as. A value an int or float column cannot parse raises
+        FilterValueError: handed to the database it is a silent empty list on
+        SQLite and a DataError (500) on Postgres.
         """
         try:
             col_type = (
                 col.property.columns[0].type if hasattr(col, "property") else None
             )
-            if col_type is None:
-                # InstrumentedAttribute from mapped class
-                col_type = getattr(col, "type", None)
-            if isinstance(col_type, Boolean):
-                return value.lower() in ("1", "true", "yes", "on")
+        except (AttributeError, IndexError):
+            col_type = None
+        if col_type is None:
+            # InstrumentedAttribute from mapped class
+            col_type = getattr(col, "type", None)
+        if isinstance(col_type, Boolean):
+            return value.lower() in ("1", "true", "yes", "on")
+        expected = "integer" if isinstance(col_type, Integer) else "number"
+        try:
             if isinstance(col_type, Integer):
-                return int(value)
-            if isinstance(col_type, (Numeric, Float)):
+                number = int(value)
+            elif isinstance(col_type, (Numeric, Float)):
                 return float(value)
-        except (ValueError, AttributeError, IndexError):
-            pass
-        return value
+            else:
+                return value
+        except ValueError:
+            raise FilterValueError(getattr(col, "key", "?"), value, expected) from None
+        # Past 64 bits the driver raises (OverflowError on SQLite) instead of
+        # comparing; no column holds such a value.
+        if not INT64_MIN <= number <= INT64_MAX:
+            raise FilterValueError(getattr(col, "key", "?"), value, expected)
+        return number
 
 
-def _coerce_filter_value(col: Any, value: str) -> Any:
+def _coerce_filter_value(
+    col: Any,  # noqa: ANN401  see BaseFilter._coerce_filter_value
+    value: str,
+) -> bool | int | float | str:
     """Module-level alias of BaseFilter._coerce_filter_value.
 
     docs/api-reference/filters.md teaches custom backends to import this
     name directly; keep it importing here even though subclasses now get
     it for free via self._coerce_filter_value.
     """
-    return BaseFilter._coerce_filter_value(col, value)
+    return BaseFilter._coerce_filter_value(col, value)  # noqa: SLF001  the alias above
 
 
 class FieldFilter(BaseFilter):
     """Exact-match filter on whitelisted fields declared in Meta.filtering.fields."""
 
-    def filter_queryset(self, request: Request, queryset: Any, view: Any) -> Any:
-        filtering_cfg = getattr(view, "_meta", {}).get("filtering")
+    def filter_queryset(
+        self, request: Request, queryset: Select[Any], view: RestEndpoint
+    ) -> Select[Any]:
+        filtering_cfg = view._meta.get("filtering")  # noqa: SLF001  the endpoint's Meta
         allowed_fields: list[str] = (
             (filtering_cfg.fields or []) if filtering_cfg else []
         )
@@ -89,12 +140,14 @@ class FieldFilter(BaseFilter):
 class SearchFilter(BaseFilter):
     """Case-insensitive LIKE search across Meta.filtering.search fields."""
 
-    def filter_queryset(self, request: Request, queryset: Any, view: Any) -> Any:
+    def filter_queryset(
+        self, request: Request, queryset: Select[Any], view: RestEndpoint
+    ) -> Select[Any]:
         query = request.query_params.get("search")
         if not query:
             return queryset
 
-        filtering_cfg = getattr(view, "_meta", {}).get("filtering")
+        filtering_cfg = view._meta.get("filtering")  # noqa: SLF001  the endpoint's Meta
         search_fields: list[str] = (filtering_cfg.search or []) if filtering_cfg else []
         if not search_fields:
             return queryset
@@ -117,12 +170,14 @@ class SearchFilter(BaseFilter):
 class OrderingFilter(BaseFilter):
     """Ordering via ``?ordering=field`` or ``?ordering=-field`` (descending)."""
 
-    def filter_queryset(self, request: Request, queryset: Any, view: Any) -> Any:
+    def filter_queryset(
+        self, request: Request, queryset: Select[Any], view: RestEndpoint
+    ) -> Select[Any]:
         ordering_param = request.query_params.get("ordering")
         if not ordering_param:
             return queryset
 
-        filtering_cfg = getattr(view, "_meta", {}).get("filtering")
+        filtering_cfg = view._meta.get("filtering")  # noqa: SLF001  the endpoint's Meta
         allowed: list[str] = (filtering_cfg.ordering or []) if filtering_cfg else []
 
         # No whitelist configured → ordering is disabled entirely.

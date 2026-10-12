@@ -53,7 +53,7 @@ Applies exact `WHERE col = value` for query parameters in `fields`.
 GET /articles?published=true&category=tech
 ```
 
-**Type coercion**: string query parameter values are automatically converted to the correct Python type (`bool`, `int`, `float`) based on the SQLAlchemy column type. This prevents type errors with strict databases like PostgreSQL.
+**Type coercion**: string query parameter values are automatically converted to the correct Python type (`bool`, `int`, `float`) based on the SQLAlchemy column type. A value an `int` or `float` column cannot parse (`?pages=lots`) answers `422` with `{"detail": [{"loc": ["query", "pages"], ...}]}` instead of reaching the database.
 
 **Class:** `lightapi.filters.FieldFilter`
 

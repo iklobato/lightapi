@@ -1,5 +1,6 @@
 """Tests for US5: async and sync middleware coexistence."""
 
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from pydantic import Field as PydanticField
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -11,16 +12,21 @@ from lightapi.config import Authentication
 from lightapi.core import Middleware
 
 
-def _make_app(middlewares, engine=None):
-    if engine is None:
-        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+class Item(RestEndpoint):
+    name: str = PydanticField(min_length=1)
 
-    class Item(RestEndpoint):
-        name: str = PydanticField(min_length=1)
+    class Meta:
+        authentication = Authentication(permission=AllowAny)
 
-        class Meta:
-            authentication = Authentication(permission=AllowAny)
 
+@pytest_asyncio.fixture
+async def engine():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    yield engine
+    await engine.dispose()
+
+
+def _make_app(middlewares, engine):
     app = LightApi(engine=engine, mode="async", middlewares=middlewares)
     app.register({"/items": Item})
     return app.build_app()
@@ -57,7 +63,7 @@ class ShortCircuitMiddleware(Middleware):
         return response
 
 
-async def test_async_process_is_awaited():
+async def test_async_process_is_awaited(engine):
     """async def process middleware is awaited and executes correctly."""
     log: list = []
 
@@ -67,7 +73,7 @@ async def test_async_process_is_awaited():
                 log.append("awaited")
             return response
 
-    app = _make_app([_MW])
+    app = _make_app([_MW], engine)
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
@@ -76,7 +82,7 @@ async def test_async_process_is_awaited():
     assert "awaited" in log
 
 
-async def test_sync_middleware_in_async_stack():
+async def test_sync_middleware_in_async_stack(engine):
     """Sync process() middleware executes alongside async middleware."""
     log: list = []
 
@@ -92,7 +98,7 @@ async def test_sync_middleware_in_async_stack():
                 log.append("s-pre")
             return response
 
-    app = _make_app([_AsyncMW, _SyncMW])
+    app = _make_app([_AsyncMW, _SyncMW], engine)
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
@@ -101,7 +107,7 @@ async def test_sync_middleware_in_async_stack():
     assert "s-pre" in log
 
 
-async def test_middleware_declaration_order_preserved():
+async def test_middleware_declaration_order_preserved(engine):
     """Pre-request middleware runs A→B→C in declaration order."""
     log: list = []
 
@@ -123,7 +129,7 @@ async def test_middleware_declaration_order_preserved():
                 log.append("C")
             return response
 
-    app = _make_app([A, B, C])
+    app = _make_app([A, B, C], engine)
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
@@ -132,9 +138,9 @@ async def test_middleware_declaration_order_preserved():
     assert pre_indices == sorted(pre_indices)
 
 
-async def test_async_middleware_short_circuit():
+async def test_async_middleware_short_circuit(engine):
     """Middleware returning a Response halts the chain; endpoint is not called."""
-    app = _make_app([ShortCircuitMiddleware])
+    app = _make_app([ShortCircuitMiddleware], engine)
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:

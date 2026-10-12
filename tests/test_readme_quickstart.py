@@ -25,8 +25,7 @@ def _quickstart_source(db_path: Path) -> str:
     # and TestClient below may run requests on a different thread than the
     # one that just registered the table.
     source = source.replace('"sqlite:///books.db"', f'"sqlite:///{db_path}"')
-    source = source.replace("if __name__ ==", "if False and __name__ ==")
-    return source
+    return source.replace("if __name__ ==", "if False and __name__ ==")
 
 
 def test_quickstart_source_runs_unmodified_and_serves_crud(tmp_path):
@@ -50,7 +49,7 @@ print("QUICKSTART_OK")
         encoding="utf-8",
     )
 
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603  the README script, fixed argv
         [sys.executable, str(script)], capture_output=True, text=True, timeout=15
     )
 

@@ -34,7 +34,7 @@ class ExecutionMode(str, Enum):
 class ResponseKey(str, Enum):
     DETAIL = "detail"
     RESULTS = "results"
-    TOKEN = "token"
+    TOKEN = "token"  # noqa: S105  a response key, not a secret
     USER = "user"
     COUNT = "count"
     PAGES = "pages"
@@ -70,28 +70,29 @@ CRUD_VERBS: Final = frozenset(
 
 # The public marker mixin of each CRUD verb, by the verb's name (YAML and dict configs).
 HTTP_METHOD_MIXINS: Final[dict[str, type]] = {
-    verb.value: getattr(HttpMethod, verb.value) for verb in CRUD_VERBS
+    HttpVerb.GET.value: HttpMethod.GET,
+    HttpVerb.POST.value: HttpMethod.POST,
+    HttpVerb.PUT.value: HttpMethod.PUT,
+    HttpVerb.PATCH.value: HttpMethod.PATCH,
+    HttpVerb.DELETE.value: HttpMethod.DELETE,
 }
 
 
 # ─────────────────────────────────────────────────────────────────────────
 # Error replies with a fixed text (status, detail, extra headers)
 # ─────────────────────────────────────────────────────────────────────────
+# The range of a BIGINT / SQLite INTEGER: a key or an integer filter value outside it
+# never matches a row, and the drivers raise instead of comparing.
+INT64_MIN: Final = -(2**63)
+INT64_MAX: Final = 2**63 - 1
+
+
 class ApiError(Enum):
     NOT_FOUND = (HTTPStatus.NOT_FOUND, "not found")
     VERSION_CONFLICT = (HTTPStatus.CONFLICT, "version conflict")
-    AUTHENTICATION_REQUIRED = (
-        HTTPStatus.UNAUTHORIZED,
-        "Authentication required",
-        {"WWW-Authenticate": "Bearer"},
-    )
+    CONSTRAINT_VIOLATION = (HTTPStatus.CONFLICT, "constraint violation")
     INSUFFICIENT_PERMISSIONS = (HTTPStatus.FORBIDDEN, "Insufficient permissions")
     INVALID_CREDENTIALS = (HTTPStatus.UNAUTHORIZED, "Invalid credentials")
-    LOGIN_METHOD_NOT_ALLOWED = (
-        HTTPStatus.METHOD_NOT_ALLOWED,
-        "method not allowed",
-        {"Allow": HttpVerb.POST.value},
-    )
 
     def __init__(
         self, status: HTTPStatus, detail: str, headers: "dict[str, str] | None" = None

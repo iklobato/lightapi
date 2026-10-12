@@ -3,6 +3,7 @@
 import os
 import tempfile
 import textwrap
+from pathlib import Path
 
 import pytest
 import yaml
@@ -47,7 +48,7 @@ def _from_str(content: str, login_validator=None) -> LightApi:
             kwargs["login_validator"] = _default_login_validator
         return LightApi.from_config(path, **kwargs)
     finally:
-        os.unlink(path)
+        Path(path).unlink()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -59,10 +60,10 @@ class TestSchemaValidation:
     def test_invalid_yaml_syntax_raises(self):
         path = _write_yaml("invalid: yaml: content: [")
         try:
-            with pytest.raises(Exception):
+            with pytest.raises(yaml.YAMLError):
                 LightApi.from_config(path)
         finally:
-            os.unlink(path)
+            Path(path).unlink()
 
     def test_endpoint_without_route_raises(self):
         # Direct model_validate raises pydantic ValidationError;
@@ -85,7 +86,7 @@ class TestSchemaValidation:
             with pytest.raises(ConfigurationError, match="LIGHTAPI_DB_MISSING_XTEST"):
                 LightApi.from_config(path)
         finally:
-            os.unlink(path)
+            Path(path).unlink()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -305,7 +306,7 @@ class TestDeclarativeFormat:
             app = LightApi.from_config(path, engine=custom_engine)
             assert app._engine is custom_engine
         finally:
-            os.unlink(path)
+            Path(path).unlink()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -327,7 +328,7 @@ class TestYamlAuthConfig:
                 backend: JWTAuthentication
                 permission: IsAuthenticated
             endpoints:
-              - route: /x
+              - route: /xauthpath
                 fields:
                   data: { type: str }
                 meta:
@@ -358,7 +359,7 @@ class TestYamlAuthConfig:
                 backend: JWTAuthentication
                 permission: IsAuthenticated
             endpoints:
-              - route: /x
+              - route: /xvalidator
                 fields:
                   data: { type: str }
                 meta:
@@ -378,14 +379,14 @@ class TestYamlAuthConfig:
                 permission: IsAuthenticated
                 jwt_expiration: 300
             endpoints:
-              - route: /x
+              - route: /xexpiration
                 fields:
                   data: { type: str }
                 meta:
                   methods: [GET]
             """
         app = _from_str(content)
-        cls = app._endpoint_map["/x"]
+        cls = app._endpoint_map["/xexpiration"]
         assert cls.Meta.authentication.jwt_expiration == 300
 
     def test_jwt_extra_claims_from_defaults(self):
@@ -399,14 +400,14 @@ class TestYamlAuthConfig:
                 permission: IsAuthenticated
                 jwt_extra_claims: [sub, email]
             endpoints:
-              - route: /x
+              - route: /xclaims
                 fields:
                   data: { type: str }
                 meta:
                   methods: [GET]
             """
         app = _from_str(content)
-        cls = app._endpoint_map["/x"]
+        cls = app._endpoint_map["/xclaims"]
         assert cls.Meta.authentication.jwt_extra_claims == ["sub", "email"]
 
     def test_basic_authentication_from_yaml(self):
@@ -419,7 +420,7 @@ class TestYamlAuthConfig:
                 backend: BasicAuthentication
                 permission: IsAuthenticated
             endpoints:
-              - route: /items
+              - route: /basicitems
                 fields:
                   name: { type: str }
                 meta:
@@ -428,7 +429,7 @@ class TestYamlAuthConfig:
         app = _from_str(content)
         from lightapi.auth import BasicAuthentication
 
-        cls = app._endpoint_map["/items"]
+        cls = app._endpoint_map["/basicitems"]
         assert cls.Meta.authentication.backend is BasicAuthentication
 
     def test_login_validator_invalid_dotted_path_raises(self):
@@ -455,7 +456,7 @@ class TestYamlAuthConfig:
             with pytest.raises(ConfigurationError, match="login_validator"):
                 LightApi.from_config(path)
         finally:
-            os.unlink(path)
+            Path(path).unlink()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -13,28 +13,29 @@ from lightapi.auth import AllowAny
 from lightapi.config import Authentication
 
 
+class AsyncWidget(RestEndpoint):
+    name: str = PydanticField(min_length=1)
+
+    class Meta:
+        authentication = Authentication(permission=AllowAny)
+
+    async def queryset(self, request):
+        return sa_select(type(self)._model_class)
+
+
+class SyncCategory(RestEndpoint):
+    label: str = PydanticField(min_length=1)
+
+    class Meta:
+        authentication = Authentication(permission=AllowAny)
+
+    def queryset(self, request):
+        return sa_select(type(self)._model_class)
+
+
 @pytest_asyncio.fixture
 async def mixed_client():
     """App with one async endpoint and one sync endpoint on the same async engine."""
-
-    class AsyncWidget(RestEndpoint):
-        name: str = PydanticField(min_length=1)
-
-        class Meta:
-            authentication = Authentication(permission=AllowAny)
-
-        async def queryset(self, request):
-            return sa_select(type(self)._model_class)
-
-    class SyncCategory(RestEndpoint):
-        label: str = PydanticField(min_length=1)
-
-        class Meta:
-            authentication = Authentication(permission=AllowAny)
-
-        def queryset(self, request):
-            return sa_select(type(self)._model_class)
-
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     app = LightApi(engine=engine, mode="async")
     app.register({"/widgets": AsyncWidget, "/cats": SyncCategory})
@@ -43,6 +44,7 @@ async def mixed_client():
         transport=ASGITransport(app=starlette_app), base_url="http://test"
     ) as c:
         yield c
+    await engine.dispose()
 
 
 async def test_sync_and_async_endpoints_same_app(mixed_client):

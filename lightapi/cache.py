@@ -1,11 +1,14 @@
+# BaseCache's no-op get()/set() ignore their arguments by design (FROZEN).
+# ruff: noqa: ARG002
 from __future__ import annotations
 
 import json
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from functools import cache
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 import redis
 from starlette.concurrency import run_in_threadpool
@@ -46,12 +49,23 @@ class RedisCacheBackend:
     def _get_client(self) -> redis.Redis | None:
         if self._client is None:
             try:
-                self._client = redis.from_url(self._redis_url, socket_connect_timeout=1)
+                # A Redis that accepts the connection and then hangs would hold a
+                # worker thread per cached request; a slow reply is a cache miss.
+                # 1s is the connect timeout the code base already uses, not a
+                # measured value.
+                self._client = redis.from_url(
+                    self._redis_url, socket_connect_timeout=1, socket_timeout=1
+                )
             except (ValueError, redis.RedisError):
+                logger.warning(
+                    "Cache disabled: cannot build a Redis client from "
+                    "LIGHTAPI_REDIS_URL",
+                    exc_info=True,
+                )
                 return None
         return self._client
 
-    def get(self, key: str) -> Any | None:
+    def get(self, key: str) -> Any | None:  # noqa: ANN401  whatever JSON was cached
         client = self._get_client()
         if client is None:
             return None
@@ -59,27 +73,28 @@ class RedisCacheBackend:
             raw = client.get(key)
             return json.loads(raw) if raw else None
         except (redis.RedisError, json.JSONDecodeError, UnicodeDecodeError):
+            logger.warning(
+                "Cache read failed for %s; serving from the database",
+                key,
+                exc_info=True,
+            )
             return None
 
-    def set(self, key: str, value: Any, timeout: int = 300) -> bool:
+    def set(
+        self,
+        key: str,
+        value: Any,  # noqa: ANN401  any JSON value
+        timeout: int = 300,
+    ) -> bool:
         client = self._get_client()
         if client is None:
             return False
         try:
             client.setex(key, timeout, json.dumps(value))
-            return True
         except redis.RedisError:
+            logger.warning("Cache write failed for %s", key, exc_info=True)
             return False
-
-    def delete(self, key: str) -> bool:
-        client = self._get_client()
-        if client is None:
-            return False
-        try:
-            client.delete(key)
-            return True
-        except redis.RedisError:
-            return False
+        return True
 
     def invalidate_prefix(self, prefix: str) -> bool:
         client = self._get_client()
@@ -89,9 +104,10 @@ class RedisCacheBackend:
             keys = list(client.scan_iter(f"{prefix}*"))
             if keys:
                 client.delete(*keys)
-            return True
         except redis.RedisError:
+            logger.warning("Cache invalidation failed for %s*", prefix, exc_info=True)
             return False
+        return True
 
     def ping(self) -> bool:
         client = self._get_client()
@@ -100,6 +116,7 @@ class RedisCacheBackend:
         try:
             return bool(client.ping())
         except redis.RedisError:
+            logger.warning("Redis is not reachable", exc_info=True)
             return False
 
 
@@ -180,7 +197,7 @@ class BaseCache:
     By default, acts as a no-op cache (doesn't actually cache anything).
     """
 
-    def get(self, key: str) -> Optional[Dict[str, Any]]:
+    def get(self, key: str) -> dict[str, Any] | None:
         """
         Retrieve data from the cache.
 
@@ -192,7 +209,7 @@ class BaseCache:
         """
         return None
 
-    def set(self, key: str, value: Dict[str, Any], timeout: int = 300) -> bool:
+    def set(self, key: str, value: dict[str, Any], timeout: int = 300) -> bool:
         """
         Store data in the cache.
 
@@ -226,7 +243,7 @@ class RedisCache(BaseCache):
         """
         self.client = redis.Redis(host=host, port=port, db=db)
 
-    def get(self, key: str) -> Optional[Dict[str, Any]]:
+    def get(self, key: str) -> dict[str, Any] | None:
         """
         Retrieve data from the Redis cache.
 
@@ -244,7 +261,7 @@ class RedisCache(BaseCache):
                 return None
         return None
 
-    def set(self, key: str, value: Dict[str, Any], timeout: int = 300) -> bool:
+    def set(self, key: str, value: dict[str, Any], timeout: int = 300) -> bool:
         """
         Store data in the Redis cache.
 

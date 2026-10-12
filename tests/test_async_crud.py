@@ -11,16 +11,28 @@ from lightapi.auth import AllowAny
 from lightapi.config import Authentication
 
 
+class Widget(RestEndpoint):
+    name: str = PydanticField(min_length=1)
+    qty: int = PydanticField(default=0)
+
+    class Meta:
+        authentication = Authentication(permission=AllowAny)
+
+
+class Cat(RestEndpoint):
+    """A sync-queryset endpoint for an async engine."""
+
+    name: str = PydanticField(min_length=1)
+
+    class Meta:
+        authentication = Authentication(permission=AllowAny)
+
+    def queryset(self, request):
+        return sa_select(type(self)._model_class)
+
+
 def _make_widget_app(engine):
     """Build a LightApi app with a Widget endpoint."""
-
-    class Widget(RestEndpoint):
-        name: str = PydanticField(min_length=1)
-        qty: int = PydanticField(default=0)
-
-        class Meta:
-            authentication = Authentication(permission=AllowAny)
-
     app = LightApi(engine=engine, mode="async")
     app.register({"/widgets": Widget})
     return app
@@ -28,16 +40,6 @@ def _make_widget_app(engine):
 
 def _make_sync_endpoint_app(engine):
     """Build a LightApi app with a sync-queryset endpoint on an async engine."""
-
-    class Cat(RestEndpoint):
-        name: str = PydanticField(min_length=1)
-
-        class Meta:
-            authentication = Authentication(permission=AllowAny)
-
-        def queryset(self, request):
-            return sa_select(type(self)._model_class)
-
     app = LightApi(engine=engine, mode="async")
     app.register({"/cats": Cat})
     return app
@@ -52,6 +54,7 @@ async def client():
         transport=ASGITransport(app=starlette_app), base_url="http://test"
     ) as c:
         yield c
+    await engine.dispose()
 
 
 @pytest_asyncio.fixture
@@ -63,6 +66,7 @@ async def sync_client():
         transport=ASGITransport(app=starlette_app), base_url="http://test"
     ) as c:
         yield c
+    await engine.dispose()
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────

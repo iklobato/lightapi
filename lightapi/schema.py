@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import datetime
 import logging
+from collections.abc import Mapping
 from decimal import Decimal
-from functools import lru_cache
+from functools import cache
 from typing import Any, Final, NamedTuple, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, create_model
 from pydantic.fields import FieldInfo
-from sqlalchemy import Numeric, Uuid
+from sqlalchemy import Column, Numeric, Table, Uuid
 
 from lightapi.config import Serializer
 from lightapi.constants import AUTO_FIELDS, HttpVerb
@@ -89,10 +90,10 @@ _REFLECTED_PYTHON_TYPES = frozenset(
 
 # Every read schema carries the auto-managed columns, after the endpoint's own fields.
 _AUTO_READ_FIELDS: Final[dict[str, Any]] = {
-    "id": (Optional[int], None),
-    "created_at": (Optional[datetime.datetime], None),
-    "updated_at": (Optional[datetime.datetime], None),
-    "version": (Optional[int], None),
+    "id": (int | None, None),
+    "created_at": (datetime.datetime | None, None),
+    "updated_at": (datetime.datetime | None, None),
+    "version": (int | None, None),
 }
 
 
@@ -101,7 +102,7 @@ class SchemaFactory:
     into the dicts those models validate."""
 
     @staticmethod
-    def row_to_dict(row: Any) -> dict[str, Any]:
+    def row_to_dict(row: object) -> dict[str, Any]:
         """Convert a SQLAlchemy row or ORM instance to a plain dict.
 
         Handles four cases:
@@ -118,21 +119,28 @@ class SchemaFactory:
                 col.key: getattr(row, col.key) for col in row.__mapper__.column_attrs
             }
         if hasattr(row, "_mapping"):
-            return dict(row._mapping)
+            return dict(row._mapping)  # noqa: SLF001  SQLAlchemy's public Row mapping
         if hasattr(row, "__dict__"):
             return {k: v for k, v in row.__dict__.items() if not k.startswith("_")}
         raise SerializationError(f"Cannot convert {type(row)} to dict.")
 
     @staticmethod
-    @lru_cache(maxsize=None)
+    @cache
     def patch_schema(schema_create: type[BaseModel]) -> type[BaseModel]:
         """``schema_create`` with every field optional, so PATCH can send any subset.
 
         Cached per create schema: endpoints are a fixed set of classes, and building
         a pydantic model on every PATCH request was measurable work for nothing.
         """
+        # Optional[...] because `| None` fails on what gets here: pydantic may hand
+        # back None, and a user module under `from __future__ import annotations`
+        # declares its fields as strings. The FieldInfo travels with the field so
+        # a PATCH meets the same constraints as a PUT; only the default changes.
         optional_fields: dict[str, Any] = {
-            name: (Optional[field.annotation], None)  # type: ignore[valid-type]
+            name: (
+                Optional[field.annotation],  # noqa: UP045
+                FieldInfo.merge_field_infos(field, default=None),
+            )
             for name, field in schema_create.model_fields.items()
         }
         return create_model(
@@ -142,7 +150,9 @@ class SchemaFactory:
         )
 
     @staticmethod
-    def _reflected_annotation(column: Any) -> Any:
+    def _reflected_annotation(
+        column: Column[Any],
+    ) -> Any:  # noqa: ANN401  a type, or typing.Any itself
         """Annotation for a reflected column, from SQLAlchemy's own type mapping."""
         # Two answers of python_type differ from what released versions validated,
         # and clients see the difference (a Decimal is a JSON string, a float a JSON
@@ -222,36 +232,47 @@ class SchemaFactory:
                 continue
             value = cls.__dict__.get(name) or getattr(cls, name, None)
             field_info = value if isinstance(value, FieldInfo) else None
-            extra = (
-                (field_info.json_schema_extra or {}) if field_info is not None else {}
-            )
-            if extra.get("exclude"):
+            extra = field_info.json_schema_extra if field_info is not None else None
+            if isinstance(extra, dict) and extra.get("exclude"):
                 continue
 
             # create keeps the Field() constraints; read is Optional so a
             # serializer can project any field out.
             default = field_info if field_info is not None else ...
             create_fields[name] = (annotation, default)
-            read_fields[name] = (Optional[annotation], None)  # type: ignore[valid-type]
+            # A string annotation (future annotations) has no `| None`.
+            read_fields[name] = (Optional[annotation], None)  # noqa: UP045
 
         return SchemaFactory._schema_pair(cls.__name__, create_fields, read_fields)
 
     @staticmethod
-    def build_from_reflected_table(cls: type, table: Any) -> tuple[type, type]:
+    def build_from_reflected_table(
+        cls: type, table: Table, declared: Mapping[str, FieldInfo] | None = None
+    ) -> tuple[type, type]:
         """Build __schema_create__ and __schema_read__ from reflected table columns.
 
         Maps SQLAlchemy column types to Pydantic-compatible annotations.
         Excludes id, created_at, updated_at, version from create schema.
         Includes all columns in read schema.
-        Uses Optional[T] when column.nullable is True.
+        A nullable column is optional on create (None when absent); a column the
+        endpoint declared itself (partial reflection, ``declared``) keeps its
+        ``Field()``: its default and its constraints.
         """
+        declared = declared or {}
         create_fields: dict[str, Any] = {}
         read_fields: dict[str, Any] = {}
         for col in table.c:
             annotation = SchemaFactory._reflected_annotation(col)
-            if col.key not in AUTO_FIELDS:
-                required = Optional[annotation] if col.nullable else annotation  # type: ignore[valid-type]
-                create_fields[col.key] = (required, ...)
-            read_fields[col.key] = (Optional[annotation], None)  # type: ignore[valid-type]
+            # Optional[...]: `Any | None` is a typing form `| None` cannot build.
+            nullable: Any = Optional[annotation]  # noqa: UP045
+            create_annotation = nullable if col.nullable else annotation
+            if col.key in declared:
+                create_fields[col.key] = (create_annotation, declared[col.key])
+            elif col.key not in AUTO_FIELDS:
+                create_fields[col.key] = (
+                    create_annotation,
+                    None if col.nullable else ...,
+                )
+            read_fields[col.key] = (nullable, None)
 
         return SchemaFactory._schema_pair(cls.__name__, create_fields, read_fields)

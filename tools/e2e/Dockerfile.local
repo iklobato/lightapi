@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1.7
+# The repository Dockerfile with one difference: it installs the wheel built from this
+# checkout (uv build -> dist/) instead of the published release. Used by
+# tools/e2e/scenarios/16_docker.sh only, with a build context that holds just
+# dist/ and docker/ (the repository .dockerignore excludes dist).
+FROM python:3.12-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    LIGHTAPI_CONFIG=/app/lightapi.yaml \
+    LIGHTAPI_HOST=0.0.0.0 \
+    LIGHTAPI_PORT=8000 \
+    LIGHTAPI_LOG_LEVEL=info
+
+WORKDIR /app
+
+COPY dist/*.whl /tmp/dist/
+RUN pip install "$(ls /tmp/dist/*.whl)[async]" psycopg2-binary && rm -rf /tmp/dist /root/.cache
+
+COPY docker/entrypoint.py /app/entrypoint.py
+
+RUN groupadd --system --gid 1001 lightapi \
+ && useradd  --system --uid 1001 --gid lightapi --home-dir /app --no-create-home lightapi \
+ && chown -R lightapi:lightapi /app
+USER lightapi
+
+EXPOSE 8000
+
+# The real image's probe and timeout; only the interval and start period are shorter
+# (2 s and 5 s instead of 30 s and 10 s) so the scenario can read `healthy` within seconds.
+HEALTHCHECK --interval=2s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "import socket, os; \
+s = socket.create_connection(('127.0.0.1', int(os.environ.get('LIGHTAPI_PORT', '8000'))), timeout=2); \
+s.sendall(b'GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n'); \
+raise SystemExit(0 if b' 200 ' in s.recv(64) else 1)" \
+    || exit 1
+
+ENTRYPOINT ["python", "/app/entrypoint.py"]

@@ -103,9 +103,9 @@ class TestAuthenticationResponses:
 
         assert resp.status_code == 401
         assert resp.headers["WWW-Authenticate"] == "Bearer"
-        assert resp.json() == {"detail": "Authentication required"}
+        assert resp.json() == {"detail": "Authentication credentials invalid."}
 
-    def test_basic_endpoint_without_credentials_returns_401_with_bearer_challenge(
+    def test_basic_endpoint_without_credentials_returns_401_with_basic_challenge(
         self,
     ):
         client = _client({"/notes": BasicNote})
@@ -113,8 +113,8 @@ class TestAuthenticationResponses:
         resp = client.get("/notes")
 
         assert resp.status_code == 401
-        assert resp.headers["WWW-Authenticate"] == "Bearer"
-        assert resp.json() == {"detail": "Authentication required"}
+        assert resp.headers["WWW-Authenticate"] == 'Basic realm="Restricted Area"'
+        assert resp.json() == {"error": "authentication failed"}
 
     def test_method_missing_from_permission_dict_is_public(self):
         client = _client({"/notes": PostOnlyLogin})
@@ -219,7 +219,7 @@ class TestClosedSetsAcceptedAsStrings:
         config = Config(jwt_algorithm="none")
 
         with pytest.raises(ConfigurationError) as exc_info:
-            config.jwt_algorithm_value
+            _ = config.jwt_algorithm_value
 
         assert str(exc_info.value) == (
             "Invalid JWT algorithm 'none'. Valid algorithms are: "
@@ -320,39 +320,53 @@ class TestRequestBodyAndPagination:
 
 
 class TestAsyncEngineWithoutMode:
-    async def test_build_app_warns_instead_of_failing(self, caplog):
-        """An AsyncEngine on a sync app never could create its tables; the app must
-        still build (the differential harness records this as two 500s)."""
+    def test_the_engine_type_selects_async_mode(self):
+        """B6-004: an AsyncEngine with no `mode` used to leave the app in sync mode,
+        so its tables were never created and every request was a 500 (two 500s in
+        the differential harness, a "Table creation skipped" warning). The engine
+        type now selects async mode, as the README promises."""
 
         class Plain(RestEndpoint):
             name: str = LField(min_length=1)
 
-        app = LightApi(engine=create_async_engine("sqlite+aiosqlite:///:memory:"))
+            class Meta:
+                table = "characterization_plain_async"
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        app = LightApi(engine=engine)
         app.register({"/plain": Plain})
+        with TestClient(app.build_app()) as client:
+            response = client.post("/plain", json={"name": "n"})
 
-        with caplog.at_level("WARNING", logger="lightapi.lightapi"):
-            app.build_app()
+            assert response.status_code == 201
+            client.portal.call(engine.dispose)
 
-        assert "Table creation skipped" in caplog.text
+    def test_explicit_sync_mode_with_an_async_engine_is_refused(self):
+        with pytest.raises(ConfigurationError, match="mode='sync'"):
+            LightApi(
+                engine=create_async_engine("sqlite+aiosqlite:///:memory:"),
+                mode="sync",
+            )
+
+
+class Widget(RestEndpoint):
+    name: str = LField(min_length=1)
+
+    class Meta:
+        authentication = Authentication(permission=AllowAny)
 
 
 class TestAsyncVersioning:
     @pytest_asyncio.fixture
     async def async_client(self):
-        class Widget(RestEndpoint):
-            name: str = LField(min_length=1)
-
-            class Meta:
-                authentication = Authentication(permission=AllowAny)
-
-        app = LightApi(
-            engine=create_async_engine("sqlite+aiosqlite:///:memory:"), mode="async"
-        )
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        app = LightApi(engine=engine, mode="async")
         app.register({"/widgets": Widget})
         async with AsyncClient(
             transport=ASGITransport(app=app.build_app()), base_url="http://test"
         ) as client:
             yield client
+        await engine.dispose()
 
     async def test_async_patch_with_stale_version_returns_409(self, async_client):
         pk = (await async_client.post("/widgets", json={"name": "w"})).json()["id"]

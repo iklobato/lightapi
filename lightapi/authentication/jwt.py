@@ -29,7 +29,7 @@ class JWTAuthentication(BaseAuthentication):
         self,
         algorithm: str | None = None,
         expiration: int | None = None,
-        rate_limiter: "RateLimiter | None" = None,
+        rate_limiter: RateLimiter | None = None,
         extra_claims: tuple[str, ...] = (),
     ) -> None:
         self.algorithm = algorithm
@@ -41,7 +41,7 @@ class JWTAuthentication(BaseAuthentication):
     def from_config(
         cls,
         authentication: Authentication,
-        login_validator: LoginValidator | None = None,
+        login_validator: LoginValidator | None = None,  # noqa: ARG003  interface
     ) -> JWTAuthentication:
         # A subclass with its own constructor keeps being built without arguments.
         if cls.__init__ is not JWTAuthentication.__init__:
@@ -87,7 +87,10 @@ class JWTAuthentication(BaseAuthentication):
         request.state.user = payload
         return True
 
-    def get_auth_error_response(self, request: Request) -> JSONResponse:
+    def get_auth_error_response(
+        self,
+        request: Request,  # noqa: ARG002  public signature
+    ) -> JSONResponse:
         return JSONResponse(
             {"detail": "Authentication credentials invalid."},
             status_code=401,
@@ -95,7 +98,9 @@ class JWTAuthentication(BaseAuthentication):
         )
 
     def validate_credentials(
-        self, username: str, password: str
+        self,
+        username: str,  # noqa: ARG002  override point
+        password: str,  # noqa: ARG002  override point
     ) -> dict[str, Any] | None:
         """Validate user credentials.
 

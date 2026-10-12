@@ -27,7 +27,7 @@ class RateLimitWindow(str, Enum):
         return 60
 
     @classmethod
-    def from_key(cls, key: str) -> "RateLimitWindow":
+    def from_key(cls, key: str) -> RateLimitWindow:
         """The window of a store key such as "auth:minute" or "minute"."""
         return cls(key.rsplit(":", 1)[-1])
 
@@ -49,7 +49,7 @@ class RateLimiter:
         self.requests_per_hour = requests_per_hour
         self.requests_per_day = requests_per_day
 
-        # Storage: {ip: {window: {timestamp: count}}}
+        # Request counts per client IP, per window name, keyed by timestamp.
         self._store: dict[str, dict[str, dict[float, int]]] = defaultdict(
             lambda: defaultdict(lambda: defaultdict(int))
         )
@@ -121,7 +121,7 @@ class RateLimiter:
                 if ip:
                     return ip
 
-        return "0.0.0.0"
+        return "0.0.0.0"  # noqa: S104  the bucket for an unknown client, not a bind
 
     def is_rate_limited(
         self, request: Request, endpoint: str = ""
@@ -163,7 +163,9 @@ class RateLimiter:
         return (False, None)
 
     def get_rate_limit_response(
-        self, request: Request, window: str = RateLimitWindow.MINUTE.value
+        self,
+        request: Request,  # noqa: ARG002  public signature
+        window: str = RateLimitWindow.MINUTE.value,
     ) -> JSONResponse:
         """Get standard rate limit exceeded response."""
         try:

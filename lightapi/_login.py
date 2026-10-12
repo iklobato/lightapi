@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lightapi.constants import ApiError, HttpVerb
+from lightapi.constants import ApiError
 
 if TYPE_CHECKING:
     from lightapi.authentication.base import BaseAuthentication, LoginValidator
@@ -85,14 +85,12 @@ class LoginEndpoint:
         self._rate_limiter = rate_limiter
 
     async def handle(self, request: Request) -> JSONResponse:
-        is_limited, window = self._rate_limiter.is_rate_limited(
+        # The limiter names the exhausted window; None when the request passes.
+        _, exhausted_window = self._rate_limiter.is_rate_limited(
             request, endpoint="auth"
         )
-        if is_limited:
-            return self._rate_limiter.get_rate_limit_response(request, window)
-
-        if request.method != HttpVerb.POST:
-            return ApiError.LOGIN_METHOD_NOT_ALLOWED.response()
+        if exhausted_window is not None:
+            return self._rate_limiter.get_rate_limit_response(request, exhausted_window)
 
         try:
             credentials = await LoginRequest.from_request(request)
@@ -118,7 +116,7 @@ class LoginEndpoint:
             # The README shows `async def validate_credentials` on a subclass.
             if inspect.isawaitable(user):
                 user = await user
-        except Exception as exc:
-            logger.warning("validate_credentials raised: %s", exc)
+        except Exception:  # noqa: BLE001  documented contract: any error is a 401
+            logger.warning("validate_credentials raised", exc_info=True)
             return None
         return user

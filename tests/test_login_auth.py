@@ -227,6 +227,13 @@ class TestHttpMethodAndErrorFormat:
         assert resp.status_code == 405
         assert resp.headers.get("Allow") == "POST"
 
+    def test_login_get_405_body_is_json(self, jwt_client):
+        """The app's JSON 405, not Starlette's text/plain one."""
+        resp = jwt_client.get("/auth/login")
+
+        assert resp.headers["content-type"].startswith("application/json")
+        assert resp.json() == {"detail": "Method Not Allowed. Allowed: POST"}
+
 
 class TestConfigurationAndRegistration:
     def test_register_jwt_without_validator_succeeds(self):
@@ -501,7 +508,7 @@ class TestBasicHeaderEdgeCases:
         app = LightApi(engine=engine, login_validator=validator_unicode)
         app.register({"/x": JWTProtectedEndpoint})
         client = TestClient(app.build_app())
-        creds = base64.b64encode("josé:contraseña".encode("utf-8")).decode()
+        creds = base64.b64encode("josé:contraseña".encode()).decode()
         resp = client.post(
             "/auth/login",
             headers={"Authorization": f"Basic {creds}"},

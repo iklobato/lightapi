@@ -53,7 +53,7 @@ class ProductEndpoint(RestEndpoint):
 | `unique=True` | `bool` | Adds `UNIQUE` constraint to the column |
 | `index=True` | `bool` | Creates a database index |
 | `foreign_key="table.col"` | `str` | Creates a `ForeignKey` reference |
-| `decimal_places=N` | `int` | Precision for `Decimal` columns (default: 10) |
+| `decimal_places=N` | `int` | A `Decimal` with more than N decimal places is rejected (422); the column type stays `NUMERIC` |
 | `exclude=True` | `bool` | Skips column creation — field is schema-only |
 
 ## Auto-injected columns

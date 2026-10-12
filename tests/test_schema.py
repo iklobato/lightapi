@@ -172,7 +172,7 @@ class TestBuildFromReflectedTable:
         class FakeEndpoint:
             __name__ = "FakeEndpoint"
 
-        schema_create, schema_read = SchemaFactory.build_from_reflected_table(
+        schema_create, _schema_read = SchemaFactory.build_from_reflected_table(
             FakeEndpoint, table
         )
         # optional_field is nullable, so it should be Optional[str]

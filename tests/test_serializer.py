@@ -1,5 +1,7 @@
 """Tests for all four Serializer forms and validation guards."""
 
+from typing import ClassVar
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
@@ -47,8 +49,8 @@ class TestSerializerForm3:
 class TestSerializerForm4:
     def test_subclass_instance_form(self):
         class PubSerializer(Serializer):
-            read = ["id", "name", "created_at"]
-            write = ["id", "name"]
+            read: ClassVar[list[str]] = ["id", "name", "created_at"]
+            write: ClassVar[list[str]] = ["id", "name"]
 
         f, r, w = FieldProjection.from_serializer(PubSerializer)
         assert f is None
@@ -57,17 +59,17 @@ class TestSerializerForm4:
 
     def test_subclass_fields_only(self):
         class AuditSer(Serializer):
-            fields = ["id", "created_at", "updated_at"]
+            fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
 
-        f, r, w = FieldProjection.from_serializer(AuditSer)
+        f, _r, _w = FieldProjection.from_serializer(AuditSer)
         assert f == ["id", "created_at", "updated_at"]
 
     def test_subclass_defines_fields_and_read_raises_at_class_load(self):
         with pytest.raises(ConfigurationError):
 
             class BadSerializer(Serializer):
-                fields = ["id"]
-                read = ["id", "name"]
+                fields: ClassVar[list[str]] = ["id"]
+                read: ClassVar[list[str]] = ["id", "name"]
 
     def test_empty_subclass_returns_all_none(self):
         class EmptySer(Serializer):
@@ -78,8 +80,8 @@ class TestSerializerForm4:
 
     def test_shared_subclass_reused_on_two_endpoints(self):
         class SharedSer(Serializer):
-            read = ["id", "name"]
-            write = ["id"]
+            read: ClassVar[list[str]] = ["id", "name"]
+            write: ClassVar[list[str]] = ["id"]
 
         class Ep1(RestEndpoint):
             name: str = LField(min_length=1)
@@ -93,8 +95,8 @@ class TestSerializerForm4:
             class Meta:
                 serializer = SharedSer
 
-        f1, r1, w1 = Ep1._meta["serializer_normalised"]
-        f2, r2, w2 = Ep2._meta["serializer_normalised"]
+        _f1, r1, w1 = Ep1._meta["serializer_normalised"]
+        _f2, r2, w2 = Ep2._meta["serializer_normalised"]
         assert r1 == r2 == ["id", "name"]
         assert w1 == w2 == ["id"]
 
@@ -150,7 +152,7 @@ class TestSerializerPipelineIntegration:
     def test_per_verb_serializer_post_only_write_fields(self):
         """POST 201 response has only fields in Serializer(write=[...])."""
 
-        class OrderEndpoint(RestEndpoint):
+        class OrderWriteEndpoint(RestEndpoint):
             name: str = LField(min_length=1)
             tag: str = LField(default="")
 
@@ -166,8 +168,8 @@ class TestSerializerPipelineIntegration:
             poolclass=StaticPool,
         )
         app = LightApi(engine=engine)
-        app.register({"/orders": OrderEndpoint})
-        OrderEndpoint.__table__.create(engine, checkfirst=True)
+        app.register({"/orders": OrderWriteEndpoint})
+        OrderWriteEndpoint.__table__.create(engine, checkfirst=True)
         c = TestClient(app.build_app())
         resp = c.post("/orders", json={"name": "Order1", "tag": "x"})
         assert resp.status_code == 201

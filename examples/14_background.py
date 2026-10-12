@@ -37,7 +37,7 @@ DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 async def audit_log(action: str, item_id: int) -> None:
     """Background task that logs actions."""
-    logger.info(f"AUDIT: {action} item_id={item_id}")
+    logger.info("AUDIT: %s item_id=%s", action, item_id)
 
 
 class ItemEndpoint(RestEndpoint, HttpMethod.GET, HttpMethod.POST):

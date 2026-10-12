@@ -23,7 +23,9 @@ from pydantic.fields import FieldInfo
 from sqlalchemy import (
     Boolean,
     Column,
+    Connection,
     DateTime,
+    Engine,
     Float,
     ForeignKey,
     Integer,
@@ -34,12 +36,17 @@ from sqlalchemy import (
     Uuid,
 )
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.pool import StaticPool
 
 from lightapi.constants import AUTO_FIELDS, TableReflection
 from lightapi.exceptions import ConfigurationError
+from lightapi.repository import Repository
 from lightapi.schema import SchemaFactory
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
+
+    from lightapi.rest import RestEndpoint
     from lightapi.session_manager import SessionManager
 
 _TYPE_MAP: Final[dict[Any, Any]] = {
@@ -57,17 +64,22 @@ class TableSource(ABC):
     """Builds the endpoint's table and maps the endpoint class onto it."""
 
     @abstractmethod
-    def map(self, endpoint_cls: type, session_manager: SessionManager) -> None: ...
+    def map(
+        self, endpoint_cls: type[RestEndpoint], session_manager: SessionManager
+    ) -> None: ...
 
     @staticmethod
-    def _table_name(endpoint_cls: type, session_manager: SessionManager) -> str:
-        base_name = (
-            endpoint_cls._meta.get("table") or f"{endpoint_cls.__name__.lower()}s"
-        )
+    def _table_name(
+        endpoint_cls: type[RestEndpoint], session_manager: SessionManager
+    ) -> str:
+        meta = endpoint_cls._meta  # noqa: SLF001  the endpoint's parsed Meta
+        base_name = meta.get("table") or f"{endpoint_cls.__name__.lower()}s"
         return session_manager.table_name_for(base_name)
 
     @staticmethod
-    def _strip_field_infos(endpoint_cls: type, columns: list[Column]) -> None:
+    def _strip_field_infos(
+        endpoint_cls: type[RestEndpoint], columns: list[Column[Any]]
+    ) -> None:
         for column in columns:
             existing = endpoint_cls.__dict__.get(column.name)
             # Remove FieldInfo objects AND bare Ellipsis sentinels. Both block
@@ -81,15 +93,15 @@ class TableSource(ABC):
 class DeclaredTable(TableSource):
     """A table generated from the endpoint's annotated fields."""
 
-    def __init__(self, columns: list[Column]) -> None:
+    def __init__(self, columns: list[Column[Any]]) -> None:
         self._columns = columns
 
     @classmethod
     def from_endpoint(
-        cls, endpoint_cls: type, name: str, namespace: dict[str, Any]
+        cls, endpoint_cls: type[RestEndpoint], name: str, namespace: dict[str, Any]
     ) -> DeclaredTable:
         """The automatic columns plus one per annotated field (minus exclude=True)."""
-        columns: list[Column] = []
+        columns: list[Column[Any]] = []
         for field_name, annotation in cls._field_annotations(endpoint_cls).items():
             field_val = namespace.get(field_name) or getattr(
                 endpoint_cls, field_name, None
@@ -100,24 +112,26 @@ class DeclaredTable(TableSource):
                 columns.append(column)
         return cls(cls._auto_columns() + columns)
 
-    def map(self, endpoint_cls: type, session_manager: SessionManager) -> None:
-        if endpoint_cls._model_class is not None:
+    def map(
+        self, endpoint_cls: type[RestEndpoint], session_manager: SessionManager
+    ) -> None:
+        if endpoint_cls._model_class is not None:  # noqa: SLF001  mapped already
             return
 
         self._strip_field_infos(endpoint_cls, self._columns)
         table = Table(
             self._table_name(endpoint_cls, session_manager),
             session_manager.metadata,
-            *[column.copy() for column in self._columns],
+            *self._columns,
             extend_existing=True,
             keep_existing=False,
         )
         session_manager.create_tables_now()
         session_manager.registry.map_imperatively(endpoint_cls, table)
-        endpoint_cls._model_class = endpoint_cls
+        endpoint_cls._model_class = endpoint_cls  # noqa: SLF001  marks it mapped
 
     @staticmethod
-    def _field_annotations(endpoint_cls: type) -> dict[str, Any]:
+    def _field_annotations(endpoint_cls: type[RestEndpoint]) -> dict[str, Any]:
         """Public annotated fields of the class and its bases, with real types."""
         # get_type_hints() resolves the string annotations that
         # `from __future__ import annotations` leaves behind.
@@ -137,12 +151,14 @@ class DeclaredTable(TableSource):
 
     @staticmethod
     def _column_for(
-        endpoint_name: str, field_name: str, annotation: Any, field_info: Any
-    ) -> Column | None:
+        endpoint_name: str,
+        field_name: str,
+        annotation: object,
+        field_info: FieldInfo | None,
+    ) -> Column[Any] | None:
         """The column for one annotated field; None when the field has exclude=True."""
-        extra: dict[str, Any] = (
-            (field_info.json_schema_extra or {}) if field_info else {}
-        )
+        raw_extra = field_info.json_schema_extra if field_info is not None else None
+        extra: dict[str, Any] = raw_extra if isinstance(raw_extra, dict) else {}
         if extra.get("exclude"):
             return None
 
@@ -156,6 +172,13 @@ class DeclaredTable(TableSource):
             )
         if inner is Decimal:
             col_type = Numeric(scale=extra.get("decimal_places", 10))
+        elif "decimal_places" in extra:
+            # Forwarded to pydantic, the option would make every write a 500 on a
+            # type it cannot apply to; refuse it where the class is defined.
+            raise ConfigurationError(
+                f"RestEndpoint '{endpoint_name}': decimal_places on field "
+                f"'{field_name}' needs a Decimal annotation, got '{inner}'."
+            )
 
         col_args = (
             [ForeignKey(extra["foreign_key"])] if extra.get("foreign_key") else []
@@ -168,7 +191,7 @@ class DeclaredTable(TableSource):
         return Column(field_name, col_type, *col_args, **col_kwargs)
 
     @staticmethod
-    def _is_optional(annotation: Any) -> tuple[bool, Any]:
+    def _is_optional(annotation: object) -> tuple[bool, object]:
         """Return (is_optional, inner_type) for an annotation."""
         origin = get_origin(annotation)
         args = get_args(annotation)
@@ -179,16 +202,16 @@ class DeclaredTable(TableSource):
         return False, annotation
 
     @staticmethod
-    def _auto_columns() -> list[Column]:
+    def _auto_columns() -> list[Column[Any]]:
         """id, created_at, updated_at and version, present in every declared table."""
         return [
             Column("id", Integer, primary_key=True, autoincrement=True),
-            Column("created_at", DateTime, default=datetime.datetime.utcnow),
+            Column("created_at", DateTime, default=Repository.utcnow),
             Column(
                 "updated_at",
                 DateTime,
-                default=datetime.datetime.utcnow,
-                onupdate=datetime.datetime.utcnow,
+                default=Repository.utcnow,
+                onupdate=Repository.utcnow,
             ),
             Column("version", Integer, default=1, nullable=False),
         ]
@@ -204,22 +227,31 @@ class ReflectedTable(TableSource):
     def __init__(self, reflection: TableReflection) -> None:
         self._reflection = reflection
 
-    def map(self, endpoint_cls: type, session_manager: SessionManager) -> None:
-        if endpoint_cls._model_class is not None:
+    def map(
+        self, endpoint_cls: type[RestEndpoint], session_manager: SessionManager
+    ) -> None:
+        if endpoint_cls._model_class is not None:  # noqa: SLF001  mapped already
             return
 
         table = self._reflect(
             self._table_name(endpoint_cls, session_manager), session_manager
         )
+        # The Field() objects a partial endpoint declares carry its defaults and
+        # constraints; instrumentation needs them off the class, so keep a copy.
+        declared: dict[str, FieldInfo] = {}
         if self._reflection is TableReflection.PARTIAL:
+            declared = {
+                name: value
+                for name, value in vars(endpoint_cls).items()
+                if isinstance(value, FieldInfo)
+            }
             self._strip_field_infos(endpoint_cls, list(table.c))
 
         session_manager.registry.map_imperatively(endpoint_cls, table)
-        endpoint_cls._model_class = endpoint_cls
+        endpoint_cls._model_class = endpoint_cls  # noqa: SLF001  marks it mapped
         # The schemas need the columns, which are only known after reflection.
-        mapped_table = sa_inspect(endpoint_cls).persist_selectable
         endpoint_cls.__schema_create__, endpoint_cls.__schema_read__ = (
-            SchemaFactory.build_from_reflected_table(endpoint_cls, mapped_table)
+            SchemaFactory.build_from_reflected_table(endpoint_cls, table, declared)
         )
 
     def _reflect(self, table_name: str, session_manager: SessionManager) -> Table:
@@ -232,7 +264,7 @@ class ReflectedTable(TableSource):
         )
 
     @staticmethod
-    def _reflect_sync(engine: Any, metadata: MetaData, table_name: str) -> Table:
+    def _reflect_sync(engine: Engine, metadata: MetaData, table_name: str) -> Table:
         if table_name not in sa_inspect(engine).get_table_names():
             raise ConfigurationError(
                 f"Table '{table_name}' does not exist in the database."
@@ -240,13 +272,21 @@ class ReflectedTable(TableSource):
         return Table(table_name, metadata, autoload_with=engine)
 
     @staticmethod
-    def _reflect_async(engine: Any, metadata: MetaData, table_name: str) -> Table:
-        def do_reflect(conn: Any) -> None:
+    def _reflect_async(
+        engine: AsyncEngine, metadata: MetaData, table_name: str
+    ) -> Table:
+        def do_reflect(conn: Connection) -> None:
             metadata.reflect(bind=conn, only=[table_name])
 
         async def async_reflect() -> None:
             async with engine.connect() as conn:
                 await conn.run_sync(do_reflect)
+            # This runs on a loop of its own, so the connection would go back to
+            # the pool bound to a loop that is about to close and asyncpg refuses
+            # it on the first request (the B7-003 mechanism). A StaticPool is the
+            # one in-memory connection: disposing it would drop the database.
+            if not isinstance(engine.pool, StaticPool):
+                await engine.dispose()
 
         try:
             asyncio.get_running_loop()

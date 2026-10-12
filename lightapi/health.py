@@ -17,5 +17,8 @@ class HealthCheckEndpoint(HTTPEndpoint):
     touching a business endpoint. Returns ``200`` with a small JSON body.
     """
 
-    async def get(self, request: Request) -> JSONResponse:
+    async def get(
+        self,
+        request: Request,  # noqa: ARG002  HTTPEndpoint signature
+    ) -> JSONResponse:
         return JSONResponse({"status": "ok"})
