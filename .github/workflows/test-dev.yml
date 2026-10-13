@@ -1,13 +1,13 @@
-# This workflow runs tests on the development branch
+# This workflow runs tests on the dev branch and on PRs into dev or master
 # It runs tests but does not publish to PyPI
 
 name: Development Tests
 
 on:
   push:
-    branches: [ "development" ]
+    branches: [ "dev" ]
   pull_request:
-    branches: [ "development", "master" ]
+    branches: [ "dev", "master" ]
 
 permissions:
   contents: read
