@@ -24,7 +24,6 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
 
-from lightapi._dict_config_loader import DictConfig
 from lightapi._login import LoginEndpoint
 from lightapi.authentication import (
     BaseAuthentication,
@@ -302,43 +301,6 @@ class LightApi:
         Kwargs override YAML values (e.g. engine=..., database_url=...).
         """
         return LightAPIConfig.from_file(config_path).build_app(cls, **kwargs)
-
-    @classmethod
-    def from_dict(
-        cls,
-        config: dict[str, Any],
-        **kwargs: Any,  # noqa: ANN401  constructor kwargs, forwarded
-    ) -> LightApi:
-        """Create a LightApi instance from a Python dictionary.
-
-        Deprecated: removed in 0.3.0. Declare RestEndpoint subclasses and call
-        register(), or use from_config() with a YAML file.
-
-        Example::
-
-            config = {
-                "database_url": "sqlite:///db.sqlite3",
-                "endpoints": {
-                    "/books": {
-                        "fields": {"title": str, "author": str},
-                        "auth": "jwt",
-                    },
-                    "/authors": {
-                        "fields": {"name": str},
-                    },
-                },
-                "cors": ["https://myapp.com"],
-            }
-            app = LightApi.from_dict(config)
-        """
-        warnings.warn(
-            "LightApi.from_dict is deprecated and will be removed in 0.3.0. "
-            "Declare RestEndpoint subclasses and call register(), or use "
-            "from_config() with a YAML file.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return DictConfig(config).build(cls, **kwargs)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Internal helpers
