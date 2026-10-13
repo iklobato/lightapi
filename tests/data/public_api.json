@@ -663,18 +663,6 @@
         false
       ]
     ],
-    "LightApi.from_dict": [
-      [
-        "config",
-        "POSITIONAL_OR_KEYWORD",
-        false
-      ],
-      [
-        "kwargs",
-        "VAR_KEYWORD",
-        false
-      ]
-    ],
     "LightApi.register": [
       [
         "mapping",

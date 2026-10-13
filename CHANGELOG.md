@@ -9,7 +9,11 @@ Versions align with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Nothing yet.
+### Removed
+- **`LightApi.from_dict`** and its loader, `lightapi._dict_config_loader`. Deprecated
+  since 0.2.0; the 0.3.0 warning promised the removal for 0.3.0, which shipped it by
+  mistake. Declare `RestEndpoint` subclasses and call `register()`, or use
+  `from_config()` with a YAML file.
 
 ## [0.3.0] - 2026-10-12
 

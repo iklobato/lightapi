@@ -84,29 +84,6 @@ Bootstraps a `LightApi` instance from a YAML file. The YAML document is parsed
 and validated by Pydantic v2 — any schema error raises `ConfigurationError` with
 a precise message before the server starts.
 
-### `from_dict(config: dict) → LightApi`
-
-!!! warning "Deprecated"
-    `from_dict` is removed in 0.3.0 and emits a `DeprecationWarning` today. Declare `RestEndpoint` subclasses and call `register()`, or use `from_config()` with a YAML file.
-
-```python
-app = LightApi.from_dict({
-    "database_url": "sqlite:///db.sqlite3",
-    "endpoints": {
-        "/books": {
-            "fields": {"title": str, "author": str},
-            "auth": "jwt",
-        },
-        "/authors": {"fields": {"name": str}},
-    },
-    "cors": ["https://myapp.com"],
-})
-```
-
-The `methods` key in each endpoint config accepts a list of HTTP verbs (`["GET", "POST"]`, etc.) and is enforced — unlisted methods return `405 Method Not Allowed`.
-
-Programmatic alternative to YAML for simple configurations.
-
 ```yaml
 database:
   url: "${DATABASE_URL}"
