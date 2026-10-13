@@ -1,7 +1,8 @@
 """The ten `proposta` rows of docs/audit.md, applied on 2026-10-12 at Henry's request.
 
 One class per row. Each test names the behaviour a reasonable user of the
-documented feature gets after the fix, and failed before it.
+documented feature gets after the fix, and failed before it. B1-001's class left
+with `LightApi.from_dict`, the only way to reach that code.
 """
 
 from __future__ import annotations
@@ -48,22 +49,6 @@ def _memory_engine():
 def _basic_header(username: str, password: str) -> str:
     token = base64.b64encode(f"{username}:{password}".encode()).decode()
     return f"Basic {token}"
-
-
-class TestB1001DictConfigUnknownAuth:
-    """B1-001: an `auth:` value the dict config does not know was dropped and the
-    endpoint served without a backend; it is a ConfigurationError naming it."""
-
-    def test_unknown_auth_kind_is_refused(self):
-        document = {
-            "endpoints": {"/things": {"fields": {"title": str}, "auth": "oauth"}}
-        }
-
-        with (
-            pytest.warns(DeprecationWarning),
-            pytest.raises(ConfigurationError, match="oauth"),
-        ):
-            LightApi.from_dict(document, engine=_memory_engine())
 
 
 class TestB1011TableCreationFailureRaises:

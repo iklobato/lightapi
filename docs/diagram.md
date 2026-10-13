@@ -1047,7 +1047,6 @@ flowchart LR
     CONFIG[config.py: Config, Authentication, Filtering, Pagination, Cache, Serializer]
     CONST[constants.py: HttpVerb, ExecutionMode, TableReflection, JwtAlgorithm, ApiError, ResponseKey]
     YAML[yaml_config.py: LightAPIConfig and the YAML models]
-    DICT[_dict_config_loader.py: DictConfig, DictAuthKind]
   end
   subgraph features["Features"]
     AUTH[authentication/: backends and permissions]
@@ -1064,7 +1063,6 @@ flowchart LR
   EH --> SM
   LA --> LOGIN --> RL
   LA --> YAML --> CONFIG
-  LA --> DICT --> CONFIG
   CONFIG --> PAG
   REST --> CONFIG
   AUTH --> CONFIG
@@ -1085,7 +1083,7 @@ Global state left: `config.config` (the `Config` instance `JWTAuthentication` re
 documented), `session_manager._state` (one `_GlobalState` with `reset()`), and
 `RedisCacheBackend.shared()` (a `functools.cache` on a classmethod, built on first use).
 
-### Enums (constants.py, pagination.py, rate_limiter.py, _dict_config_loader.py)
+### Enums (constants.py, pagination.py, rate_limiter.py)
 
 ```mermaid
 classDiagram
@@ -1132,11 +1130,6 @@ classDiagram
     MINUTE HOUR DAY
     +seconds int
     +from_key(key: str) RateLimitWindow
-  }
-  class DictAuthKind {
-    <<str, Enum>>
-    JWT BASIC
-    +backend type
   }
   class _CrudArgument {
     <<Enum>>
@@ -1278,7 +1271,6 @@ classDiagram
     +build_app(debug) Starlette
     +run(host, port, debug, reload) None
     +from_config(config_path, **kwargs) LightApi
-    +from_dict(config, **kwargs) LightApi
     -_register_endpoint(path, cls, app_context) None
     -_login_routes() list of Route
     -_login_backend() BaseAuthentication or None
@@ -1459,7 +1451,7 @@ classDiagram
 `config.py` no longer imports `lightapi.authentication` at runtime: the permission says
 whether login is required, so the import cycle that forced two in-function imports is gone.
 
-### YAML and dict configuration
+### YAML configuration
 
 ```mermaid
 classDiagram
@@ -1497,22 +1489,12 @@ classDiagram
   class PaginationConfig {
     +to_pagination() Pagination
   }
-  class DictConfig {
-    <<frozen dataclass>>
-    +config: dict
-    +build(app_cls, **overrides) LightApi
-    -_endpoint_class(route, spec) type
-    -_meta_attributes(spec) dict
-    -_method_mixins(methods) list of type
-    -_class_name(route) str
-  }
   LightAPIConfig *-- EndpointConfig
   EndpointConfig *-- MetaConfig
   EndpointConfig *-- FieldSpec
   MetaConfig *-- AuthConfig
   MetaConfig *-- FilteringConfig
   MetaConfig *-- PaginationConfig
-  DictConfig ..> DictAuthKind
 ```
 
 The name registry (`NAME_REGISTRY`) and the verb-to-mixin map (`HTTP_METHOD_MIXINS`) are
